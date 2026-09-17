@@ -1,0 +1,37 @@
+# Nginx snippet: serve locally-stored media directly, bypassing Node.
+#
+# This is NOT a full server block — merge the `location /uploads/ { ... }`
+# block below into your EXISTING `server { ... }` block for this domain
+# (the same one that already proxies /api to the Node backend). Do not
+# create a second server block for the same domain/port.
+#
+# Adapt before using:
+#   - <alias-path>   -> must match LOCAL_STORAGE_ROOT exactly (the backend's
+#                        env var), e.g. /var/www/ecommerce-storage
+#   - server_name    -> your existing domain, already configured elsewhere
+#                        in this server block
+#
+# After merging, validate and reload:
+#   sudo nginx -t && sudo systemctl reload nginx
+
+# --- add inside your existing `server { ... }` block ---
+
+location /uploads/ {
+    # MUST match LOCAL_STORAGE_ROOT on the backend. The trailing slashes
+    # on both `location` and `alias` are required together — without them
+    # Nginx will not strip the /uploads/ prefix correctly.
+    alias <alias-path>/;
+
+    # Media is content-addressed by a random UUID filename and never
+    # overwritten in place (replace/delete write a new file and remove
+    # the old one), so a long cache lifetime is safe.
+    add_header Cache-Control "public, max-age=31536000, immutable";
+
+    # Directory listing must stay off — never expose the raw file tree.
+    autoindex off;
+
+    # Don't let a missing file fall through to Node; return a plain 404.
+    try_files $uri =404;
+}
+
+# --- end snippet ---
