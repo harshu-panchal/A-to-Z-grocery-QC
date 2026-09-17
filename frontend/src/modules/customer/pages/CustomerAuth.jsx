@@ -17,6 +17,8 @@ import {
 import { toast } from 'sonner';
 import { customerApi } from '../services/customerApi';
 import BgImage from '@/assets/image.png';
+import LogoImage from '@/assets/Logo.png';
+
 
 const CATEGORIES = [
     {
@@ -335,34 +337,28 @@ const CustomerAuth = () => {
                         </div>
                     </motion.div>
 
-                    {/* Circular Carousel Control */}
+                    {/* Circular Carousel Control / Brand Logo */}
                     <div className="relative -mt-14 flex justify-center z-20">
-                        <div className="w-28 h-28 rounded-full bg-white border-4 border-white shadow-[0_15px_40px_rgba(97,218,251,0.2)] flex items-center justify-center overflow-hidden transition-shadow duration-1000" style={{ boxShadow: `0 15px 40px ${activeCategory.shadow}` }}>
+                        <div className="w-28 h-28 rounded-full bg-white border-4 border-white shadow-[0_15px_40px_rgba(0,0,0,0.15)] flex items-center justify-center p-3 overflow-hidden transition-shadow duration-1000" style={{ boxShadow: `0 15px 40px ${activeCategory.shadow}` }}>
                             <AnimatePresence mode="wait">
                                     <motion.div
                                         key={carouselIndex}
-                                        initial={{ opacity: 0, scale: 0.5, rotate: -20 }}
-                                        animate={{ opacity: 1, scale: 1, rotate: 0 }}
-                                        exit={{ opacity: 0, scale: 1.5, rotate: 20 }}
-                                        className="w-full h-full"
-                                        style={{ color: activeCategory.text }}
+                                        initial={{ opacity: 0, scale: 0.8 }}
+                                        animate={{ opacity: 1, scale: 1 }}
+                                        exit={{ opacity: 0, scale: 1.1 }}
+                                        className="w-full h-full flex items-center justify-center"
                                     >
-                                        {logoUrl ? (
-                                            <img
-                                                src={logoUrl}
-                                                alt={`${appName} logo`}
-                                                loading="lazy"
-                                                className="w-full h-full object-cover"
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: activeCategory.color }}>
-                                                {activeCategory.icon}
-                                            </div>
-                                        )}
+                                        <img
+                                            src={logoUrl || LogoImage}
+                                            alt={`${appName} Brand Logo`}
+                                            loading="lazy"
+                                            className="w-full h-full object-contain drop-shadow-sm"
+                                        />
                                     </motion.div>
                             </AnimatePresence>
                         </div>
                     </div>
+
 
 
                     {/* Authentication Form Block */}
