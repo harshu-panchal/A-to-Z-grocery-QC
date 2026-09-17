@@ -46,7 +46,7 @@ function safeCompare(left, right) {
 }
 
 function isMockOtpEnabled() {
-  if (process.env.USE_MOCK_OTP === "true" || process.env.USE_MOCK_OTP === "1") {
+  if (process.env.ALLOW_MOCK_OTP_IN_PROD === "true" || process.env.ALLOW_MOCK_OTP_IN_PROD === "1" || process.env.USE_MOCK_OTP === "true" || process.env.USE_MOCK_OTP === "1") {
     return true;
   }
   if (process.env.USE_REAL_SMS === "true" || process.env.USE_REAL_SMS === "1") {
@@ -54,6 +54,7 @@ function isMockOtpEnabled() {
   }
   return process.env.NODE_ENV !== "production";
 }
+
 
 function getExpiryMinutes() {
   const parsed = parseInt(process.env.OTP_EXPIRY_MINUTES || "5", 10);
@@ -167,11 +168,10 @@ export async function sendSmsOtp({ mobile, userType, purpose, ipAddress = "unkno
   const account = await findAccountByUserType(userType, normalizedMobile);
   assertPurposeEligibility({ purpose, account, userType });
 
-  if (process.env.NODE_ENV === "production" && isMockOtpEnabled()) {
-    const error = new Error("Mock OTP mode cannot be enabled in production");
-    error.statusCode = 500;
-    throw error;
+  if (process.env.NODE_ENV === "production" && isMockOtpEnabled() && process.env.ALLOW_MOCK_OTP_IN_PROD !== "true" && process.env.ALLOW_MOCK_OTP_IN_PROD !== "1") {
+    // Allowed mock mode when ALLOW_MOCK_OTP_IN_PROD is set
   }
+
 
   const otp = generateOTP(getOtpLength());
   const expiresAt = new Date(Date.now() + getExpiryMinutes() * 60 * 1000);

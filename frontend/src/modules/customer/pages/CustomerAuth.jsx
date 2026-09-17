@@ -218,7 +218,7 @@ const CustomerAuth = () => {
     };
 
     return (
-        <div className="min-h-screen w-full relative flex items-center justify-center font-['Outfit',_sans-serif] overflow-hidden">
+        <div className="min-h-screen h-screen w-full relative flex items-center justify-center font-['Outfit',_sans-serif] overflow-hidden bg-gray-900">
 
             {/* Dynamic Atmospheric Background */}
             <div 
@@ -266,17 +266,12 @@ const CustomerAuth = () => {
                 />
             </div>
 
-            {/* Premium Centered Card — fixed height; lifts with keyboard, never shrinks */}
+            {/* Premium Centered Sticky Card */}
             <div
                 ref={cardRef}
-                className="w-[92%] max-w-[400px] bg-white relative z-10 overflow-hidden rounded-[40px] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] border border-white/40 flex flex-col transition-colors duration-1000 will-change-transform"
-                style={{
-                    height: cardHeightPx ? `${cardHeightPx}px` : '85vh',
-                    maxHeight: cardHeightPx ? `${cardHeightPx}px` : '780px',
-                    transform: keyboardLift > 0 ? `translateY(-${keyboardLift}px)` : 'translateY(0)',
-                    transition: 'transform 0.28s ease-out',
-                }}
+                className="w-[92%] max-w-[400px] max-h-[88vh] bg-white relative z-10 overflow-hidden rounded-[40px] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] border border-white/40 flex flex-col my-auto transition-colors duration-1000"
             >
+
 
                 {/* Scrollable Content Container */}
                 <div className="h-full overflow-y-auto no-scrollbar pb-20 overscroll-contain">
