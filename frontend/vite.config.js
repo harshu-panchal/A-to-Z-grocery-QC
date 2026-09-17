@@ -97,6 +97,9 @@ export default defineConfig({
 
           if (id.includes('framer-motion')) return 'vendor-motion'
           if (id.includes('firebase')) return 'vendor-firebase'
+          if (id.includes('jspdf')) return 'vendor-jspdf'
+          if (id.includes('html2canvas')) return 'vendor-html2canvas'
+          if (id.includes('lucide-react')) return 'vendor-lucide'
         },
       },
     },
