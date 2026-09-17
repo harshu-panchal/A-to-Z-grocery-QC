@@ -25,18 +25,10 @@ function getAllowedMimeTypes() {
 }
 
 function getOptimizedImageFormat() {
-  // Perf audit BE-I1: default to "auto" (Cloudinary picks the best format —
-  // e.g. WebP/AVIF — per requesting browser) instead of the previous
-  // empty-string-means-disabled default. Every product/category/banner
-  // photo was previously uploaded and stored at whatever format the
-  // uploading device produced (often full-size JPEG), with format
-  // optimization only active if an operator had manually set
-  // CLOUDINARY_IMAGE_UPLOAD_FORMAT in the environment — which, per the
-  // audit, nobody had. Still fully overridable via env if a specific format
-  // is ever required. New uploads only — never touches already-stored media.
-  const raw = String(process.env.CLOUDINARY_IMAGE_UPLOAD_FORMAT ?? "auto").trim().toLowerCase();
-  return raw;
+  const raw = String(process.env.CLOUDINARY_IMAGE_UPLOAD_FORMAT || "").trim().toLowerCase();
+  return raw === "auto" ? "" : raw;
 }
+
 
 function getOptimizedImageQuality() {
   // Perf audit BE-I1: same reasoning as format above — default to "auto"
