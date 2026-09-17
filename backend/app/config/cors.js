@@ -54,6 +54,12 @@ export function buildCorsOriginValidator(allowedOrigins) {
       callback(null, true);
       return;
     }
+    // Allow vercel preview / production origins
+    if (origin.endsWith(".vercel.app")) {
+      callback(null, true);
+      return;
+    }
     callback(new Error(`Origin not allowed by CORS: ${origin}`));
   };
 }
+
