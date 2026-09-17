@@ -466,5 +466,14 @@ async function main() {
   }
 }
 
-// Start the application
-main();
+const app = createApp();
+
+export { createApp };
+export default app;
+
+// Start the application only if executed directly
+if (process.env.VERCEL !== "1" && !process.env.VERCEL_ENV) {
+  main();
+}
+
+
