@@ -14,12 +14,13 @@ const mediaMetadataSchema = new mongoose.Schema(
   {
     intentId: {
       type: String,
-      default: null,
+      default: undefined,
       unique: true,
       sparse: true,
       index: true,
       trim: true,
     },
+
     provider: {
       type: String,
       enum: ["cloudinary", "local"],
@@ -46,12 +47,13 @@ const mediaMetadataSchema = new mongoose.Schema(
       required: function () {
         return this.provider === "cloudinary";
       },
-      default: null,
+      default: undefined,
       unique: true,
       sparse: true,
       index: true,
       trim: true
     },
+
     // Relative path under the local storage root (never the absolute
     // filesystem path — that must never reach the frontend). Only set for
     // provider === "local".
