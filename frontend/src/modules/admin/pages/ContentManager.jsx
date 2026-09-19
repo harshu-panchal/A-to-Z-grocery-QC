@@ -64,18 +64,6 @@ const ContentManager = () => {
 
     const bannerFileInputsRef = useRef([]);
 
-    const selectedHeader = useMemo(
-        () => headerCategories.find(h => h._id === selectedHeaderId) || null,
-        [headerCategories, selectedHeaderId]
-    );
-
-    const availableCategories = useMemo(() => {
-        if (pageType === 'home') {
-            return headerCategories.flatMap((header) => header.children || []);
-        }
-        return selectedHeader?.children || [];
-    }, [headerCategories, pageType, selectedHeader]);
-
     // Perf audit Phase 8: migrated `headerCategories` and `sections` to
     // React Query. `headerCategories` is a one-time tree fetch; `sections`
     // is parameterized by pageType/selectedHeaderId, matching the original
@@ -91,6 +79,18 @@ const ContentManager = () => {
             return [];
         },
     });
+
+    const selectedHeader = useMemo(
+        () => headerCategories.find(h => h._id === selectedHeaderId) || null,
+        [headerCategories, selectedHeaderId]
+    );
+
+    const availableCategories = useMemo(() => {
+        if (pageType === 'home') {
+            return headerCategories.flatMap((header) => header.children || []);
+        }
+        return selectedHeader?.children || [];
+    }, [headerCategories, pageType, selectedHeader]);
 
     useEffect(() => {
         if (isHeaderCategoriesError) showToast('Failed to load header categories', 'error');

@@ -27,6 +27,18 @@ const CategoryHierarchy = () => {
   // On mobile, only one column is shown at a time (single-panel + back nav)
   const [mobileColumn, setMobileColumn] = useState("headers"); // "headers" | "level2" | "subs"
 
+  // Perf audit Phase 8: migrated to React Query — this is a read-only
+  // browser (no create/edit here), so a single cached query with no
+  // mutation-invalidation path is a direct swap.
+  const { data: categories = [], isLoading, isError } = useQuery({
+    queryKey: ["admin", "categoryTree"],
+    queryFn: async () => {
+      const res = await adminApi.getCategoryTree();
+      if (!res.data.success) return [];
+      return res.data.results || res.data.result || [];
+    },
+  });
+
   // Stats
   const stats = useMemo(() => {
     let headers = 0;
@@ -44,18 +56,6 @@ const CategoryHierarchy = () => {
     traverse(categories);
     return { headers, l2, subs, total: headers + l2 + subs };
   }, [categories]);
-
-  // Perf audit Phase 8: migrated to React Query — this is a read-only
-  // browser (no create/edit here), so a single cached query with no
-  // mutation-invalidation path is a direct swap.
-  const { data: categories = [], isLoading, isError } = useQuery({
-    queryKey: ["admin", "categoryTree"],
-    queryFn: async () => {
-      const res = await adminApi.getCategoryTree();
-      if (!res.data.success) return [];
-      return res.data.results || res.data.result || [];
-    },
-  });
 
   useEffect(() => {
     if (isError) toast.error("Failed to fetch category hierarchy");

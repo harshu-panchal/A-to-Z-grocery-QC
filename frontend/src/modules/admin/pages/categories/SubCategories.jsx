@@ -10,6 +10,7 @@ import {
   Search,
   Edit,
   Trash,
+  X,
   Image,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
