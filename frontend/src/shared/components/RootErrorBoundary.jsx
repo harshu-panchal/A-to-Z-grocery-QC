@@ -1,14 +1,21 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useRouteError, useNavigate, isRouteErrorResponse } from 'react-router-dom';
 import { ShoppingBag, RefreshCw, Home, AlertCircle } from 'lucide-react';
 import { useSettings } from '@core/context/SettingsContext';
+import { isChunkLoadError, reloadOnceForChunkError } from '@core/utils/chunkReload';
 
 const RootErrorBoundary = () => {
     const error = useRouteError();
     const navigate = useNavigate();
     const { settings } = useSettings();
     const appName = settings?.appName || 'App';
+    const staleChunk = isChunkLoadError(error);
     console.error('Route Error:', error);
+
+    // A stale-deploy chunk failure is fixed by reloading; do it automatically.
+    useEffect(() => {
+        if (staleChunk) reloadOnceForChunkError();
+    }, [staleChunk]);
 
     let errorMessage = "An unexpected error occurred.";
     let errorStatus = 500;
@@ -16,6 +23,8 @@ const RootErrorBoundary = () => {
     if (isRouteErrorResponse(error)) {
         errorStatus = error.status;
         errorMessage = error.statusText || error.data?.message || errorMessage;
+    } else if (staleChunk) {
+        errorMessage = "A new version of the app is available. Please refresh the page.";
     } else if (error instanceof Error) {
         errorMessage = error.message;
     }
@@ -33,7 +42,7 @@ const RootErrorBoundary = () => {
                 <div className="space-y-3">
                     <button
                         onClick={() => window.location.reload()}
-                        className="w-full bg-primary-600 hover:bg-primary-700 text-white font-semibold py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-primary-200"
+                        className="w-full bg-primary hover:bg-[#0a6d1a] text-white font-semibold py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-100"
                     >
                         <RefreshCw className="w-5 h-5" />
                         Refresh Page
@@ -55,7 +64,7 @@ const RootErrorBoundary = () => {
                 </div>
             </div>
 
-            <div className="mt-8 flex items-center gap-2 text-primary-600 font-semibold">
+            <div className="mt-8 flex items-center gap-2 text-primary font-semibold">
                 <ShoppingBag className="w-6 h-6" />
                 <span className="text-xl tracking-tight">{appName}</span>
             </div>

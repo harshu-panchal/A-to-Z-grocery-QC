@@ -18,19 +18,21 @@
                     "value": "public, max-age=31536000, immutable"
                 }
             ]
+        },
+        {
+            "source": "/index.html",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-cache, must-revalidate"
+                }
+            ]
         }
     ],
-    "routes": [
+    "rewrites": [
         {
-            "src": "/firebase-messaging-sw\\.js",
-            "dest": "/firebase-messaging-sw.js"
-        },
-        {
-            "handle": "filesystem"
-        },
-        {
-            "src": "/(.*)",
-            "dest": "/index.html"
+            "source": "/((?!assets/|firebase-messaging-sw\\.js).*)",
+            "destination": "/index.html"
         }
     ]
 }

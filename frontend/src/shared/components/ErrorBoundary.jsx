@@ -1,5 +1,6 @@
 import React, { Component } from 'react';
 import { AlertCircle, RefreshCw, Home, ShoppingBag } from 'lucide-react';
+import { isChunkLoadError, reloadOnceForChunkError } from '@core/utils/chunkReload';
 
 class ErrorBoundary extends Component {
     constructor(props) {
@@ -13,6 +14,7 @@ class ErrorBoundary extends Component {
 
     componentDidCatch(error, errorInfo) {
         console.error("Uncaught error:", error, errorInfo);
+        if (isChunkLoadError(error)) reloadOnceForChunkError();
     }
 
     render() {
