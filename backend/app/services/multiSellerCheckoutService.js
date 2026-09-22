@@ -271,7 +271,7 @@ export async function processMultiSellerCheckout(params) {
           },
           name: product.name,
           quantity: item.quantity,
-          price: product.salePrice || product.price,
+          price: product.sellingPrice || product.mrp,
           variantSlot: item.variantSlot,
           image: product.mainImage,
         };

@@ -38,8 +38,8 @@ const ProductCard = React.memo(
       const displayedOriginal = Number(product?.originalPrice || 0);
 
       const matchesDisplayedPrice = (variant) => {
-        const mrp = Number(variant?.price || 0);
-        const sale = Number(variant?.salePrice || 0);
+        const mrp = Number(variant?.mrp || 0);
+        const sale = Number(variant?.sellingPrice || 0);
         const effective = sale > 0 && sale < mrp ? sale : mrp;
 
         if (Number.isFinite(displayedOriginal) && displayedOriginal > displayed) {
@@ -55,8 +55,8 @@ const ProductCard = React.memo(
       const picked = variants.find(matchesDisplayedPrice) || variants[0];
       const key = String(picked?.sku || picked?.name || "").trim();
       
-      const variantMrp = Number(picked?.price || 0);
-      const variantSale = Number(picked?.salePrice || 0);
+      const variantMrp = Number(picked?.mrp || 0);
+      const variantSale = Number(picked?.sellingPrice || 0);
       const hasDiscount = variantSale > 0 && variantSale < variantMrp;
       
       return {

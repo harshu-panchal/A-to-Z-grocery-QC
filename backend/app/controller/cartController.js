@@ -4,8 +4,11 @@ import handleResponse from "../utils/helper.js";
 import { getApprovedOrLegacyFilter } from "../services/productModerationService.js";
 import logger from "../services/logger.js";
 
+// purchaseRate is seller/admin-only cost data and must never reach a
+// customer's cart — select variant subfields explicitly rather than the
+// whole `variants` subdocument so it can't leak through here.
 const CART_POPULATE_FIELDS =
-  "name slug price salePrice mainImage stock status headerId categoryId subcategoryId sellerId variants";
+  "name slug mrp sellingPrice mainImage stock status headerId categoryId subcategoryId sellerId variants.name variants.mrp variants.sellingPrice variants.stock variants.sku";
 
 const CUSTOMER_VISIBLE_PRODUCT_MATCH = {
   status: "active",

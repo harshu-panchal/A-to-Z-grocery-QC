@@ -331,11 +331,13 @@ function saleFromPrice(price) {
 function buildVariants(baseSku, basePrice, names) {
   return names.map((name, index) => {
     const multiplier = 1 + index * 0.5;
-    const price = Math.round(basePrice * multiplier);
+    const mrp = Math.round(basePrice * multiplier);
+    const sellingPrice = saleFromPrice(mrp);
     return {
       name,
-      price,
-      salePrice: saleFromPrice(price),
+      mrp,
+      sellingPrice,
+      purchaseRate: Math.round(sellingPrice * 0.75),
       stock: 50 + index * 10,
       sku: `${baseSku}-v${index + 1}`,
     };
@@ -429,8 +431,9 @@ async function seedProducts() {
         slug,
         sku,
         description: def.description || `${def.name} — quality pick under ${sub.name}.`,
-        price: primary.price,
-        salePrice: primary.salePrice,
+        mrp: primary.mrp,
+        sellingPrice: primary.sellingPrice,
+        purchaseRate: primary.purchaseRate,
         stock: variants.reduce((sum, v) => sum + Number(v.stock || 0), 0),
         lowStockAlert: 5,
         brand: def.brand || "Appzeto",

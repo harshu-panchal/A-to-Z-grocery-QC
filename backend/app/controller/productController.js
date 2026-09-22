@@ -63,6 +63,28 @@ function isCustomerVisibilityRequest(req) {
   return !role || (role !== "admin" && role !== "seller" && role !== "delivery");
 }
 
+// purchaseRate (cost price) and rackCode (warehouse location) are internal
+// to the seller/admin and must never reach customer- or delivery-facing
+// responses. Applied post-fetch (not via .select()) so caching stays
+// role-agnostic — see getProducts/getProductById.
+function stripInternalPricingFields(product) {
+  if (!product || typeof product !== "object") return product;
+  const { purchaseRate, rackCode, ...rest } = product;
+  if (Array.isArray(rest.variants)) {
+    rest.variants = rest.variants.map((variant) => {
+      if (!variant || typeof variant !== "object") return variant;
+      const { purchaseRate: _vpr, ...variantRest } = variant;
+      return variantRest;
+    });
+  }
+  return rest;
+}
+
+function isInternalPricingVisible(req) {
+  const role = String(req.user?.role || "").toLowerCase();
+  return role === "admin" || role === "seller";
+}
+
 function parseSellerIdFilters({ sellerId, sellerIds }) {
   if (typeof sellerIds === "string" && sellerIds.trim()) {
     return sellerIds
@@ -370,8 +392,8 @@ export const getProducts = async (req, res) => {
       oldest: { createdAt: 1 },
       "name-asc": { name: 1, createdAt: -1 },
       "name-desc": { name: -1, createdAt: -1 },
-      "price-asc": { price: 1, createdAt: -1 },
-      "price-desc": { price: -1, createdAt: -1 },
+      "price-asc": { mrp: 1, createdAt: -1 },
+      "price-desc": { mrp: -1, createdAt: -1 },
       "stock-asc": { stock: 1, createdAt: -1 },
       "stock-desc": { stock: -1, createdAt: -1 },
     };
@@ -381,7 +403,7 @@ export const getProducts = async (req, res) => {
       const [rawProducts, total] = await Promise.all([
         Product.find(finalQuery)
           .select(
-            "name slug description sku price salePrice stock brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants createdAt",
+            "name slug description sku mrp sellingPrice purchaseRate stock brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode createdAt",
           )
           // No .populate() — names resolved via cache-backed entityNameCache
           .sort(sortQuery)
@@ -446,6 +468,10 @@ export const getProducts = async (req, res) => {
       ? await getOrSet(buildProductListKey(req.query), fetchFn, getTTL("productList"))
       : await fetchFn();
 
+    if (!isInternalPricingVisible(req) && Array.isArray(result?.items)) {
+      result.items = result.items.map(stripInternalPricingFields);
+    }
+
     return handleResponse(res, 200, "Products fetched successfully", result);
   } catch (error) {
     return handleResponse(res, 500, error.message);
@@ -484,8 +510,8 @@ export const getSellerProducts = async (req, res) => {
       oldest: { createdAt: 1 },
       "name-asc": { name: 1, createdAt: -1 },
       "name-desc": { name: -1, createdAt: -1 },
-      "price-asc": { price: 1, createdAt: -1 },
-      "price-desc": { price: -1, createdAt: -1 },
+      "price-asc": { mrp: 1, createdAt: -1 },
+      "price-desc": { mrp: -1, createdAt: -1 },
       "stock-asc": { stock: 1, createdAt: -1 },
       "stock-desc": { stock: -1, createdAt: -1 },
     };
@@ -504,7 +530,7 @@ export const getSellerProducts = async (req, res) => {
     ] = await Promise.all([
       Product.find(query)
         .select(
-          "name slug description sku price salePrice stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants createdAt",
+          "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode createdAt",
         )
         .populate("headerId", "name")
         .populate("categoryId", "name")
@@ -1065,7 +1091,7 @@ export const getProductById = async (req, res) => {
       async () =>
         Product.findById(id)
           .select(
-            "name slug description sku price salePrice stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants createdAt",
+            "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode createdAt",
           )
           .populate("headerId", "name")
           .populate("categoryId", "name")
@@ -1093,8 +1119,11 @@ export const getProductById = async (req, res) => {
       }
     }
 
-    const payload = normalizeProductDocumentModeration(product, "detail");
-    
+    let payload = normalizeProductDocumentModeration(product, "detail");
+    if (!isInternalPricingVisible(req)) {
+      payload = stripInternalPricingFields(payload);
+    }
+
     if (req.user) {
         const userId = req.user.id;
         const purchase = await Order.findOne({
@@ -1234,8 +1263,8 @@ export const getModerationProducts = async (req, res) => {
       oldest: { createdAt: 1 },
       "name-asc": { name: 1, createdAt: -1 },
       "name-desc": { name: -1, createdAt: -1 },
-      "price-asc": { price: 1, createdAt: -1 },
-      "price-desc": { price: -1, createdAt: -1 },
+      "price-asc": { mrp: 1, createdAt: -1 },
+      "price-desc": { mrp: -1, createdAt: -1 },
     };
     const sortQuery = sortMap[String(sort || "newest").toLowerCase()] || sortMap.newest;
 
@@ -1248,7 +1277,7 @@ export const getModerationProducts = async (req, res) => {
       await Promise.all([
         Product.find(moderatedQuery)
           .select(
-            "name slug description sku price salePrice stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants createdAt",
+            "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode createdAt",
           )
           .populate("headerId", "name")
           .populate("categoryId", "name")

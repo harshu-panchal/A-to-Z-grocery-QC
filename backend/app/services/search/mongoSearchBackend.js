@@ -62,12 +62,12 @@ export class MongoSearchBackend extends SearchBackend {
     
     // Price range filter
     if (query.priceMin !== undefined || query.priceMax !== undefined) {
-      mongoQuery.price = {};
+      mongoQuery.mrp = {};
       if (query.priceMin !== undefined) {
-        mongoQuery.price.$gte = Number(query.priceMin);
+        mongoQuery.mrp.$gte = Number(query.priceMin);
       }
       if (query.priceMax !== undefined) {
-        mongoQuery.price.$lte = Number(query.priceMax);
+        mongoQuery.mrp.$lte = Number(query.priceMax);
       }
     }
     
@@ -105,8 +105,8 @@ export class MongoSearchBackend extends SearchBackend {
       const projection = {
         _id: 1,
         name: 1,
-        price: 1,
-        salePrice: 1,
+        mrp: 1,
+        sellingPrice: 1,
         mainImage: 1,
         sellerId: 1,
         stock: 1,

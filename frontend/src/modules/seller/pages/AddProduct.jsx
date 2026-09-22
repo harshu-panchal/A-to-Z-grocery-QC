@@ -44,8 +44,9 @@ const AddProduct = () => {
     slug: "",
     sku: "",
     description: "",
-    price: "",
-    salePrice: "",
+    mrp: "",
+    sellingPrice: "",
+    purchaseRate: "",
     stock: "",
     lowStockAlert: 5,
     category: "",
@@ -55,14 +56,16 @@ const AddProduct = () => {
     tags: "",
     weight: "",
     brand: "",
+    rackCode: "",
     mainImage: null,
     galleryImages: [],
     variants: [
       {
         id: Date.now(),
         name: "",
-        price: "",
-        salePrice: "",
+        mrp: "",
+        sellingPrice: "",
+        purchaseRate: "",
         stock: "",
         sku: "",
       },
@@ -129,20 +132,20 @@ const AddProduct = () => {
     }
 
     const firstVariant = formData.variants[0] || {};
-    if (!firstVariant.price || !firstVariant.stock) {
-      toast.error("Main variant must have price and stock");
+    if (!firstVariant.mrp || !firstVariant.stock) {
+      toast.error("Main variant must have MRP and stock");
       return;
     }
 
-    // Audit fix: nothing blocked a sale price above the base price — a
+    // Audit fix: nothing blocked a selling price above MRP — a
     // fat-fingered entry here shows as a live "discount" on the customer
     // product page instead of the markup it actually is.
     const invalidVariantIndex = (formData.variants || []).findIndex(
-      (v) => v.salePrice && Number(v.salePrice) >= Number(v.price),
+      (v) => v.sellingPrice && Number(v.sellingPrice) >= Number(v.mrp),
     );
     if (invalidVariantIndex !== -1) {
       toast.error(
-        `Sale price must be lower than the regular price (variant ${invalidVariantIndex + 1})`,
+        `Selling price must be lower than the MRP (variant ${invalidVariantIndex + 1})`,
       );
       return;
     }
@@ -159,10 +162,12 @@ const AddProduct = () => {
       data.append("brand", formData.brand);
       data.append("weight", formData.weight);
       data.append("status", formData.status);
+      data.append("rackCode", formData.rackCode || "");
 
       // Map top-level price/stock from first variant for indexing/listing
-      data.append("price", firstVariant.price);
-      data.append("salePrice", firstVariant.salePrice || 0);
+      data.append("mrp", firstVariant.mrp);
+      data.append("sellingPrice", firstVariant.sellingPrice || 0);
+      data.append("purchaseRate", firstVariant.purchaseRate || 0);
       data.append("stock", firstVariant.stock);
 
       // Category IDs
@@ -373,6 +378,19 @@ const AddProduct = () => {
                     placeholder="AUTO-GENERATED"
                   />
                 </div>
+                <div className="space-y-1.5 flex flex-col">
+                  <label className="text-[10px] sm:text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
+                    Rack Code
+                  </label>
+                  <input
+                    value={formData.rackCode}
+                    onChange={(e) =>
+                      setFormData({ ...formData, rackCode: e.target.value })
+                    }
+                    className="w-full px-4 py-2.5 bg-slate-100 border-none rounded-md text-sm font-mono font-bold outline-none ring-primary/5 focus:ring-2 transition-all"
+                    placeholder="e.g. A-12-3"
+                  />
+                </div>
               </div>
             </div>
           )}
@@ -397,8 +415,9 @@ const AddProduct = () => {
                         {
                           id: Date.now(),
                           name: "",
-                          price: "",
-                          salePrice: "",
+                          mrp: "",
+                          sellingPrice: "",
+                          purchaseRate: "",
                           stock: "",
                           sku: makeSku(prev.name, prev.variants.length + 1),
                         },
@@ -416,7 +435,7 @@ const AddProduct = () => {
                   <div
                     key={variant.id}
                     className="p-4 bg-slate-50 rounded-2xl border border-slate-100 grid grid-cols-1 md:grid-cols-12 gap-4 items-end group relative">
-                    <div className="col-span-12 md:col-span-3 space-y-1">
+                    <div className="col-span-12 md:col-span-2 space-y-1">
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
                         Variant Name
                       </label>
@@ -441,7 +460,7 @@ const AddProduct = () => {
                     </div>
                     <div className="col-span-6 md:col-span-2 space-y-1">
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
-                        Price
+                        MRP
                       </label>
                       <input
                         type="number"
@@ -451,12 +470,12 @@ const AddProduct = () => {
                             e.preventDefault();
                           }
                         }}
-                        value={variant.price}
+                        value={variant.mrp}
                         onChange={(e) => {
                           const val = e.target.value;
                           if (val !== '' && Number(val) < 0) return;
                           const newVariants = [...formData.variants];
-                          newVariants[index].price = val;
+                          newVariants[index].mrp = val;
                           setFormData({ ...formData, variants: newVariants });
                         }}
                         placeholder="500"
@@ -465,7 +484,7 @@ const AddProduct = () => {
                     </div>
                     <div className="col-span-6 md:col-span-2 space-y-1">
                       <label className="text-[8px] font-bold text-primary uppercase tracking-widest ml-1">
-                        Sale
+                        Selling Price
                       </label>
                       <input
                         type="number"
@@ -475,16 +494,41 @@ const AddProduct = () => {
                             e.preventDefault();
                           }
                         }}
-                        value={variant.salePrice}
+                        value={variant.sellingPrice}
                         onChange={(e) => {
                           const val = e.target.value;
                           if (val !== '' && Number(val) < 0) return;
                           const newVariants = [...formData.variants];
-                          newVariants[index].salePrice = val;
+                          newVariants[index].sellingPrice = val;
                           setFormData({ ...formData, variants: newVariants });
                         }}
                         placeholder="450"
                         className="w-full px-3 py-2 bg-primary/5 ring-1 ring-primary/20 border-none rounded-xl text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-primary/20"
+                      />
+                    </div>
+                    <div className="col-span-6 md:col-span-2 space-y-1">
+                      <label className="text-[8px] font-bold text-amber-600 uppercase tracking-widest ml-1">
+                        Purchase Rate
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        onKeyDown={(e) => {
+                          if (['-', '+', 'e', 'E'].includes(e.key)) {
+                            e.preventDefault();
+                          }
+                        }}
+                        value={variant.purchaseRate}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val !== '' && Number(val) < 0) return;
+                          const newVariants = [...formData.variants];
+                          newVariants[index].purchaseRate = val;
+                          setFormData({ ...formData, variants: newVariants });
+                        }}
+                        placeholder="350"
+                        title="Only visible to you and the admin"
+                        className="w-full px-3 py-2 bg-amber-50 ring-1 ring-amber-200 border-none rounded-xl text-xs font-bold text-amber-700 outline-none focus:ring-2 focus:ring-amber-200"
                       />
                     </div>
                     <div className="col-span-6 md:col-span-2 space-y-1">
@@ -511,7 +555,7 @@ const AddProduct = () => {
                         className="w-full px-3 py-2 bg-white ring-1 ring-slate-200 border-none rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-primary/10"
                       />
                     </div>
-                    <div className="col-span-5 md:col-span-2 space-y-1">
+                    <div className="col-span-5 md:col-span-1 space-y-1">
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
                         Product Code
                       </label>

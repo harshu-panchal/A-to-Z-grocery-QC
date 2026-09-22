@@ -102,8 +102,9 @@ const ProductManagement = () => {
         slug: '',
         sku: '',
         description: '',
-        price: '',
-        salePrice: '',
+        mrp: '',
+        sellingPrice: '',
+        purchaseRate: '',
         stock: '',
         lowStockAlert: 5,
         unit: 'packet',
@@ -115,10 +116,11 @@ const ProductManagement = () => {
         tags: '',
         weight: '',
         brand: '',
+        rackCode: '',
         mainImage: null,
         galleryImages: [],
         variants: [
-            { id: Date.now(), name: 'Default', price: '', salePrice: '', stock: '', sku: '' }
+            { id: Date.now(), name: 'Default', mrp: '', sellingPrice: '', purchaseRate: '', stock: '', sku: '' }
         ]
     });
 
@@ -203,7 +205,7 @@ const ProductManagement = () => {
             return toast.error('Only product editing is allowed for admins');
         }
 
-        if (!formData.name || !formData.price || !formData.stock || !formData.header || !formData.categoryId || !formData.subcategoryId) {
+        if (!formData.name || !formData.mrp || !formData.stock || !formData.header || !formData.categoryId || !formData.subcategoryId) {
             return toast.error('Please fill all required fields, including categories');
         }
 
@@ -214,8 +216,9 @@ const ProductManagement = () => {
             data.append('slug', formData.slug);
             data.append('sku', formData.sku);
             data.append('description', formData.description);
-            data.append('price', Number(formData.price));
-            data.append('salePrice', Number(formData.salePrice) || 0);
+            data.append('mrp', Number(formData.mrp));
+            data.append('sellingPrice', Number(formData.sellingPrice) || 0);
+            data.append('purchaseRate', Number(formData.purchaseRate) || 0);
             data.append('stock', Number(formData.stock));
             data.append('lowStockAlert', Number(formData.lowStockAlert) || 5);
             data.append('unit', formData.unit);
@@ -226,6 +229,7 @@ const ProductManagement = () => {
             data.append('isFeatured', formData.isFeatured);
             data.append('brand', formData.brand);
             data.append('weight', formData.weight);
+            data.append('rackCode', formData.rackCode || '');
             data.append('tags', formData.tags);
             data.append('variants', JSON.stringify(formData.variants));
 
@@ -357,8 +361,9 @@ const ProductManagement = () => {
                 slug: item.slug || '',
                 sku: item.sku || '',
                 description: item.description || '',
-                price: item.price || '',
-                salePrice: item.salePrice || item.discountPrice || '',
+                mrp: item.mrp || '',
+                sellingPrice: item.sellingPrice || '',
+                purchaseRate: item.purchaseRate || '',
                 stock: item.stock || '',
                 lowStockAlert: item.lowStockAlert || 5,
                 unit: item.unit || 'packet',
@@ -370,14 +375,16 @@ const ProductManagement = () => {
                 tags: Array.isArray(item.tags) ? item.tags.join(', ') : item.tags || '',
                 weight: item.weight || '',
                 brand: item.brand || '',
+                rackCode: item.rackCode || '',
                 mainImage: item.mainImage || null,
                 galleryImages: item.galleryImages || item.images || [],
                 variants: (item.variants && item.variants.length > 0) ? item.variants.map(v => ({ ...v, id: v._id || Date.now() })) : [
                     {
                         id: Date.now(),
                         name: 'Default',
-                        price: item.price || '',
-                        salePrice: item.salePrice || item.discountPrice || '',
+                        mrp: item.mrp || '',
+                        sellingPrice: item.sellingPrice || '',
+                        purchaseRate: item.purchaseRate || '',
                         stock: item.stock || '',
                         sku: item.sku || ''
                     }
@@ -386,13 +393,13 @@ const ProductManagement = () => {
             setEditingItem(item);
         } else {
             setFormData({
-                name: '', slug: '', sku: '', description: '', price: '',
-                salePrice: '', stock: '', lowStockAlert: 5, unit: 'packet',
+                name: '', slug: '', sku: '', description: '', mrp: '',
+                sellingPrice: '', purchaseRate: '', stock: '', lowStockAlert: 5, unit: 'packet',
                 header: '', categoryId: '', subcategoryId: '', status: 'active',
-                isFeatured: false, tags: '', weight: '', brand: '',
+                isFeatured: false, tags: '', weight: '', brand: '', rackCode: '',
                 mainImage: null, galleryImages: [],
                 variants: [
-                    { id: Date.now(), name: 'Default', price: '', salePrice: '', stock: '', sku: '' }
+                    { id: Date.now(), name: 'Default', mrp: '', sellingPrice: '', purchaseRate: '', stock: '', sku: '' }
                 ]
             });
             setEditingItem(null);
@@ -845,6 +852,15 @@ const ProductManagement = () => {
                                                         placeholder="AUTO-GENERATED"
                                                     />
                                                 </div>
+                                                <div className="flex flex-col space-y-1.5">
+                                                    <label className="ml-1 text-[9px] font-bold uppercase tracking-widest text-slate-400">Rack Code</label>
+                                                    <input
+                                                        value={formData.rackCode}
+                                                        onChange={(e) => setFormData({ ...formData, rackCode: e.target.value })}
+                                                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-sm font-mono font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                                        placeholder="e.g. A-12-3"
+                                                    />
+                                                </div>
                                             </div>
                                         </div>
                                     )}
@@ -901,7 +917,7 @@ const ProductManagement = () => {
                                                 <h4 className="text-sm font-bold text-slate-900">Product Variants</h4>
                                                 <button
                                                     type="button"
-                                                    onClick={() => setFormData({ ...formData, variants: [...formData.variants, { id: Date.now(), name: '', price: '', salePrice: '', stock: '', sku: '' }] })}
+                                                    onClick={() => setFormData({ ...formData, variants: [...formData.variants, { id: Date.now(), name: '', mrp: '', sellingPrice: '', purchaseRate: '', stock: '', sku: '' }] })}
                                                     className="rounded-lg bg-danger/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-widest text-danger transition-colors hover:bg-danger/20"
                                                 >
                                                     + Add
@@ -910,7 +926,7 @@ const ProductManagement = () => {
                                             <div className="space-y-3">
                                                 {formData.variants.map((v, i) => (
                                                     <div key={v.id} className="rounded-xl border border-slate-100 bg-slate-50/80 p-4 shadow-sm">
-                                                        <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+                                                        <div className="grid grid-cols-1 gap-4 md:grid-cols-6">
                                                             <div className="space-y-1.5">
                                                                 <label className="ml-1 text-[8px] font-bold uppercase tracking-widest text-slate-400">Variant Name</label>
                                                                 <input
@@ -925,13 +941,13 @@ const ProductManagement = () => {
                                                                 />
                                                             </div>
                                                             <div className="space-y-1.5">
-                                                                <label className="ml-1 text-[8px] font-bold uppercase tracking-widest text-slate-400">Price</label>
+                                                                <label className="ml-1 text-[8px] font-bold uppercase tracking-widest text-slate-400">MRP</label>
                                                                 <input
                                                                     type="number"
-                                                                    value={v.price}
+                                                                    value={v.mrp}
                                                                     onChange={e => {
                                                                         const news = [...formData.variants];
-                                                                        news[i].price = e.target.value;
+                                                                        news[i].mrp = e.target.value;
                                                                         setFormData({ ...formData, variants: news });
                                                                     }}
                                                                     placeholder="200"
@@ -939,17 +955,32 @@ const ProductManagement = () => {
                                                                 />
                                                             </div>
                                                             <div className="space-y-1.5">
-                                                                <label className="ml-1 text-[8px] font-bold uppercase tracking-widest text-primary">Sale Price</label>
+                                                                <label className="ml-1 text-[8px] font-bold uppercase tracking-widest text-primary">Selling Price</label>
                                                                 <input
                                                                     type="number"
-                                                                    value={v.salePrice}
+                                                                    value={v.sellingPrice}
                                                                     onChange={e => {
                                                                         const news = [...formData.variants];
-                                                                        news[i].salePrice = e.target.value;
+                                                                        news[i].sellingPrice = e.target.value;
                                                                         setFormData({ ...formData, variants: news });
                                                                     }}
                                                                     placeholder="150"
                                                                     className="w-full rounded-md border border-primary/20 bg-primary/5 px-3 py-2.5 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-1.5">
+                                                                <label className="ml-1 text-[8px] font-bold uppercase tracking-widest text-amber-600">Purchase Rate</label>
+                                                                <input
+                                                                    type="number"
+                                                                    value={v.purchaseRate}
+                                                                    onChange={e => {
+                                                                        const news = [...formData.variants];
+                                                                        news[i].purchaseRate = e.target.value;
+                                                                        setFormData({ ...formData, variants: news });
+                                                                    }}
+                                                                    placeholder="100"
+                                                                    title="Only visible to sellers and admins"
+                                                                    className="w-full rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
                                                                 />
                                                             </div>
                                                             <div className="space-y-1.5">
@@ -1208,14 +1239,24 @@ const ProductManagement = () => {
                                 ),
                             },
                             {
-                                key: 'price',
+                                key: 'mrp',
                                 header: 'Unit Price',
                                 align: 'center',
                                 cell: (v) => (
                                     <div className="flex flex-col items-center">
-                                        <span className={cn("text-xs font-bold", v.salePrice > 0 ? "scale-90 text-slate-400 line-through" : "text-slate-900")}>₹{v.price}</span>
-                                        {v.salePrice > 0 && <span className="text-xs font-bold text-primary">₹{v.salePrice}</span>}
+                                        <span className={cn("text-xs font-bold", v.sellingPrice > 0 ? "scale-90 text-slate-400 line-through" : "text-slate-900")}>₹{v.mrp}</span>
+                                        {v.sellingPrice > 0 && <span className="text-xs font-bold text-primary">₹{v.sellingPrice}</span>}
                                     </div>
+                                ),
+                            },
+                            {
+                                key: 'purchaseRate',
+                                header: 'Purchase Rate',
+                                align: 'center',
+                                cell: (v) => (
+                                    <span className="text-xs font-bold text-amber-700">
+                                        {v.purchaseRate ? `₹${v.purchaseRate}` : '—'}
+                                    </span>
                                 ),
                             },
                             {

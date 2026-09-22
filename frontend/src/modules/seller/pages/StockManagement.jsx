@@ -117,7 +117,7 @@ const StockManagement = () => {
         { label: 'Total Inventory', value: inventory.reduce((acc, item) => acc + item.stock, 0), icon: HiOutlineCube, color: 'text-primary', bg: 'bg-primary/10', status: 'All' },
         { label: 'Low Stock Items', value: inventory.filter(i => i.stock > 0 && i.stock <= i.threshold).length, icon: HiOutlineExclamationTriangle, color: 'text-warning', bg: 'bg-warning/10', status: 'Low Stock' },
         { label: 'Out of Stock', value: inventory.filter(i => i.stock === 0).length, icon: HiOutlineArchiveBoxXMark, color: 'text-danger', bg: 'bg-danger/10', status: 'Out of Stock' },
-        { label: 'Stock Valuation', value: `₹${inventory.reduce((acc, item) => acc + (item.stock * item.price), 0).toLocaleString()}`, icon: HiOutlineArrowsUpDown, color: 'text-success', bg: 'bg-success/10', status: 'In Stock' }
+        { label: 'Stock Valuation', value: `₹${inventory.reduce((acc, item) => acc + (item.stock * item.mrp), 0).toLocaleString()}`, icon: HiOutlineArrowsUpDown, color: 'text-success', bg: 'bg-success/10', status: 'In Stock' }
     ], [inventory]);
 
     const filteredInventory = useMemo(() => {
@@ -214,8 +214,8 @@ const StockManagement = () => {
         },
         {
             header: 'Price',
-            key: 'price',
-            cell: (item) => <span className="text-sm font-bold text-slate-900">₹{item.price}</span>,
+            key: 'mrp',
+            cell: (item) => <span className="text-sm font-bold text-slate-900">₹{item.mrp}</span>,
         },
         {
             header: 'Actions',

@@ -23,12 +23,17 @@ const productSchema = new mongoose.Schema(
             type: String,
             trim: true,
         },
-        price: {
+        mrp: {
             type: Number,
             required: true,
             min: 0,
         },
-        salePrice: {
+        sellingPrice: {
+            type: Number,
+            default: 0,
+            min: 0,
+        },
+        purchaseRate: {
             type: Number,
             default: 0,
             min: 0,
@@ -41,6 +46,10 @@ const productSchema = new mongoose.Schema(
         lowStockAlert: {
             type: Number,
             default: 5,
+        },
+        rackCode: {
+            type: String,
+            trim: true,
         },
         brand: {
             type: String,
@@ -116,8 +125,9 @@ const productSchema = new mongoose.Schema(
         variants: [
             {
                 name: String,
-                price: Number,
-                salePrice: Number,
+                mrp: Number,
+                sellingPrice: Number,
+                purchaseRate: Number,
                 stock: Number,
                 sku: String,
             }

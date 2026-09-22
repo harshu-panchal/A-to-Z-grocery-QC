@@ -1,4 +1,4 @@
-import Order from "../models/order.js";
+﻿import Order from "../models/order.js";
 import Delivery from "../models/delivery.js";
 import Seller from "../models/seller.js";
 import CheckoutGroup from "../models/checkoutGroup.js";
@@ -109,7 +109,7 @@ export async function fetchSellerOrdersPage({
       .skip(skip)
       .limit(limit)
       .populate("customer", "name phone")
-      .populate("items.product", "name mainImage price salePrice")
+      .populate("items.product", "name mainImage mrp sellingPrice")
       .populate("deliveryBoy", "name phone")
       .populate("seller", "shopName name")
       .lean(),
@@ -265,7 +265,7 @@ export async function fetchAvailableOrdersForDelivery({
   // rider. The assigned-return-pickup lookup and the rider lookup below are
   // independent of each other (neither reads the other's result), so they
   // run concurrently instead of as two sequential round-trips. Output is
-  // identical — only the timing changes.
+  // identical â€” only the timing changes.
   const [assignedReturnPickupsRaw, deliveryPartner] = await Promise.all([
     showReturns
       ? Order.find({
@@ -302,8 +302,8 @@ export async function fetchAvailableOrdersForDelivery({
   const { sellerIds } = await resolveNearbySellerIds(deliveryPartner, userId);
 
   // Perf audit BE-D5: these three queries all depend only on `sellerIds`
-  // resolved above — none of them depends on either of the others' results
-  // — so they run concurrently instead of sequentially. Same queries, same
+  // resolved above â€” none of them depends on either of the others' results
+  // â€” so they run concurrently instead of sequentially. Same queries, same
   // results, just no longer waiting on each other's round-trip.
   const now = new Date();
   const [v2OrdersRaw, legacyOrders, returnPickupsRaw] = await Promise.all([
@@ -342,7 +342,7 @@ export async function fetchAvailableOrdersForDelivery({
       ? Order.find({
           skippedBy: { $nin: [userId] },
           $or: [
-            // Manual reassign queue — seller picked "no specific rider" but
+            // Manual reassign queue â€” seller picked "no specific rider" but
             // the broadcast loop hasn't been kicked off yet (or it expired
             // out). These stay visible until a seller re-assigns.
             {
@@ -350,7 +350,7 @@ export async function fetchAvailableOrdersForDelivery({
               returnDeliveryBoy: null,
               seller: { $in: sellerIds },
             },
-            // Active broadcast — only show while the assignment window is
+            // Active broadcast â€” only show while the assignment window is
             // still open. Legacy rows without a stored expiry stay visible
             // for backwards compatibility.
             {
@@ -363,7 +363,7 @@ export async function fetchAvailableOrdersForDelivery({
                 { returnSearchExpiresAt: { $gt: now } },
               ],
             },
-            // Mine to handle right now — always show, regardless of expiry.
+            // Mine to handle right now â€” always show, regardless of expiry.
             {
               returnDeliveryBoy: userId,
             },
@@ -423,7 +423,7 @@ export async function getCustomerOrders(customerId, pagination) {
           .sort({ createdAt: -1, _id: -1 })
           .skip(skip)
           .limit(limit)
-          .populate("items.product", "name mainImage price salePrice")
+          .populate("items.product", "name mainImage mrp sellingPrice")
           .lean(),
         Order.countDocuments({ customer: customerId }),
       ]);
@@ -455,8 +455,8 @@ export async function getOrderWithAccess(orderId, userId, role) {
 
   let order = await Order.findOne(orderKey)
     .populate("customer", "name email phone")
-    .populate("items.product", "name mainImage price salePrice")
-    .populate("returnItems.product", "name mainImage price salePrice")
+    .populate("items.product", "name mainImage mrp sellingPrice")
+    .populate("returnItems.product", "name mainImage mrp sellingPrice")
     .populate("deliveryBoy", "name phone")
     .populate("returnDeliveryBoy", "name phone")
     .populate("seller", "shopName name address phone location")

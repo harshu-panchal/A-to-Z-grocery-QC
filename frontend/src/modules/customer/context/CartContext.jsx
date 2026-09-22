@@ -44,12 +44,16 @@ export const CartProvider = ({ children }) => {
     });
   };
 
+  // Reads support both the raw backend product shape (mrp/sellingPrice,
+  // from an authenticated cart sync) and the page-level normalized shape
+  // used for optimistic guest-cart adds (price/originalPrice — see e.g.
+  // Home.jsx's product mapping) via fallback.
   const resolveVariantPricing = (product, variantSku = "") => {
     const normalizedKey = String(variantSku || "").trim();
     if (!normalizedKey) {
       return {
-        price: Number(product?.price || 0),
-        salePrice: Number(product?.salePrice || 0),
+        price: Number(product?.mrp ?? product?.price ?? 0),
+        salePrice: Number(product?.sellingPrice ?? product?.salePrice ?? 0),
         variantName: "",
       };
     }
@@ -61,8 +65,8 @@ export const CartProvider = ({ children }) => {
       return (sku && sku === normalizedKey) || (!sku && name === normalizedKey) || name === normalizedKey;
     });
     return {
-      price: Number(hit?.price || product?.price || 0),
-      salePrice: Number(hit?.salePrice || 0),
+      price: Number(hit?.mrp ?? hit?.price ?? product?.mrp ?? product?.price ?? 0),
+      salePrice: Number(hit?.sellingPrice ?? hit?.salePrice ?? 0),
       variantName: String(hit?.name || "").trim(),
     };
   };

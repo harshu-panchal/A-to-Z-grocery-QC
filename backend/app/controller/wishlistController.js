@@ -28,7 +28,9 @@ async function fetchPopulatedWishlist(wishlistId) {
   const wishlist = await Wishlist.findById(wishlistId)
     .populate({
       path: "products",
-      select: "name slug price salePrice originalPrice discount variants mainImage stock status approvalStatus unit weight",
+      // purchaseRate is seller/admin-only cost data — select variant
+      // subfields explicitly so it can't leak into a customer's wishlist.
+      select: "name slug mrp sellingPrice variants.name variants.mrp variants.sellingPrice variants.stock variants.sku mainImage stock status approvalStatus unit weight",
       match: CUSTOMER_VISIBLE_PRODUCT_MATCH,
     })
     .lean();

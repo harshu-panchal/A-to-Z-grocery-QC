@@ -279,20 +279,20 @@ const ProductDetailPage = () => {
 
                         <div className="flex items-baseline gap-4 mb-5">
                             {/* Audit fix: previously rendered `salePrice || price` unconditionally
-                                — if a seller data-entry mistake set salePrice above price, the
-                                customer would see the inflated salePrice as "the price" with no
+                                — if a seller data-entry mistake set sellingPrice above mrp, the
+                                customer would see the inflated sellingPrice as "the price" with no
                                 strikethrough/discount badge (those are correctly guarded below).
-                                Only treat salePrice as the displayed price when it's a genuine
+                                Only treat sellingPrice as the displayed price when it's a genuine
                                 discount. */}
                             <span className="text-4xl font-black text-primary">
-                                ₹{(product.salePrice && product.salePrice < product.price) ? product.salePrice : product.price}
+                                ₹{(product.sellingPrice && product.sellingPrice < product.mrp) ? product.sellingPrice : product.mrp}
                             </span>
-                            {(product.salePrice && product.salePrice < product.price) && (
-                                <span className="text-lg text-slate-400 line-through font-bold">₹{product.price}</span>
+                            {(product.sellingPrice && product.sellingPrice < product.mrp) && (
+                                <span className="text-lg text-slate-400 line-through font-bold">₹{product.mrp}</span>
                             )}
-                            {product.salePrice && product.salePrice < product.price && (
+                            {product.sellingPrice && product.sellingPrice < product.mrp && (
                                 <span className="text-xs bg-red-50 text-red-500 px-2 py-1 rounded-lg font-black uppercase">
-                                    {Math.round(((product.price - product.salePrice) / product.price) * 100)}% OFF
+                                    {Math.round(((product.mrp - product.sellingPrice) / product.mrp) * 100)}% OFF
                                 </span>
                             )}
                         </div>

@@ -21,8 +21,8 @@
  * @typedef {Object} ProductSearchHit
  * @property {string} _id - Product ID
  * @property {string} name - Product name
- * @property {number} price - Product price
- * @property {number} salePrice - Sale price
+ * @property {number} mrp - Product MRP
+ * @property {number} sellingPrice - Selling price
  * @property {string} mainImage - Main image URL
  * @property {string} sellerId - Seller ID
  * @property {number} stock - Stock quantity

@@ -224,8 +224,9 @@ const ProductManagement = () => {
     slug: "",
     sku: "",
     description: "",
-    price: "",
-    salePrice: "",
+    mrp: "",
+    sellingPrice: "",
+    purchaseRate: "",
     stock: "",
     lowStockAlert: 5,
     category: "",
@@ -235,10 +236,11 @@ const ProductManagement = () => {
     tags: "",
     weight: "",
     brand: "",
+    rackCode: "",
     mainImage: null,
     galleryImages: [],
     variants: [
-      { id: Date.now(), name: "", price: "", salePrice: "", stock: "", sku: "" },
+      { id: Date.now(), name: "", mrp: "", sellingPrice: "", purchaseRate: "", stock: "", sku: "" },
     ],
   });
 
@@ -278,7 +280,7 @@ const ProductManagement = () => {
       if (filterStatus === "Out of Stock") matchesStatus = p.stock === 0;
 
       let matchesPrice = true;
-      const effectivePrice = Number(p.salePrice ?? p.price ?? 0);
+      const effectivePrice = Number(p.sellingPrice ?? p.mrp ?? 0);
       if (min !== null && !Number.isNaN(min)) {
         matchesPrice = matchesPrice && effectivePrice >= min;
       }
@@ -334,7 +336,7 @@ const ProductManagement = () => {
     try {
       if (
         !formData.name ||
-        formData.price === "" || formData.price === undefined ||
+        formData.mrp === "" || formData.mrp === undefined ||
         formData.stock === "" || formData.stock === undefined ||
         !formData.header ||
         !formData.category ||
@@ -344,16 +346,16 @@ const ProductManagement = () => {
         return;
       }
 
-      // Audit fix: nothing blocked a sale price above the base price — a
+      // Audit fix: nothing blocked a selling price above MRP — a
       // fat-fingered entry shows as a live "discount" on the customer
       // product page instead of the markup it actually is.
       if (
-        formData.salePrice !== "" &&
-        formData.salePrice !== undefined &&
-        formData.salePrice !== null &&
-        Number(formData.salePrice) >= Number(formData.price)
+        formData.sellingPrice !== "" &&
+        formData.sellingPrice !== undefined &&
+        formData.sellingPrice !== null &&
+        Number(formData.sellingPrice) >= Number(formData.mrp)
       ) {
-        toast.error("Sale price must be lower than the regular price");
+        toast.error("Selling price must be lower than the MRP");
         return;
       }
 
@@ -362,8 +364,9 @@ const ProductManagement = () => {
       data.append("slug", formData.slug);
       data.append("sku", formData.sku);
       data.append("description", formData.description);
-      data.append("price", Number(formData.price));
-      data.append("salePrice", Number(formData.salePrice) || 0);
+      data.append("mrp", Number(formData.mrp));
+      data.append("sellingPrice", Number(formData.sellingPrice) || 0);
+      data.append("purchaseRate", Number(formData.purchaseRate) || 0);
       data.append("stock", Number(formData.stock));
       data.append("headerId", formData.header);
       data.append("categoryId", formData.category);
@@ -371,6 +374,7 @@ const ProductManagement = () => {
       data.append("status", formData.status);
       data.append("brand", formData.brand);
       data.append("weight", formData.weight);
+      data.append("rackCode", formData.rackCode || "");
       data.append("tags", formData.tags);
       data.append("variants", JSON.stringify(formData.variants));
 
@@ -457,8 +461,9 @@ const ProductManagement = () => {
         slug: item.slug || "",
         sku: item.sku || "",
         description: item.description || "",
-        price: item.price ?? "",
-        salePrice: item.salePrice ?? "",
+        mrp: item.mrp ?? "",
+        sellingPrice: item.sellingPrice ?? "",
+        purchaseRate: item.purchaseRate ?? "",
         stock: item.stock ?? "",
         lowStockAlert: item.lowStockAlert ?? 5,
         header: item.headerId?._id || item.headerId || "",
@@ -468,14 +473,16 @@ const ProductManagement = () => {
         tags: Array.isArray(item.tags) ? item.tags.join(", ") : item.tags || "",
         weight: item.weight || "",
         brand: item.brand || "",
+        rackCode: item.rackCode || "",
         mainImage: item.mainImage || null,
         galleryImages: item.galleryImages || [],
         variants: (item.variants && item.variants.length > 0) ? item.variants.map(v => ({ ...v, id: v._id || Date.now() })) : [
           {
             id: Date.now(),
             name: "",
-            price: item.price ?? "",
-            salePrice: item.salePrice ?? "",
+            mrp: item.mrp ?? "",
+            sellingPrice: item.sellingPrice ?? "",
+            purchaseRate: item.purchaseRate ?? "",
             stock: item.stock ?? "",
             sku: item.sku || "",
           },
@@ -488,8 +495,9 @@ const ProductManagement = () => {
         slug: "",
         sku: "",
         description: "",
-        price: "",
-        salePrice: "",
+        mrp: "",
+        sellingPrice: "",
+        purchaseRate: "",
         stock: "",
         lowStockAlert: 5,
         category: "",
@@ -498,14 +506,16 @@ const ProductManagement = () => {
         tags: "",
         weight: "",
         brand: "",
+        rackCode: "",
         mainImage: null,
         galleryImages: [],
         variants: [
           {
             id: Date.now(),
             name: "",
-            price: "",
-            salePrice: "",
+            mrp: "",
+            sellingPrice: "",
+            purchaseRate: "",
             stock: "",
             sku: "",
           },
@@ -986,6 +996,15 @@ const ProductManagement = () => {
                             placeholder="AUTO-GENERATED"
                           />
                         </div>
+                        <div className="space-y-1.5 flex flex-col">
+                          <label className="text-xs font-medium text-slate-700">Rack Code</label>
+                          <input
+                            value={formData.rackCode}
+                            onChange={(e) => setFormData({ ...formData, rackCode: e.target.value })}
+                            className="w-full rounded-md border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-mono font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                            placeholder="e.g. A-12-3"
+                          />
+                        </div>
                       </div>
                     </div>
                   )}
@@ -1094,7 +1113,7 @@ const ProductManagement = () => {
                               ...prev,
                               variants: [
                                 ...prev.variants,
-                                { id: Date.now(), name: "", price: "", salePrice: "", stock: "", sku: makeSku(prev.name, prev.variants.length + 1) },
+                                { id: Date.now(), name: "", mrp: "", sellingPrice: "", purchaseRate: "", stock: "", sku: makeSku(prev.name, prev.variants.length + 1) },
                               ],
                             }))
                           }
@@ -1105,7 +1124,7 @@ const ProductManagement = () => {
                       </div>
                       <div className="space-y-3">
                         {formData.variants.map((v, i) => (
-                          <div key={v.id} className="grid grid-cols-1 items-end gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3.5 md:grid-cols-6">
+                          <div key={v.id} className="grid grid-cols-1 items-end gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3.5 md:grid-cols-7">
                             <div className="md:col-span-2 space-y-1">
                               <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Variant Name</label>
                               <input value={v.name} onChange={e => {
@@ -1115,24 +1134,34 @@ const ProductManagement = () => {
                               }} placeholder="e.g. 1kg, 1 pack, 1 liter..." className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary/20" />
                             </div>
                             <div className="space-y-1">
-                              <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Price</label>
-                              <input type="number" min="0" value={v.price} onChange={e => {
+                              <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">MRP</label>
+                              <input type="number" min="0" value={v.mrp} onChange={e => {
                                 const val = e.target.value;
                                 if (val !== '' && Number(val) < 0) return;
                                 const news = [...formData.variants];
-                                news[i].price = val;
+                                news[i].mrp = val;
                                 setFormData({ ...formData, variants: news });
-                              }} placeholder="Price" className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary/20" />
+                              }} placeholder="MRP" className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary/20" />
                             </div>
                             <div className="space-y-1">
-                              <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">Sale Price</label>
-                              <input type="number" min="0" value={v.salePrice} onChange={e => {
+                              <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">Selling Price</label>
+                              <input type="number" min="0" value={v.sellingPrice} onChange={e => {
                                 const val = e.target.value;
                                 if (val !== '' && Number(val) < 0) return;
                                 const news = [...formData.variants];
-                                news[i].salePrice = val;
+                                news[i].sellingPrice = val;
                                 setFormData({ ...formData, variants: news });
-                              }} placeholder="Sale" className="w-full rounded-md border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xs text-primary outline-none focus:border-primary focus:ring-1 focus:ring-primary/20" />
+                              }} placeholder="Selling" className="w-full rounded-md border border-primary/20 bg-primary/5 px-2.5 py-1.5 text-xs text-primary outline-none focus:border-primary focus:ring-1 focus:ring-primary/20" />
+                            </div>
+                            <div className="space-y-1">
+                              <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-600">Purchase Rate</label>
+                              <input type="number" min="0" value={v.purchaseRate} onChange={e => {
+                                const val = e.target.value;
+                                if (val !== '' && Number(val) < 0) return;
+                                const news = [...formData.variants];
+                                news[i].purchaseRate = val;
+                                setFormData({ ...formData, variants: news });
+                              }} placeholder="Cost" title="Only visible to you and the admin" className="w-full rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200" />
                             </div>
                             <div className="space-y-1">
                               <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Stock</label>
@@ -1261,13 +1290,23 @@ const ProductManagement = () => {
               },
               {
                 header: 'Unit Price',
-                key: 'price',
+                key: 'mrp',
                 align: 'center',
                 cell: (v) => (
                   <div className="flex flex-col items-center">
-                    <span className={cn("text-xs font-bold", v.salePrice > 0 ? "text-slate-400 line-through" : "text-slate-900")}>₹{v.price}</span>
-                    {v.salePrice > 0 && <span className="text-xs font-bold text-primary">₹{v.salePrice}</span>}
+                    <span className={cn("text-xs font-bold", v.sellingPrice > 0 ? "text-slate-400 line-through" : "text-slate-900")}>₹{v.mrp}</span>
+                    {v.sellingPrice > 0 && <span className="text-xs font-bold text-primary">₹{v.sellingPrice}</span>}
                   </div>
+                ),
+              },
+              {
+                header: 'Purchase Rate',
+                key: 'purchaseRate',
+                align: 'center',
+                cell: (v) => (
+                  <span className="text-xs font-bold text-amber-700">
+                    {v.purchaseRate ? `₹${v.purchaseRate}` : "—"}
+                  </span>
                 ),
               },
               {
