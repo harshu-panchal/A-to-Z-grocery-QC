@@ -80,6 +80,19 @@ function stripInternalPricingFields(product) {
   return rest;
 }
 
+// Manufacturing/expiry dates are shown to customers only when the seller opts
+// in via showManufacturingDate / showExpiryDate flags. The flags themselves
+// are internal and stripped from all customer-facing responses.
+function applyDateVisibilityFilter(product) {
+  if (!product || typeof product !== "object") return product;
+  const result = { ...product };
+  if (!result.showManufacturingDate) delete result.manufacturingDate;
+  if (!result.showExpiryDate) delete result.expiryDate;
+  delete result.showManufacturingDate;
+  delete result.showExpiryDate;
+  return result;
+}
+
 function isInternalPricingVisible(req) {
   const role = String(req.user?.role || "").toLowerCase();
   return role === "admin" || role === "seller";
@@ -403,7 +416,7 @@ export const getProducts = async (req, res) => {
       const [rawProducts, total] = await Promise.all([
         Product.find(finalQuery)
           .select(
-            "name slug description sku mrp sellingPrice purchaseRate stock brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode createdAt",
+            "name slug description sku mrp sellingPrice purchaseRate stock brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt",
           )
           // No .populate() — names resolved via cache-backed entityNameCache
           .sort(sortQuery)
@@ -469,7 +482,9 @@ export const getProducts = async (req, res) => {
       : await fetchFn();
 
     if (!isInternalPricingVisible(req) && Array.isArray(result?.items)) {
-      result.items = result.items.map(stripInternalPricingFields);
+      result.items = result.items
+        .map(stripInternalPricingFields)
+        .map(applyDateVisibilityFilter);
     }
 
     return handleResponse(res, 200, "Products fetched successfully", result);
@@ -530,7 +545,7 @@ export const getSellerProducts = async (req, res) => {
     ] = await Promise.all([
       Product.find(query)
         .select(
-          "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode createdAt",
+          "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt",
         )
         .populate("headerId", "name")
         .populate("categoryId", "name")
@@ -1091,7 +1106,7 @@ export const getProductById = async (req, res) => {
       async () =>
         Product.findById(id)
           .select(
-            "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode createdAt",
+            "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt",
           )
           .populate("headerId", "name")
           .populate("categoryId", "name")
@@ -1122,6 +1137,7 @@ export const getProductById = async (req, res) => {
     let payload = normalizeProductDocumentModeration(product, "detail");
     if (!isInternalPricingVisible(req)) {
       payload = stripInternalPricingFields(payload);
+      payload = applyDateVisibilityFilter(payload);
     }
 
     if (req.user) {
@@ -1277,7 +1293,7 @@ export const getModerationProducts = async (req, res) => {
       await Promise.all([
         Product.find(moderatedQuery)
           .select(
-            "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode createdAt",
+            "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt",
           )
           .populate("headerId", "name")
           .populate("categoryId", "name")

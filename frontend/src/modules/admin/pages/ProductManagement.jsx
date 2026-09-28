@@ -119,6 +119,10 @@ const ProductManagement = () => {
         rackCode: '',
         mainImage: null,
         galleryImages: [],
+        manufacturingDate: '',
+        expiryDate: '',
+        showManufacturingDate: false,
+        showExpiryDate: false,
         variants: [
             { id: Date.now(), name: 'Default', mrp: '', sellingPrice: '', purchaseRate: '', stock: '', sku: '' }
         ]
@@ -230,6 +234,10 @@ const ProductManagement = () => {
             data.append('brand', formData.brand);
             data.append('weight', formData.weight);
             data.append('rackCode', formData.rackCode || '');
+            if (formData.manufacturingDate) data.append('manufacturingDate', formData.manufacturingDate);
+            if (formData.expiryDate) data.append('expiryDate', formData.expiryDate);
+            data.append('showManufacturingDate', formData.showManufacturingDate ? 'true' : 'false');
+            data.append('showExpiryDate', formData.showExpiryDate ? 'true' : 'false');
             data.append('tags', formData.tags);
             data.append('variants', JSON.stringify(formData.variants));
 
@@ -378,6 +386,10 @@ const ProductManagement = () => {
                 rackCode: item.rackCode || '',
                 mainImage: item.mainImage || null,
                 galleryImages: item.galleryImages || item.images || [],
+                manufacturingDate: item.manufacturingDate ? new Date(item.manufacturingDate).toISOString().split('T')[0] : '',
+                expiryDate: item.expiryDate ? new Date(item.expiryDate).toISOString().split('T')[0] : '',
+                showManufacturingDate: item.showManufacturingDate || false,
+                showExpiryDate: item.showExpiryDate || false,
                 variants: (item.variants && item.variants.length > 0) ? item.variants.map(v => ({ ...v, id: v._id || Date.now() })) : [
                     {
                         id: Date.now(),
@@ -398,6 +410,8 @@ const ProductManagement = () => {
                 header: '', categoryId: '', subcategoryId: '', status: 'active',
                 isFeatured: false, tags: '', weight: '', brand: '', rackCode: '',
                 mainImage: null, galleryImages: [],
+                manufacturingDate: '', expiryDate: '',
+                showManufacturingDate: false, showExpiryDate: false,
                 variants: [
                     { id: Date.now(), name: 'Default', mrp: '', sellingPrice: '', purchaseRate: '', stock: '', sku: '' }
                 ]
@@ -862,6 +876,64 @@ const ProductManagement = () => {
                                                     />
                                                 </div>
                                             </div>
+
+                                            {/* Manufacturing & Expiry Dates */}
+                                            <div className="pt-2 space-y-3">
+                                                <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Manufacturing &amp; Expiry</p>
+                                                <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                                                    {/* Manufacturing Date */}
+                                                    <div className="space-y-2">
+                                                        <div className="flex flex-col space-y-1.5">
+                                                            <label className="ml-1 text-[9px] font-bold uppercase tracking-widest text-slate-400">Manufacturing Date</label>
+                                                            <input
+                                                                type="date"
+                                                                value={formData.manufacturingDate}
+                                                                onChange={(e) => setFormData({ ...formData, manufacturingDate: e.target.value })}
+                                                                className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                                            />
+                                                        </div>
+                                                        <label className="flex items-center gap-2 cursor-pointer group select-none">
+                                                            <span className="relative flex items-center">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={formData.showManufacturingDate}
+                                                                    onChange={(e) => setFormData({ ...formData, showManufacturingDate: e.target.checked })}
+                                                                    className="sr-only peer"
+                                                                />
+                                                                <span className="w-8 h-4 bg-slate-200 peer-checked:bg-primary rounded-full transition-colors" />
+                                                                <span className="absolute left-0.5 top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4" />
+                                                            </span>
+                                                            <span className="text-xs font-semibold text-slate-500 group-hover:text-slate-700 transition-colors">Show to customers</span>
+                                                        </label>
+                                                    </div>
+
+                                                    {/* Expiry Date */}
+                                                    <div className="space-y-2">
+                                                        <div className="flex flex-col space-y-1.5">
+                                                            <label className="ml-1 text-[9px] font-bold uppercase tracking-widest text-slate-400">Expiry Date</label>
+                                                            <input
+                                                                type="date"
+                                                                value={formData.expiryDate}
+                                                                onChange={(e) => setFormData({ ...formData, expiryDate: e.target.value })}
+                                                                className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                                            />
+                                                        </div>
+                                                        <label className="flex items-center gap-2 cursor-pointer group select-none">
+                                                            <span className="relative flex items-center">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={formData.showExpiryDate}
+                                                                    onChange={(e) => setFormData({ ...formData, showExpiryDate: e.target.checked })}
+                                                                    className="sr-only peer"
+                                                                />
+                                                                <span className="w-8 h-4 bg-slate-200 peer-checked:bg-primary rounded-full transition-colors" />
+                                                                <span className="absolute left-0.5 top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4" />
+                                                            </span>
+                                                            <span className="text-xs font-semibold text-slate-500 group-hover:text-slate-700 transition-colors">Show to customers</span>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
 
@@ -955,20 +1027,6 @@ const ProductManagement = () => {
                                                                 />
                                                             </div>
                                                             <div className="space-y-1.5">
-                                                                <label className="ml-1 text-[8px] font-bold uppercase tracking-widest text-primary">Selling Price</label>
-                                                                <input
-                                                                    type="number"
-                                                                    value={v.sellingPrice}
-                                                                    onChange={e => {
-                                                                        const news = [...formData.variants];
-                                                                        news[i].sellingPrice = e.target.value;
-                                                                        setFormData({ ...formData, variants: news });
-                                                                    }}
-                                                                    placeholder="150"
-                                                                    className="w-full rounded-md border border-primary/20 bg-primary/5 px-3 py-2.5 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
-                                                                />
-                                                            </div>
-                                                            <div className="space-y-1.5">
                                                                 <label className="ml-1 text-[8px] font-bold uppercase tracking-widest text-amber-600">Purchase Rate</label>
                                                                 <input
                                                                     type="number"
@@ -981,6 +1039,20 @@ const ProductManagement = () => {
                                                                     placeholder="100"
                                                                     title="Only visible to sellers and admins"
                                                                     className="w-full rounded-md border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm text-amber-700 outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-200"
+                                                                />
+                                                            </div>
+                                                            <div className="space-y-1.5">
+                                                                <label className="ml-1 text-[8px] font-bold uppercase tracking-widest text-primary">Selling Price</label>
+                                                                <input
+                                                                    type="number"
+                                                                    value={v.sellingPrice}
+                                                                    onChange={e => {
+                                                                        const news = [...formData.variants];
+                                                                        news[i].sellingPrice = e.target.value;
+                                                                        setFormData({ ...formData, variants: news });
+                                                                    }}
+                                                                    placeholder="150"
+                                                                    className="w-full rounded-md border border-primary/20 bg-primary/5 px-3 py-2.5 text-sm outline-none focus:border-primary/40 focus:ring-2 focus:ring-primary/10"
                                                                 />
                                                             </div>
                                                             <div className="space-y-1.5">

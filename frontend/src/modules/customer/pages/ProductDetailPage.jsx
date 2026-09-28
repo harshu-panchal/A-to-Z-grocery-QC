@@ -341,7 +341,7 @@ const ProductDetailPage = () => {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-3 gap-4">
+                    <div className={`grid gap-4 ${(product.manufacturingDate || product.expiryDate) ? 'grid-cols-2 sm:grid-cols-3' : 'grid-cols-3'}`}>
                         <div className="bg-white p-4 rounded-2xl border border-slate-100 text-center shadow-sm">
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Weight</p>
                             <p className="text-sm font-black text-slate-800">{product.weight || '1 unit'}</p>
@@ -354,6 +354,22 @@ const ProductDetailPage = () => {
                             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Brand</p>
                             <p className="text-sm font-black text-slate-800">{product.brand || 'Premium'}</p>
                         </div>
+                        {product.manufacturingDate && (
+                            <div className="bg-white p-4 rounded-2xl border border-slate-100 text-center shadow-sm">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Mfg. Date</p>
+                                <p className="text-sm font-black text-slate-800">
+                                    {new Date(product.manufacturingDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                </p>
+                            </div>
+                        )}
+                        {product.expiryDate && (
+                            <div className="bg-white p-4 rounded-2xl border border-slate-100 text-center shadow-sm">
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Expiry Date</p>
+                                <p className={`text-sm font-black ${new Date(product.expiryDate) < new Date() ? 'text-red-500' : 'text-slate-800'}`}>
+                                    {new Date(product.expiryDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

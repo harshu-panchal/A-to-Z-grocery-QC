@@ -59,6 +59,10 @@ const AddProduct = () => {
     rackCode: "",
     mainImage: null,
     galleryImages: [],
+    manufacturingDate: "",
+    expiryDate: "",
+    showManufacturingDate: false,
+    showExpiryDate: false,
     variants: [
       {
         id: Date.now(),
@@ -163,6 +167,14 @@ const AddProduct = () => {
       data.append("weight", formData.weight);
       data.append("status", formData.status);
       data.append("rackCode", formData.rackCode || "");
+      if (formData.manufacturingDate) {
+        data.append("manufacturingDate", formData.manufacturingDate);
+      }
+      if (formData.expiryDate) {
+        data.append("expiryDate", formData.expiryDate);
+      }
+      data.append("showManufacturingDate", formData.showManufacturingDate ? "true" : "false");
+      data.append("showExpiryDate", formData.showExpiryDate ? "true" : "false");
 
       // Map top-level price/stock from first variant for indexing/listing
       data.append("mrp", firstVariant.mrp);
@@ -392,6 +404,82 @@ const AddProduct = () => {
                   />
                 </div>
               </div>
+
+              {/* Manufacturing & Expiry Dates */}
+              <div className="pt-2 space-y-3">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                  Manufacturing &amp; Expiry
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Manufacturing Date */}
+                  <div className="space-y-2">
+                    <div className="space-y-1.5 flex flex-col">
+                      <label className="text-[10px] sm:text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
+                        Manufacturing Date
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.manufacturingDate}
+                        onChange={(e) =>
+                          setFormData({ ...formData, manufacturingDate: e.target.value })
+                        }
+                        className="w-full px-4 py-2.5 bg-slate-100 border-none rounded-md text-sm font-semibold outline-none ring-primary/5 focus:ring-2 transition-all"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer group select-none">
+                      <span className="relative flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={formData.showManufacturingDate}
+                          onChange={(e) =>
+                            setFormData({ ...formData, showManufacturingDate: e.target.checked })
+                          }
+                          className="sr-only peer"
+                        />
+                        <span className="w-8 h-4 bg-slate-200 peer-checked:bg-primary rounded-full transition-colors" />
+                        <span className="absolute left-0.5 top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4" />
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500 group-hover:text-slate-700 transition-colors">
+                        Show to customers
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Expiry Date */}
+                  <div className="space-y-2">
+                    <div className="space-y-1.5 flex flex-col">
+                      <label className="text-[10px] sm:text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
+                        Expiry Date
+                      </label>
+                      <input
+                        type="date"
+                        value={formData.expiryDate}
+                        onChange={(e) =>
+                          setFormData({ ...formData, expiryDate: e.target.value })
+                        }
+                        className="w-full px-4 py-2.5 bg-slate-100 border-none rounded-md text-sm font-semibold outline-none ring-primary/5 focus:ring-2 transition-all"
+                      />
+                    </div>
+                    <label className="flex items-center gap-2 cursor-pointer group select-none">
+                      <span className="relative flex items-center">
+                        <input
+                          type="checkbox"
+                          checked={formData.showExpiryDate}
+                          onChange={(e) =>
+                            setFormData({ ...formData, showExpiryDate: e.target.checked })
+                          }
+                          className="sr-only peer"
+                        />
+                        <span className="w-8 h-4 bg-slate-200 peer-checked:bg-primary rounded-full transition-colors" />
+                        <span className="absolute left-0.5 top-0.5 w-3 h-3 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4" />
+                      </span>
+                      <span className="text-xs font-semibold text-slate-500 group-hover:text-slate-700 transition-colors">
+                        Show to customers
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -483,30 +571,6 @@ const AddProduct = () => {
                       />
                     </div>
                     <div className="col-span-6 md:col-span-2 space-y-1">
-                      <label className="text-[8px] font-bold text-primary uppercase tracking-widest ml-1">
-                        Selling Price
-                      </label>
-                      <input
-                        type="number"
-                        min="0"
-                        onKeyDown={(e) => {
-                          if (['-', '+', 'e', 'E'].includes(e.key)) {
-                            e.preventDefault();
-                          }
-                        }}
-                        value={variant.sellingPrice}
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val !== '' && Number(val) < 0) return;
-                          const newVariants = [...formData.variants];
-                          newVariants[index].sellingPrice = val;
-                          setFormData({ ...formData, variants: newVariants });
-                        }}
-                        placeholder="450"
-                        className="w-full px-3 py-2 bg-primary/5 ring-1 ring-primary/20 border-none rounded-xl text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-primary/20"
-                      />
-                    </div>
-                    <div className="col-span-6 md:col-span-2 space-y-1">
                       <label className="text-[8px] font-bold text-amber-600 uppercase tracking-widest ml-1">
                         Purchase Rate
                       </label>
@@ -529,6 +593,30 @@ const AddProduct = () => {
                         placeholder="350"
                         title="Only visible to you and the admin"
                         className="w-full px-3 py-2 bg-amber-50 ring-1 ring-amber-200 border-none rounded-xl text-xs font-bold text-amber-700 outline-none focus:ring-2 focus:ring-amber-200"
+                      />
+                    </div>
+                    <div className="col-span-6 md:col-span-2 space-y-1">
+                      <label className="text-[8px] font-bold text-primary uppercase tracking-widest ml-1">
+                        Selling Price
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        onKeyDown={(e) => {
+                          if (['-', '+', 'e', 'E'].includes(e.key)) {
+                            e.preventDefault();
+                          }
+                        }}
+                        value={variant.sellingPrice}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val !== '' && Number(val) < 0) return;
+                          const newVariants = [...formData.variants];
+                          newVariants[index].sellingPrice = val;
+                          setFormData({ ...formData, variants: newVariants });
+                        }}
+                        placeholder="450"
+                        className="w-full px-3 py-2 bg-primary/5 ring-1 ring-primary/20 border-none rounded-xl text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-primary/20"
                       />
                     </div>
                     <div className="col-span-6 md:col-span-2 space-y-1">

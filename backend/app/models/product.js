@@ -135,7 +135,23 @@ const productSchema = new mongoose.Schema(
         isFeatured: {
             type: Boolean,
             default: false,
-        }
+        },
+        manufacturingDate: {
+            type: Date,
+            default: null,
+        },
+        expiryDate: {
+            type: Date,
+            default: null,
+        },
+        showManufacturingDate: {
+            type: Boolean,
+            default: false,
+        },
+        showExpiryDate: {
+            type: Boolean,
+            default: false,
+        },
     },
     { timestamps: true }
 );
