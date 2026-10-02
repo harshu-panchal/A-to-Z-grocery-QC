@@ -165,7 +165,15 @@ export const loginDelivery = async (req, res) => {
             return handleResponse(res, 404, "Delivery partner not found");
         }
         if (!delivery.isVerified) {
-            return handleResponse(res, 403, "Your application is still pending admin approval");
+            if (delivery.applicationStatus === "rejected") {
+                return handleResponse(res, 403, "Your application has been rejected", {
+                    rejected: true,
+                    rejectionReason: delivery.rejectionReason || "",
+                });
+            }
+            return handleResponse(res, 403, "Your application is still pending admin approval", {
+                rejected: false,
+            });
         }
 
         const otp = generateOTP();
