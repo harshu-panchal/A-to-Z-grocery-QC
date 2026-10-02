@@ -275,6 +275,15 @@ const DeliveryAuth = () => {
       setStep("otp");
     } catch (error) {
       console.error(error);
+      if (error.response?.status === 403) {
+        const result = error.response?.data?.result || {};
+        if (result.rejected) {
+          setRejectedModal({ open: true, reason: result.rejectionReason || '' });
+          return;
+        }
+        setShowPendingModal(true);
+        return;
+      }
       toast.error(error.response?.data?.message || "Failed to send OTP");
     } finally {
       setLoading(false);
