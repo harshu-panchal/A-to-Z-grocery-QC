@@ -119,6 +119,8 @@ const PendingDeliveryBoys = () => {
     const [viewingRider, setViewingRider] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [previewDoc, setPreviewDoc] = useState(null);
+    const [rejectModal, setRejectModal] = useState({ open: false, id: null });
+    const [rejectReason, setRejectReason] = useState('');
 
     // Perf audit Phase 8: same 500ms debounce as before, now backed by
     // React Query. `filterStatus` never actually fed the request params
@@ -212,20 +214,28 @@ const PendingDeliveryBoys = () => {
         }
     };
 
-    const handleReject = async (id) => {
-        if (window.confirm('Are you sure you want to reject this application?')) {
-            setIsProcessing(true);
-            try {
-                await adminApi.rejectDeliveryPartner(id);
-                toast.success('Application Rejected');
-                removeRiderFromCache(id);
-                setViewingRider(null);
-            } catch (error) {
-                console.error('Rejection Error:', error);
-                toast.error('Failed to reject rider');
-            } finally {
-                setIsProcessing(false);
-            }
+    const handleReject = (id) => {
+        setRejectReason('');
+        setRejectModal({ open: true, id });
+    };
+
+    const handleRejectConfirm = async () => {
+        if (!rejectReason.trim()) {
+            toast.error('Please provide a rejection reason');
+            return;
+        }
+        setIsProcessing(true);
+        try {
+            await adminApi.rejectDeliveryPartner(rejectModal.id, { reason: rejectReason.trim() });
+            toast.success('Application rejected and reason sent to applicant');
+            setRejectModal({ open: false, id: null });
+            removeRiderFromCache(rejectModal.id);
+            setViewingRider(null);
+        } catch (error) {
+            console.error('Rejection Error:', error);
+            toast.error(error.response?.data?.message || 'Failed to reject rider');
+        } finally {
+            setIsProcessing(false);
         }
     };
 
@@ -704,6 +714,62 @@ const PendingDeliveryBoys = () => {
                                     alt={previewDoc.label}
                                     className="mx-auto max-h-[70vh] w-auto max-w-full rounded-xl object-contain shadow-sm"
                                 />
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            {/* Rejection Reason Modal */}
+            <AnimatePresence>
+                {rejectModal.open && (
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+                            onClick={() => setRejectModal({ open: false, id: null })}
+                        />
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            className="relative z-10 w-full max-w-md bg-white rounded-2xl p-6 shadow-2xl"
+                        >
+                            <div className="flex items-start justify-between mb-4">
+                                <div>
+                                    <h3 className="text-base font-bold text-slate-900">Reject Rider Application</h3>
+                                    <p className="text-sm text-slate-500 mt-0.5">This reason will be emailed to the applicant.</p>
+                                </div>
+                                <button
+                                    onClick={() => setRejectModal({ open: false, id: null })}
+                                    className="text-slate-400 hover:text-slate-600 transition-colors ml-4"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
+                            <textarea
+                                rows={4}
+                                placeholder="e.g. Driving license is expired or invalid. Please re-register with a valid license."
+                                value={rejectReason}
+                                onChange={(e) => setRejectReason(e.target.value)}
+                                className="w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-red-400 resize-none"
+                            />
+                            <div className="mt-4 flex gap-3">
+                                <button
+                                    onClick={() => setRejectModal({ open: false, id: null })}
+                                    className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleRejectConfirm}
+                                    disabled={isProcessing || !rejectReason.trim()}
+                                    className="flex-1 rounded-xl bg-red-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                                >
+                                    {isProcessing ? 'Rejecting...' : 'Reject & Notify'}
+                                </button>
                             </div>
                         </motion.div>
                     </div>

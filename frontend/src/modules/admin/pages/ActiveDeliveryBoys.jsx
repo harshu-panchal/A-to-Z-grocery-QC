@@ -25,6 +25,7 @@ import {
     Pencil,
     Trash2,
     Eye,
+    X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -499,12 +500,23 @@ const ActiveDeliveryBoys = () => {
                             exit={{ opacity: 0, scale: 0.9, y: 30 }}
                             className="w-full max-w-lg relative z-[120] bg-white rounded-2xl p-6 shadow-2xl"
                         >
-                            <h3 className="text-lg font-bold text-slate-900">
-                                {isEditModalOpen ? 'Edit Rider' : 'Add New Rider'}
-                            </h3>
-                            <p className="mt-1 text-sm text-slate-500">
-                                {isEditModalOpen ? 'Update rider details below.' : 'Enter details to register a new delivery partner.'}
-                            </p>
+                            <div className="flex items-start justify-between">
+                                <div>
+                                    <h3 className="text-lg font-bold text-slate-900">
+                                        {isEditModalOpen ? 'Edit Rider' : 'Add New Rider'}
+                                    </h3>
+                                    <p className="mt-1 text-sm text-slate-500">
+                                        {isEditModalOpen ? 'Update rider details below.' : 'Enter details to register a new delivery partner.'}
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => { setIsOnboardModalOpen(false); setIsEditModalOpen(false); }}
+                                    className="ml-4 text-slate-400 hover:text-slate-600 transition-colors"
+                                >
+                                    <X className="h-5 w-5" />
+                                </button>
+                            </div>
 
                             <form onSubmit={isEditModalOpen ? handleEditSubmit : handleOnboardSubmit} className="mt-5 space-y-4">
                                 <div className="space-y-1.5">

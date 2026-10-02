@@ -2,6 +2,7 @@ import Delivery from "../../models/delivery.js";
 import Order from "../../models/order.js";
 import handleResponse from "../../utils/helper.js";
 import getPagination from "../../utils/pagination.js";
+import { sendApplicationRejectionEmail } from "../../services/emailService.js";
 
 export const getDeliveryPartners = async (req, res) => {
   try {
@@ -68,17 +69,30 @@ export const approveDeliveryPartner = async (req, res) => {
 export const rejectDeliveryPartner = async (req, res) => {
   try {
     const { id } = req.params;
-    const rider = await Delivery.findByIdAndDelete(id);
+    const { reason } = req.body || {};
+
+    if (!reason || !reason.trim()) {
+      return handleResponse(res, 400, "Rejection reason is required");
+    }
+
+    const rider = await Delivery.findByIdAndUpdate(
+      id,
+      { applicationStatus: "rejected", rejectionReason: reason.trim(), isVerified: false },
+      { new: true },
+    );
 
     if (!rider) {
       return handleResponse(res, 404, "Rider not found");
     }
 
-    return handleResponse(
-      res,
-      200,
-      "Rider application rejected and removed",
-    );
+    sendApplicationRejectionEmail({
+      email: rider.email,
+      name: rider.name || "Applicant",
+      reason: reason.trim(),
+      type: "delivery",
+    }).catch(() => {});
+
+    return handleResponse(res, 200, "Rider application rejected");
   } catch (error) {
     return handleResponse(res, 500, error.message);
   }

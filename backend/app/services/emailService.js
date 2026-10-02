@@ -125,6 +125,41 @@ export async function sendSellerVerificationOtpEmail({
   };
 }
 
+export async function sendApplicationRejectionEmail({ email, name, reason, type }) {
+  if (!useRealEmailOTP()) {
+    logger.info("Application rejection email in mock mode", { email, type, reason, mode: "mock" });
+    return { delivered: false, mode: "mock" };
+  }
+
+  const transporter = getTransporter();
+  const label = type === "seller" ? "Seller" : "Delivery Partner";
+  const reRegisterNote =
+    type === "seller"
+      ? "You may re-apply by visiting the seller registration page and submitting a new application."
+      : "You may re-register by visiting the delivery partner registration page.";
+
+  await transporter.sendMail({
+    from: getMailFrom(),
+    to: email,
+    subject: `Your ${label} Application — Action Required`,
+    text: `Hi ${name},\n\nUnfortunately your ${label.toLowerCase()} application has been rejected.\n\nReason: ${reason}\n\n${reRegisterNote}\n\nIf you believe this is a mistake, please contact our support team.`,
+    html: `
+      <div style="font-family: Arial, sans-serif; color: #0f172a; max-width: 560px;">
+        <p>Hi <strong>${name}</strong>,</p>
+        <p>Unfortunately, your <strong>${label}</strong> application has been <span style="color:#dc2626;font-weight:700;">rejected</span>.</p>
+        <div style="margin:20px 0;padding:14px 18px;border-left:4px solid #dc2626;background:#fef2f2;border-radius:6px;">
+          <p style="margin:0;font-size:13px;color:#7f1d1d;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Rejection Reason</p>
+          <p style="margin:6px 0 0;color:#1e293b;">${reason}</p>
+        </div>
+        <p>${reRegisterNote}</p>
+        <p style="color:#64748b;font-size:13px;">If you believe this is a mistake, please contact our support team.</p>
+      </div>
+    `,
+  });
+
+  return { delivered: true, mode: "real" };
+}
+
 export function __resetEmailTransportForTests() {
   cachedTransporter = null;
 }

@@ -5,6 +5,7 @@ import {
   getPendingSellerApplications,
   rejectSellerApplicationById,
 } from "../../services/admin/sellerApplicationService.js";
+import { sendApplicationRejectionEmail } from "../../services/emailService.js";
 
 export const getPendingSellers = async (req, res) => {
   try {
@@ -50,15 +51,27 @@ export const rejectSellerApplication = async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body || {};
+
+    if (!reason || !reason.trim()) {
+      return handleResponse(res, 400, "Rejection reason is required");
+    }
+
     const seller = await rejectSellerApplicationById({
       sellerId: id,
       reviewedBy: req.user.id,
-      reason,
+      reason: reason.trim(),
     });
 
     if (!seller) {
       return handleResponse(res, 404, "Seller not found");
     }
+
+    sendApplicationRejectionEmail({
+      email: seller.email,
+      name: seller.ownerName || seller.name || "Applicant",
+      reason: reason.trim(),
+      type: "seller",
+    }).catch(() => {});
 
     return handleResponse(res, 200, "Seller application rejected", seller);
   } catch (error) {

@@ -244,12 +244,21 @@ export const verifyDeliveryOTP = async (req, res) => {
         delivery.otpLockedUntil = undefined;
 
         if (!delivery.isVerified) {
-            // New signup OTP verification
             delivery.otp = undefined;
             delivery.otpExpiry = undefined;
             await delivery.save();
+
+            if (delivery.applicationStatus === "rejected") {
+                return handleResponse(res, 200, "Application rejected", {
+                    pendingApproval: true,
+                    rejected: true,
+                    rejectionReason: delivery.rejectionReason || "",
+                });
+            }
+
             return handleResponse(res, 200, "Phone verified successfully", {
-                pendingApproval: true
+                pendingApproval: true,
+                rejected: false,
             });
         }
 

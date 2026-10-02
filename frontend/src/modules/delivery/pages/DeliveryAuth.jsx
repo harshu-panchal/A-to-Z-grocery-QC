@@ -62,6 +62,7 @@ const DeliveryAuth = () => {
   const [mode, setMode] = useState("login");
   const [step, setStep] = useState("form"); // "form" | "otp"
   const [showPendingModal, setShowPendingModal] = useState(false);
+  const [rejectedModal, setRejectedModal] = useState({ open: false, reason: '' });
 
   // Login state
   const [loginPhone, setLoginPhone] = useState("");
@@ -289,7 +290,11 @@ const DeliveryAuth = () => {
       const response = await deliveryApi.verifyOtp({ phone, otp: otpString });
 
       if (response.data.result?.pendingApproval) {
-        setShowPendingModal(true);
+        if (response.data.result?.rejected) {
+          setRejectedModal({ open: true, reason: response.data.result?.rejectionReason || '' });
+        } else {
+          setShowPendingModal(true);
+        }
         return;
       }
 
@@ -551,6 +556,7 @@ const DeliveryAuth = () => {
                                 <input
                                   type="date"
                                   value={signupDob}
+                                  max={(() => { const d = new Date(); d.setFullYear(d.getFullYear() - 18); return d.toISOString().split('T')[0]; })()}
                                   onChange={(e) => setSignupDob(e.target.value)}
                                   className="w-full px-4 py-3.5 bg-gray-50 border border-gray-100 rounded-2xl text-sm font-bold text-gray-900 focus:outline-none focus:ring-2 focus:ring-brand-500/20 focus:border-brand-400 transition-all"
                                 />
@@ -601,6 +607,11 @@ const DeliveryAuth = () => {
                               }
                               if (signupPhone.length !== 10) {
                                 toast.error("Please enter a valid 10-digit phone number");
+                                return;
+                              }
+                              const minDob = new Date(); minDob.setFullYear(minDob.getFullYear() - 18);
+                              if (new Date(signupDob) > minDob) {
+                                toast.error("You must be at least 18 years old to register");
                                 return;
                               }
                               if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(signupEmail.trim())) {
@@ -1087,6 +1098,62 @@ const DeliveryAuth = () => {
           {appName} Partner Ecosystem • v1.0
         </p>
       </motion.div>
+
+      {/* Rejected Application Modal */}
+      <AnimatePresence>
+        {rejectedModal.open && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm"
+            />
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-sm bg-white rounded-3xl p-6 shadow-2xl overflow-hidden text-center"
+            >
+              <div className="w-20 h-20 bg-red-50 rounded-full flex items-center justify-center mx-auto mb-4 border border-red-100">
+                <XCircle className="w-10 h-10 text-red-500" />
+              </div>
+              <h3 className="text-lg font-black text-gray-900 mb-2">Application Rejected</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Your delivery partner application was not approved. Please review the reason below and re-register with the correct details.
+              </p>
+              {rejectedModal.reason ? (
+                <div className="mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-left">
+                  <p className="text-[11px] font-black uppercase tracking-widest text-red-400 mb-1">Reason</p>
+                  <p className="text-sm text-gray-800 font-medium">{rejectedModal.reason}</p>
+                </div>
+              ) : null}
+              <button
+                onClick={() => {
+                  setRejectedModal({ open: false, reason: '' });
+                  setStep("form");
+                  setMode("signup");
+                  setOtp(["", "", "", ""]);
+                }}
+                className="w-full py-4 bg-red-500 text-white rounded-2xl text-sm font-black tracking-widest uppercase shadow-lg hover:bg-red-600 transition-all mb-3"
+              >
+                Re-register
+              </button>
+              <button
+                onClick={() => {
+                  setRejectedModal({ open: false, reason: '' });
+                  setStep("form");
+                  setMode("login");
+                  setOtp(["", "", "", ""]);
+                }}
+                className="w-full py-3 text-gray-500 text-sm font-semibold hover:text-gray-700 transition-colors"
+              >
+                Back to Login
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Pending Approval Modal */}
       <AnimatePresence>

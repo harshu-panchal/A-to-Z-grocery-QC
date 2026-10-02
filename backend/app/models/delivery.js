@@ -95,6 +95,18 @@ const deliverySchema = new mongoose.Schema(
             default: false,
         },
 
+        applicationStatus: {
+            type: String,
+            enum: ["pending", "approved", "rejected"],
+            default: "pending",
+        },
+
+        rejectionReason: {
+            type: String,
+            trim: true,
+            default: "",
+        },
+
 
 
         isOnline: {
