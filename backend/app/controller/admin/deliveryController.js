@@ -19,6 +19,8 @@ export const getDeliveryPartners = async (req, res) => {
       query.isVerified = true;
     } else if (verified === "false") {
       query.isVerified = false;
+      // Exclude rejected applicants — they are unverified but no longer pending review
+      query.applicationStatus = { $ne: "rejected" };
     }
 
     const { page, limit, skip } = getPagination(req, {

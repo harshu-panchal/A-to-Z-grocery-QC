@@ -224,12 +224,13 @@ const PendingDeliveryBoys = () => {
             toast.error('Please provide a rejection reason');
             return;
         }
+        const idToReject = rejectModal.id;
         setIsProcessing(true);
         try {
-            await adminApi.rejectDeliveryPartner(rejectModal.id, { reason: rejectReason.trim() });
+            await adminApi.rejectDeliveryPartner(idToReject, { reason: rejectReason.trim() });
             toast.success('Application rejected and reason sent to applicant');
             setRejectModal({ open: false, id: null });
-            removeRiderFromCache(rejectModal.id);
+            removeRiderFromCache(idToReject);
             setViewingRider(null);
         } catch (error) {
             console.error('Rejection Error:', error);
