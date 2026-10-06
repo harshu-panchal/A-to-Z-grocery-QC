@@ -28,9 +28,12 @@ import {
   Navigation2,
   Camera,
   X,
+  XCircle,
 } from "lucide-react";
 import { customerApi } from "../services/customerApi";
 import { toast } from "sonner";
+import { useConfirmDialog } from "@/shared/hooks/useConfirmDialog";
+import { ConfirmDialog } from "@/shared/components/ui";
 import { subscribeToOrderLocation, subscribeToOrderTrail, subscribeToOrderRoute } from "@/core/services/trackingClient";
 import {
   useOrderIdentifiers,
@@ -168,6 +171,7 @@ const OrderDetailPage = () => {
   const [returnCountdown, setReturnCountdown] = useState(null);
   const refreshRef = useRef({ inFlight: false, lastAt: 0, timer: null });
   const extraRoomRef = useRef("");
+  const cancelConfirm = useConfirmDialog();
 
   const navigate = useNavigate();
   const isInvalidOrderId = !orderId || orderId === "undefined" || orderId === "null";
@@ -712,6 +716,44 @@ const OrderDetailPage = () => {
     }
   };
 
+  // Mirrors the backend's own cancellability check exactly, rather than
+  // the collapsed legacy "pending" bucket (which maps both CREATED and
+  // SELLER_PENDING to "pending" for v2 orders, but only SELLER_PENDING is
+  // actually cancellable via customerCancelV2 on the server).
+  const isCancellable =
+    !!order &&
+    (Number(order.workflowVersion) >= 2
+      ? String(order.workflowStatus || "").toUpperCase() === "SELLER_PENDING"
+      : order.status === "pending");
+
+  const handleCancelOrder = () => {
+    if (!order) return;
+    cancelConfirm.open({
+      title: "Cancel this order?",
+      message:
+        "This cancels your order and refunds any amount paid online. This cannot be undone.",
+      confirmLabel: "Cancel Order",
+      cancelLabel: "Go Back",
+      onConfirm: async () => {
+        try {
+          const response = await customerApi.cancelOrder(order.orderId, {
+            reason: "Cancelled by customer",
+          });
+          const updatedOrder = response?.data?.result;
+          queryClient.setQueryData(orderDetailQueryKey, (prev) => ({
+            ...prev,
+            order: updatedOrder || prev?.order,
+          }));
+          toast.success("Order cancelled successfully");
+        } catch (error) {
+          console.error("Failed to cancel order", error);
+          toast.error(error.response?.data?.message || "Failed to cancel order");
+          throw error;
+        }
+      },
+    });
+  };
+
   if (!order) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-slate-50 to-white">
@@ -1061,6 +1103,21 @@ const OrderDetailPage = () => {
           </button>
         </motion.div>
 
+        {/* Cancel Order - Only while still cancellable (before seller accepts) */}
+        {isCancellable && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.37 }}
+          >
+            <button
+              onClick={handleCancelOrder}
+              className="w-full py-3.5 rounded-2xl bg-white border-2 border-red-200 text-red-600 font-bold hover:bg-red-50 transition-all flex items-center justify-center gap-2 text-sm shadow-sm hover:shadow-md active:scale-[0.98]">
+              <XCircle size={18} /> Cancel Order
+            </button>
+          </motion.div>
+        )}
+
         {/* Return Section - Only if applicable */}
         {order?.status !== "cancelled" && (canRequestReturn() || (returnDetails && returnDetails.returnStatus && returnDetails.returnStatus !== "none")) && (
           <motion.div
@@ -1150,6 +1207,18 @@ const OrderDetailPage = () => {
         order={order}
       />
       <HelpModal isOpen={showHelp} onClose={() => setShowHelp(false)} />
+
+      <ConfirmDialog
+        isOpen={cancelConfirm.isOpen}
+        title={cancelConfirm.title}
+        message={cancelConfirm.message}
+        confirmLabel={cancelConfirm.confirmLabel}
+        cancelLabel={cancelConfirm.cancelLabel}
+        onConfirm={cancelConfirm.handleConfirm}
+        onCancel={cancelConfirm.close}
+        loading={cancelConfirm.loading}
+        variant="danger"
+      />
 
       {/* Return Request Modal */}
       {showReturnModal && (

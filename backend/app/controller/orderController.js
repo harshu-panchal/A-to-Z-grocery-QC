@@ -10,7 +10,11 @@ import Payout from "../models/payout.js";
 import OrderOtp from "../models/orderOtp.js";
 import handleResponse from "../utils/helper.js";
 import getPagination from "../utils/pagination.js";
-import { WORKFLOW_STATUS, DEFAULT_SELLER_TIMEOUT_MS } from "../constants/orderWorkflow.js";
+import {
+  WORKFLOW_STATUS,
+  DEFAULT_SELLER_TIMEOUT_MS,
+  workflowFromLegacyStatus,
+} from "../constants/orderWorkflow.js";
 import { ORDER_PAYMENT_STATUS } from "../constants/finance.js";
 import {
   afterPlaceOrderV2,
@@ -48,6 +52,7 @@ import {
   retractDeliveryBroadcastForOrder,
   emitToSeller,
   emitToDelivery,
+  emitOrderStatusUpdate,
 } from "../services/orderSocketEmitter.js";
 import * as walletService from "../services/finance/walletService.js";
 import { OWNER_TYPE } from "../constants/finance.js";
@@ -460,8 +465,26 @@ export const updateOrderStatus = async (req, res) => {
 
     const oldStatus = order.status;
     if (status) {
+      // v2 "packed" is seller-reported and independent of the
+      // delivery-matching state machine (workflowStatus may already be
+      // SELLER_ACCEPTED / DELIVERY_SEARCH / DELIVERY_ASSIGNED — a rider
+      // may not even be assigned yet). Record it as its own timestamp
+      // instead of forcing workflowStatus to DELIVERY_ASSIGNED: that
+      // previously desynced the real rider-assignment state and got
+      // silently reverted back to "confirmed" on the next fetch because
+      // the legacy-status mapping derives from workflowStatus, not from
+      // the stored `status` string, for v2 orders.
       order.status = status;
       order.orderStatus = status;
+      if (status === "packed" && order.workflowVersion >= 2) {
+        if (!order.sellerPackedAt) order.sellerPackedAt = new Date();
+      } else if (order.workflowVersion >= 2) {
+        // Keep workflowStatus in sync so the atomic workflow engine
+        // (sellerAcceptAtomic/deliveryAcceptAtomic/etc., which all gate on
+        // workflowStatus) never desyncs from a direct admin/delivery status
+        // set made through this legacy path on a v2-workflow order.
+        order.workflowStatus = workflowFromLegacyStatus(status);
+      }
     }
     if (deliveryBoyId) order.deliveryBoy = deliveryBoyId;
 
@@ -526,11 +549,23 @@ export const updateOrderStatus = async (req, res) => {
         deliveryId: order.deliveryBoy,
       });
 
+      emitOrderStatusUpdate(
+        canonicalOrderId,
+        { workflowStatus: order.workflowStatus, status: order.status },
+        order.customer,
+      );
+
       const refreshed = await Order.findById(order._id);
       return handleResponse(res, 200, "Order status updated", refreshed || order);
     }
 
     await order.save();
+
+    emitOrderStatusUpdate(
+      canonicalOrderId,
+      { workflowStatus: order.workflowStatus, status: order.status },
+      order.customer,
+    );
 
     try {
       await invalidate(buildKey("orders", "customer", `${order.customer.toString()}:*`));

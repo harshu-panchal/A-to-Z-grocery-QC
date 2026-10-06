@@ -33,6 +33,7 @@ import { cn } from '@/lib/utils';
 import { useToast } from '@shared/components/ui/Toast';
 import ConfirmDialog from '@shared/components/ui/ConfirmDialog';
 import useConfirmDialog from '@shared/hooks/useConfirmDialog';
+import { getLegacyStatusFromOrder } from '@/shared/utils/orderStatus';
 
 const OrderDetail = () => {
     const { orderId } = useParams();
@@ -71,7 +72,8 @@ const OrderDetail = () => {
             queryClient.invalidateQueries({ queryKey: orderQueryKey }); // Refresh data
         } catch (error) {
             console.error("Failed to update status:", error);
-            showToast("Failed to update status", "error");
+            const message = error.response?.data?.message || "Failed to update status";
+            showToast(message, "error");
         }
     };
 
@@ -190,6 +192,15 @@ const OrderDetail = () => {
         );
     }
 
+    // For v2-workflow orders, `order.status` is a legacy mirror the
+    // atomic workflow engine (seller-accept / delivery-accept / etc.)
+    // keeps resetting to "confirmed" on every transition; the real status
+    // — including "packed", which is tracked separately via
+    // `sellerPackedAt` since packing isn't itself a workflow stage — only
+    // comes from this derivation. Use it everywhere `order.status` was
+    // read for display or as the dropdown's current value.
+    const displayStatus = getLegacyStatusFromOrder(order);
+
     return (
         <div className="space-y-5">
             {/* Control Bar */}
@@ -206,11 +217,11 @@ const OrderDetail = () => {
                             <h1 className="text-xl font-black text-slate-900">Order #{order.orderId}</h1>
                             <div className="relative inline-block w-40">
                                 <select
-                                    value={order.status}
+                                    value={displayStatus}
                                     onChange={(e) => handleStatusUpdate(e.target.value)}
                                     className={cn(
                                         "w-full cursor-pointer appearance-none rounded-lg border py-1.5 pl-3 pr-8 text-[10px] font-bold uppercase tracking-widest shadow-sm outline-none transition-all",
-                                        getStatusStyles(order.status)
+                                        getStatusStyles(displayStatus)
                                     )}
                                 >
                                     <option value="pending">Pending</option>
@@ -344,11 +355,11 @@ const OrderDetail = () => {
                                 <div className="flex-1 pb-3">
                                     <div className="mb-1 flex items-center justify-between">
                                         <h4 className="text-xs font-black uppercase tracking-tight text-slate-900">
-                                            Status: {order.status.replace(/_/g, ' ')}
+                                            Status: {displayStatus.replace(/_/g, ' ')}
                                         </h4>
                                         <span className="text-[10px] font-bold uppercase text-slate-400">{new Date(order.updatedAt).toLocaleTimeString()}</span>
                                     </div>
-                                    <p className="text-[11px] font-medium italic leading-relaxed text-slate-400">"System verified current logistical state as {order.status}."</p>
+                                    <p className="text-[11px] font-medium italic leading-relaxed text-slate-400">"System verified current logistical state as {displayStatus}."</p>
                                 </div>
                             </div>
                         </div>

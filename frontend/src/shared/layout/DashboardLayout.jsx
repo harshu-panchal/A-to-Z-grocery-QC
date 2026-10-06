@@ -471,9 +471,46 @@ const DashboardLayout = ({ children, navItems, title }) => {
                                 </div>
 
                                 <h2 className="text-2xl font-black text-slate-900 mb-2">New Order Received!</h2>
-                                <p className="text-slate-600 font-medium mb-6">
+                                <p className="text-slate-600 font-medium mb-1">
                                     You have a new order <span className="text-primary font-bold">#{newOrderAlert.orderId}</span> for <span className="text-slate-900 font-bold">₹{newOrderAlert.pricing?.total || newOrderAlert.total}</span>
                                 </p>
+                                {newOrderAlert.createdAt && (
+                                    <p className="text-xs font-semibold text-slate-400 mb-5">
+                                        {new Date(newOrderAlert.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                        {' • '}
+                                        {new Date(newOrderAlert.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                                    </p>
+                                )}
+
+                                {(newOrderAlert.customer?.name || newOrderAlert.customer?.phone) && (
+                                    <div className="w-full bg-slate-50 rounded-2xl border border-slate-100 p-4 mb-4 text-left">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5">Customer</p>
+                                        <p className="text-sm font-bold text-slate-900">{newOrderAlert.customer?.name || 'Unknown'}</p>
+                                        {newOrderAlert.customer?.phone && (
+                                            <p className="text-xs font-semibold text-slate-500 mt-0.5">{newOrderAlert.customer.phone}</p>
+                                        )}
+                                    </div>
+                                )}
+
+                                {Array.isArray(newOrderAlert.items) && newOrderAlert.items.length > 0 && (
+                                    <div className="w-full bg-slate-50 rounded-2xl border border-slate-100 p-4 mb-6 text-left max-h-40 overflow-y-auto">
+                                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-2">
+                                            Items ({newOrderAlert.items.length})
+                                        </p>
+                                        <div className="space-y-2">
+                                            {newOrderAlert.items.map((item, idx) => (
+                                                <div key={idx} className="flex items-center justify-between gap-3">
+                                                    <span className="text-xs font-bold text-slate-800 truncate">
+                                                        {item.name} <span className="text-slate-400 font-semibold">× {item.quantity}</span>
+                                                    </span>
+                                                    <span className="text-xs font-black text-slate-900 shrink-0">
+                                                        ₹{(Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2)}
+                                                    </span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Timer Bar — width from real server deadline */}
                                 <div className="w-full bg-slate-100 h-2 rounded-full mb-8 overflow-hidden">

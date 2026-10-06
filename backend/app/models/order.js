@@ -364,6 +364,14 @@ const orderSchema = new mongoose.Schema(
     pickupConfirmedAt: Date,
     pickupReadyAt: Date,
     outForDeliveryAt: Date,
+    /**
+     * Seller-reported "items packed, ready for pickup" timestamp.
+     * Independent of `pickupReadyAt` (set when the RIDER physically
+     * arrives at the store) — on v2-workflow orders a seller can pack an
+     * order before a delivery partner has even been assigned, so this is
+     * tracked separately rather than reusing the rider-driven field.
+     */
+    sellerPackedAt: Date,
     deliveryRiderStep: {
       type: Number,
       min: 1,

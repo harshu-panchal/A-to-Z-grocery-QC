@@ -33,8 +33,9 @@ function legacyFromWorkflow(workflowStatus) {
     case WORKFLOW_STATUS.DELIVERY_SEARCH:
       return "confirmed";
     case WORKFLOW_STATUS.DELIVERY_ASSIGNED:
-    case WORKFLOW_STATUS.PICKUP_READY:
       return "confirmed";
+    case WORKFLOW_STATUS.PICKUP_READY:
+      return "packed";
     case WORKFLOW_STATUS.OUT_FOR_DELIVERY:
       return "out_for_delivery";
     case WORKFLOW_STATUS.DELIVERED:
@@ -62,11 +63,21 @@ export function getLegacyStatusFromOrder(order) {
     if (workflowStatus === WORKFLOW_STATUS.DELIVERED) {
       return "delivered";
     }
+    if (workflowStatus === WORKFLOW_STATUS.PICKUP_READY) {
+      return "packed";
+    }
+    if (workflowStatus === WORKFLOW_STATUS.DELIVERY_ASSIGNED) {
+      // Rider is assigned but hasn't reached the store yet — still show
+      // "packed" once the seller has reported it ready, even though the
+      // delivery-matching workflow itself hasn't reached PICKUP_READY.
+      return order.sellerPackedAt ? "packed" : "confirmed";
+    }
     if (
-      workflowStatus === WORKFLOW_STATUS.DELIVERY_ASSIGNED ||
-      workflowStatus === WORKFLOW_STATUS.PICKUP_READY
+      order.sellerPackedAt &&
+      (workflowStatus === WORKFLOW_STATUS.SELLER_ACCEPTED ||
+        workflowStatus === WORKFLOW_STATUS.DELIVERY_SEARCH)
     ) {
-      return "confirmed";
+      return "packed";
     }
 
     return legacyFromWorkflow(workflowStatus);

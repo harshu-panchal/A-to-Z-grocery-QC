@@ -133,9 +133,20 @@ const Orders = () => {
                     qty: item.quantity,
                     image: item.image
                 })),
-                total: order.pricing?.total || 0,
-                subtotal: order.pricing?.subtotal ?? order.paymentBreakdown?.productSubtotal ?? 0,
-                deliveryFee: order.pricing?.deliveryFee ?? order.paymentBreakdown?.deliveryFeeCharged ?? 0,
+                // `paymentBreakdown` is the canonical, frozen finance snapshot;
+                // `pricing` is a legacy mirror that can drift out of sync on
+                // older orders. Prefer the canonical source whenever it has
+                // the field at all (including legitimate 0s), so the summary
+                // card's line items always add up to the same total that was
+                // actually charged.
+                total: order.paymentBreakdown?.grandTotal ?? order.pricing?.total ?? 0,
+                subtotal: order.paymentBreakdown?.productSubtotal ?? order.pricing?.subtotal ?? 0,
+                deliveryFee: order.paymentBreakdown?.deliveryFeeCharged ?? order.pricing?.deliveryFee ?? 0,
+                platformFee: order.paymentBreakdown?.handlingFeeCharged ?? order.pricing?.platformFee ?? 0,
+                gst: order.paymentBreakdown?.taxTotal ?? order.pricing?.gst ?? 0,
+                tip: order.paymentBreakdown?.tipTotal ?? order.pricing?.tip ?? 0,
+                discount: order.paymentBreakdown?.discountTotal ?? order.pricing?.discount ?? 0,
+                walletAmount: order.paymentBreakdown?.walletAmount ?? order.pricing?.walletAmount ?? 0,
                 status: getLegacyStatusFromOrder(order),
                 workflowStatus: order.workflowStatus,
                 workflowVersion: order.workflowVersion,
@@ -248,7 +259,8 @@ const Orders = () => {
             }
         } catch (error) {
             console.error("Failed to update status:", error);
-            showToast("Failed to update status", "error");
+            const message = error.response?.data?.message || "Failed to update status";
+            showToast(message, "error");
         }
     };
 
@@ -769,6 +781,36 @@ const Orders = () => {
                                                             <span className="font-bold text-slate-500">Delivery Fee</span>
                                                             <span className="font-black text-success">₹{Number(selectedOrder.deliveryFee ?? 0).toFixed(2)}</span>
                                                         </div>
+                                                        {Number(selectedOrder.platformFee) > 0 && (
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="font-bold text-slate-500">Platform Fee</span>
+                                                                <span className="font-black text-slate-900">₹{Number(selectedOrder.platformFee).toFixed(2)}</span>
+                                                            </div>
+                                                        )}
+                                                        {Number(selectedOrder.gst) > 0 && (
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="font-bold text-slate-500">GST / Tax</span>
+                                                                <span className="font-black text-slate-900">₹{Number(selectedOrder.gst).toFixed(2)}</span>
+                                                            </div>
+                                                        )}
+                                                        {Number(selectedOrder.tip) > 0 && (
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="font-bold text-slate-500">Tip</span>
+                                                                <span className="font-black text-slate-900">₹{Number(selectedOrder.tip).toFixed(2)}</span>
+                                                            </div>
+                                                        )}
+                                                        {Number(selectedOrder.discount) > 0 && (
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="font-bold text-slate-500">Discount</span>
+                                                                <span className="font-black text-danger">- ₹{Number(selectedOrder.discount).toFixed(2)}</span>
+                                                            </div>
+                                                        )}
+                                                        {Number(selectedOrder.walletAmount) > 0 && (
+                                                            <div className="flex justify-between text-xs">
+                                                                <span className="font-bold text-slate-500">Wallet Used</span>
+                                                                <span className="font-black text-danger">- ₹{Number(selectedOrder.walletAmount).toFixed(2)}</span>
+                                                            </div>
+                                                        )}
                                                         <div className="h-px bg-primary/10 my-2" />
                                                         <div className="flex justify-between text-sm">
                                                             <span className="font-black text-slate-900">Total</span>

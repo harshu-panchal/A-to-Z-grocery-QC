@@ -100,7 +100,7 @@ const Dashboard = () => {
         toast.info("You are now OFFLINE. No new orders.");
       }
     } catch (error) {
-      toast.error("Failed to update status");
+      toast.error(error.response?.data?.message || "Failed to update status");
     }
   };
 
