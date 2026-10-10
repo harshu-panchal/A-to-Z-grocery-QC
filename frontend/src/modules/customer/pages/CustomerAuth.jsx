@@ -271,18 +271,18 @@ const CustomerAuth = () => {
             {/* Premium Centered Sticky Card */}
             <div
                 ref={cardRef}
-                className="w-[92%] max-w-[400px] max-h-[88vh] bg-white relative z-10 overflow-hidden rounded-[40px] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] border border-white/40 flex flex-col my-auto transition-colors duration-1000"
+                className="w-[92%] max-w-[360px] sm:max-w-[400px] max-h-[88vh] bg-white relative z-10 overflow-hidden rounded-[28px] sm:rounded-[40px] shadow-[0_50px_100px_-20px_rgba(0,0,0,0.15)] border border-white/40 flex flex-col my-auto transition-colors duration-1000"
             >
 
 
                 {/* Scrollable Content Container */}
-                <div className="h-full overflow-y-auto no-scrollbar pb-20 overscroll-contain">
+                <div className="h-full overflow-y-auto no-scrollbar pb-4 sm:pb-20 overscroll-contain">
 
                     {/* Header: Immersive Category Visuals */}
                     <motion.div
                         animate={{ backgroundColor: activeCategory.theme }}
                         transition={{ duration: 1 }}
-                        className="relative h-[35%] min-h-[240px] shrink-0 w-full overflow-hidden"
+                        className="relative h-[35%] min-h-[165px] sm:min-h-[240px] shrink-0 w-full overflow-hidden"
                     >
                         <AnimatePresence mode="wait">
                             <motion.div
@@ -304,12 +304,12 @@ const CustomerAuth = () => {
                         </AnimatePresence>
 
                         {/* Top Branding Bar */}
-                        <div className="absolute top-8 left-0 w-full px-6 flex items-center justify-between">
+                        <div className="absolute top-4 sm:top-8 left-0 w-full px-5 sm:px-6 flex items-center justify-between">
                             <div className="flex items-center gap-2">
-                                <div className="w-10 h-10 bg-white/20 backdrop-blur-xl rounded-xl flex items-center justify-center border border-white/30">
+                                <div className="w-8 h-8 sm:w-10 sm:h-10 bg-white/20 backdrop-blur-xl rounded-xl flex items-center justify-center border border-white/30">
                                     <ShoppingBag size={20} className="text-white" />
                                 </div>
-                                <span className="text-white font-black tracking-tighter text-xl">{appName.toUpperCase()}</span>
+                                <span className="text-white font-black tracking-tighter text-lg sm:text-xl">{appName.toUpperCase()}</span>
                             </div>
                         </div>
 
@@ -319,7 +319,7 @@ const CustomerAuth = () => {
                                 key={carouselIndex}
                                 initial={{ opacity: 0, y: 10 }}
                                 animate={{ opacity: 1, y: 0 }}
-                                className="text-2xl font-black tracking-tight leading-none mb-2"
+                                className="text-xl sm:text-2xl font-black tracking-tight leading-none mb-2"
                             >
                                 {activeCategory.title.toUpperCase()} INSIDE
                             </motion.h2>
@@ -328,7 +328,7 @@ const CustomerAuth = () => {
 
                         {/* S-Curve Divider */}
                         <div className="absolute -bottom-1 left-0 w-full leading-[0]">
-                            <svg viewBox="0 0 1440 320" preserveAspectRatio="none" className="w-full h-24">
+                            <svg viewBox="0 0 1440 320" preserveAspectRatio="none" className="w-full h-16 sm:h-24">
                                 <path
                                     fill="#ffffff"
                                     d="M0,224L40,213.3C80,203,160,181,240,186.7C320,192,400,224,480,240C560,256,640,256,720,234.7C800,213,880,171,960,165.3C1040,160,1120,192,1200,208C1280,224,1360,224,1400,224L1440,224L1440,320L1400,320C1360,320,1280,320,1200,320C1120,320,1040,320,960,320C880,320,800,320,720,320C640,320,560,320,480,320C400,320,320,320,240,320C160,320,80,320,40,320L0,320Z"
@@ -338,8 +338,8 @@ const CustomerAuth = () => {
                     </motion.div>
 
                     {/* Circular Carousel Control / Brand Logo */}
-                    <div className="relative -mt-14 flex justify-center z-20">
-                        <div className="w-28 h-28 rounded-full bg-white border-4 border-white shadow-[0_15px_40px_rgba(0,0,0,0.15)] flex items-center justify-center p-3 overflow-hidden transition-shadow duration-1000" style={{ boxShadow: `0 15px 40px ${activeCategory.shadow}` }}>
+                    <div className="relative -mt-10 sm:-mt-14 flex justify-center z-20">
+                        <div className="w-20 h-20 sm:w-28 sm:h-28 rounded-full bg-white border-4 border-white shadow-[0_15px_40px_rgba(0,0,0,0.15)] flex items-center justify-center p-3 overflow-hidden transition-shadow duration-1000" style={{ boxShadow: `0 15px 40px ${activeCategory.shadow}` }}>
                             <AnimatePresence mode="wait">
                                     <motion.div
                                         key={carouselIndex}
@@ -362,7 +362,7 @@ const CustomerAuth = () => {
 
 
                     {/* Authentication Form Block */}
-                    <div className="px-6 pt-6 pb-10">
+                    <div className="px-5 pt-4 pb-5 sm:px-6 sm:pt-6 sm:pb-10">
                         <AnimatePresence mode="wait">
                             {!showOtp ? (
                                 <motion.div
@@ -370,20 +370,20 @@ const CustomerAuth = () => {
                                     initial={{ opacity: 0, y: 20 }}
                                     animate={{ opacity: 1, y: 0 }}
                                     exit={{ opacity: 0, x: -20 }}
-                                    className="space-y-5"
+                                    className="space-y-4 sm:space-y-5"
                                 >
                                     {/* App Style Tab Switcher */}
                                     <div className="flex bg-gray-50 rounded-2xl p-1.5 border border-gray-100">
                                         <button
                                             onClick={() => setIsLogin(true)}
-                                            className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${isLogin ? 'bg-white shadow-sm' : 'text-gray-400'}`}
+                                            className={`flex-1 py-2.5 sm:py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${isLogin ? 'bg-white shadow-sm' : 'text-gray-400'}`}
                                             style={{ color: isLogin ? activeCategory.theme : undefined }}
                                         >
                                             Login
                                         </button>
                                         <button
                                             onClick={() => setIsLogin(false)}
-                                            className={`flex-1 py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${!isLogin ? 'bg-white shadow-sm' : 'text-gray-400'}`}
+                                            className={`flex-1 py-2.5 sm:py-3 text-xs font-black uppercase tracking-widest rounded-xl transition-all ${!isLogin ? 'bg-white shadow-sm' : 'text-gray-400'}`}
                                             style={{ color: !isLogin ? activeCategory.theme : undefined }}
                                         >
                                             Sign Up
@@ -391,7 +391,7 @@ const CustomerAuth = () => {
                                     </div>
 
                                     <div className="space-y-2 text-center">
-                                        <h3 className="text-xl font-black text-gray-900 tracking-tight">
+                                        <h3 className="text-lg sm:text-xl font-black text-gray-900 tracking-tight">
                                             {isLogin ? 'Welcome Back!' : 'Create Account'}
                                         </h3>
                                         <p className="text-[11px] font-bold text-gray-400 uppercase tracking-widest leading-none">
@@ -412,7 +412,7 @@ const CustomerAuth = () => {
                                                     maxLength={50}
                                                     pattern="[a-zA-Z\s]*"
                                                     placeholder="Full Name"
-                                                    className="w-full bg-gray-50 border border-gray-100 rounded-2xl pl-12 pr-4 py-4 text-sm font-bold text-gray-800 outline-none focus:bg-white transition-all"
+                                                    className="w-full bg-gray-50 border border-gray-100 rounded-2xl pl-12 pr-4 py-3 sm:py-4 text-sm font-bold text-gray-800 outline-none focus:bg-white transition-all"
                                                     style={{ '--theme-color': activeCategory.theme }}
                                                     onChange={(e) => setFormData({ ...formData, name: e.target.value.replace(/[^a-zA-Z\s]/g, '') })}
                                                     onFocus={handleFieldFocus}
@@ -437,7 +437,7 @@ const CustomerAuth = () => {
                                                 value={formData.phone || ''}
                                                 maxLength={10}
                                                 placeholder="Mobile Number"
-                                                className="w-full bg-gray-50 border border-gray-100 rounded-2xl pl-20 pr-4 py-4 text-sm font-bold text-gray-800 outline-none focus:bg-white transition-all"
+                                                className="w-full bg-gray-50 border border-gray-100 rounded-2xl pl-20 pr-4 py-3 sm:py-4 text-sm font-bold text-gray-800 outline-none focus:bg-white transition-all"
                                                 onChange={(e) => setFormData({ ...formData, phone: e.target.value.replace(/\D/g, '') })}
                                                 onFocus={handleFieldFocus}
                                                 onBlur={handleFieldBlur}
@@ -447,7 +447,7 @@ const CustomerAuth = () => {
                                         <button
                                             type="submit"
                                             disabled={isLoading}
-                                            className="w-full text-white py-5 rounded-[24px] text-xs font-black tracking-[4px] flex items-center justify-center gap-3 active:scale-95 transition-all uppercase"
+                                            className="w-full text-white py-3.5 sm:py-5 rounded-[20px] sm:rounded-[24px] text-xs font-black tracking-[4px] flex items-center justify-center gap-3 active:scale-95 transition-all uppercase"
                                             style={{ backgroundColor: activeCategory.theme, boxShadow: `0 20px 40px ${activeCategory.shadow}` }}
                                         >
                                             {isLoading ? 'Verifying...' : 'Continue'}
@@ -484,7 +484,7 @@ const CustomerAuth = () => {
                                     key="otp-view"
                                     initial={{ opacity: 0, x: 20 }}
                                     animate={{ opacity: 1, x: 0 }}
-                                    className="space-y-10"
+                                    className="space-y-6 sm:space-y-10"
                                 >
                                     <div className="flex items-center gap-4">
                                         <button
@@ -494,19 +494,19 @@ const CustomerAuth = () => {
                                             <ChevronLeft size={20} />
                                         </button>
                                         <div>
-                                            <h3 className="text-xl font-black text-gray-900 tracking-tight">Verify Device</h3>
+                                            <h3 className="text-lg sm:text-xl font-black text-gray-900 tracking-tight">Verify Device</h3>
                                             <p className="text-[10px] font-black tracking-widest text-gray-400 uppercase">+91 {formData.phone}</p>
                                         </div>
                                     </div>
 
-                                    <form onSubmit={handleVerifyOtp} className="space-y-10">
+                                    <form onSubmit={handleVerifyOtp} className="space-y-6 sm:space-y-10">
                                         <div className="flex justify-between gap-3 px-1">
                                             {[...Array(4)].map((_, i) => (
                                                 <input
                                                     key={i}
                                                     type="tel"
                                                     maxLength={1}
-                                                    className="w-14 h-16 bg-white border-2 border-gray-200 rounded-3xl text-center text-2xl font-black outline-none shadow-[0_18px_45px_rgba(15,23,42,0.35)] focus:bg-white focus:border-[var(--theme-color)] focus:shadow-[0_24px_65px_rgba(15,23,42,0.55)] transition-all"
+                                                    className="w-12 h-14 sm:w-14 sm:h-16 bg-white border-2 border-gray-200 rounded-2xl sm:rounded-3xl text-center text-xl sm:text-2xl font-black outline-none shadow-[0_18px_45px_rgba(15,23,42,0.35)] focus:bg-white focus:border-[var(--theme-color)] focus:shadow-[0_24px_65px_rgba(15,23,42,0.55)] transition-all"
                                                     style={{ color: activeCategory.theme }}
                                                     onKeyDown={(e) => {
                                                         if (e.key === 'Backspace' && !e.target.value && i > 0) {
@@ -530,7 +530,7 @@ const CustomerAuth = () => {
                                             <button
                                                 type="submit"
                                                 disabled={isLoading}
-                                                className="w-full bg-gray-900 text-white py-5 rounded-[24px] text-xs font-black tracking-[4px] shadow-2xl flex items-center justify-center gap-3 uppercase active:scale-95 transition-all"
+                                                className="w-full bg-gray-900 text-white py-3.5 sm:py-5 rounded-[20px] sm:rounded-[24px] text-xs font-black tracking-[4px] shadow-2xl flex items-center justify-center gap-3 uppercase active:scale-95 transition-all"
                                             >
                                                 {isLoading ? 'Authenticating...' : `Enter ${appName}`}
                                             </button>

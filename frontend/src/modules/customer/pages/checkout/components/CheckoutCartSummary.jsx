@@ -1,6 +1,7 @@
 import React from "react";
-import { Plus, Minus, Trash2 } from "lucide-react";
+import { Plus, Minus, Trash2, X } from "lucide-react";
 import { applyCloudinaryTransform } from "@/core/utils/imageUtils";
+import { getAvailableStock } from "../../../context/CartContext";
 
 /**
  * CheckoutCartSummary
@@ -21,10 +22,20 @@ const CheckoutCartSummary = React.memo(function CheckoutCartSummary({
 }) {
   return (
     <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 space-y-4">
-      {cart.map((item) => (
+      {cart.map((item) => {
+        const maxQty = getAvailableStock(item, item.variantSku);
+        const atMax = item.quantity >= maxQty;
+        return (
         <div
           key={`${item.id}::${String(item.variantSku || "").trim()}`}
-          className="flex items-start gap-3 pb-4 border-b border-slate-100 last:border-0 last:pb-0">
+          className="relative flex items-start gap-3 pb-4 pr-7 border-b border-slate-100 last:border-0 last:pb-0">
+          <button
+            type="button"
+            onClick={() => onRemoveFromCart(item.id || item._id, item.variantSku)}
+            aria-label={`Remove ${item.name} from cart`}
+            className="absolute -top-1 right-0 grid h-7 w-7 place-items-center rounded-full text-slate-400 hover:bg-red-50 hover:text-red-500 transition-colors">
+            <X size={16} strokeWidth={2.5} />
+          </button>
           <div className="h-20 w-20 rounded-xl overflow-hidden bg-slate-50 flex-shrink-0">
             <img
               src={applyCloudinaryTransform(item.image)}
@@ -73,11 +84,15 @@ const CheckoutCartSummary = React.memo(function CheckoutCartSummary({
                 </span>
                 <button
                   onClick={() => onUpdateQuantity(item.id || item._id, 1, item.variantSku)}
+                  disabled={atMax}
                   aria-label={`Increase ${item.name} quantity`}
-                  className="text-white p-1 hover:bg-white/20 rounded transition-colors">
+                  className="text-white p-1 hover:bg-white/20 rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
                   <Plus size={14} strokeWidth={3} />
                 </button>
               </div>
+              {atMax && (
+                <p className="text-[11px] font-semibold text-amber-600">Only {maxQty} available</p>
+              )}
             {(() => {
               const mrp = Number(item.price || 0);
               const sale = Number(item.salePrice || 0);
@@ -108,7 +123,8 @@ const CheckoutCartSummary = React.memo(function CheckoutCartSummary({
             })()}
           </div>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 });

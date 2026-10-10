@@ -358,7 +358,24 @@ const ProductManagement = () => {
                 galleryFiles: [...(formData.galleryFiles || []), ...results.map((item) => item.file)]
             });
         });
+        e.target.value = '';
     };
+
+  // ✕ on photos picked in this session (data: URLs). Gallery files are kept
+  // in the same order as their data: previews, so the n-th preview is the n-th file.
+  const removeNewMainImage = () =>
+    setFormData((prev) => ({ ...prev, mainImageFile: null, mainImage: editingItem?.mainImage || null }));
+  const removeGalleryImageAt = (index) =>
+    setFormData((prev) => {
+      const images = prev.galleryImages || [];
+      const fileIndex = images.slice(0, index).filter((img) => String(img).startsWith("data:")).length;
+      const isNew = String(images[index]).startsWith("data:");
+      return {
+        ...prev,
+        galleryImages: images.filter((_, i) => i !== index),
+        galleryFiles: isNew ? (prev.galleryFiles || []).filter((_, i) => i !== fileIndex) : prev.galleryFiles,
+      };
+    });
 
     const openModal = (item = null) => {
         if (item) {
@@ -1114,7 +1131,14 @@ const ProductManagement = () => {
                                                             onChange={(e) => handleImageUpload(e, 'main')}
                                                         />
                                                         {formData.mainImage ? (
+                                                            <>
                                                             <img src={formData.mainImage} alt="Main Preview" className="h-full w-full object-cover" />
+                                                            {formData.mainImageFile && (
+                                <button type="button" onClick={removeNewMainImage} aria-label="Remove selected cover photo" className="absolute top-1.5 right-1.5 z-20 grid h-7 w-7 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500">
+                                  <HiOutlineXMark className="h-4 w-4" />
+                                </button>
+                              )}
+                                                            </>
                                                         ) : (
                                                             <div className="flex flex-col items-center">
                                                                 <HiOutlinePhoto className="h-10 w-10 text-slate-200" />
@@ -1148,13 +1172,11 @@ const ProductManagement = () => {
                                                                 <img src={image} alt={`Gallery ${index + 1}`} className="h-full w-full object-cover" />
                                                                 <button
                                                                     type="button"
-                                                                    onClick={() => setFormData({
-                                                                        ...formData,
-                                                                        galleryImages: formData.galleryImages.filter((_, i) => i !== index)
-                                                                    })}
-                                                                    className="absolute right-2 top-2 rounded-full bg-white/90 p-2 text-danger opacity-0 shadow-md transition-all group-hover:opacity-100"
+                                                                    onClick={() => removeGalleryImageAt(index)}
+                                                                    aria-label={`Remove gallery photo ${index + 1}`}
+                                                                    className="absolute right-1.5 top-1.5 z-20 grid h-7 w-7 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500"
                                                                 >
-                                                                    <HiOutlineTrash className="h-4 w-4" />
+                                                                    <HiOutlineXMark className="h-4 w-4" />
                                                                 </button>
                                                             </div>
                                                         ))

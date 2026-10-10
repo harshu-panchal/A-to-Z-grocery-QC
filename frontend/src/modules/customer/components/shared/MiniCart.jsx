@@ -3,8 +3,9 @@ import { useCart } from '../../context/CartContext';
 import AtzIcon from '../atz/AtzIcon';
 import '../atz/atz.css';
 
-const HIDDEN_EXACT = ['/checkout', '/profile', '/wallet', '/transactions'];
-const HIDDEN_PREFIX = ['/orders', '/wishlist', '/addresses', '/support', '/privacy', '/about'];
+// Shown on every page once the bag has items, except the bag (checkout) itself
+const HIDDEN_EXACT = ['/checkout'];
+const HIDDEN_PREFIX = [];
 
 const MiniCart = () => {
     const { cart, cartCount } = useCart();

@@ -437,7 +437,24 @@ const ProductManagement = () => {
       };
       reader.readAsDataURL(file);
     }
+    e.target.value = "";
   };
+
+  // ✕ on photos picked in this session (data: URLs). Gallery files are kept
+  // in the same order as their data: previews, so the n-th preview is the n-th file.
+  const removeNewMainImage = () =>
+    setFormData((prev) => ({ ...prev, mainImageFile: null, mainImage: editingItem?.mainImage || null }));
+  const removeGalleryImageAt = (index) =>
+    setFormData((prev) => {
+      const images = prev.galleryImages || [];
+      const fileIndex = images.slice(0, index).filter((img) => String(img).startsWith("data:")).length;
+      const isNew = String(images[index]).startsWith("data:");
+      return {
+        ...prev,
+        galleryImages: images.filter((_, i) => i !== index),
+        galleryFiles: isNew ? (prev.galleryFiles || []).filter((_, i) => i !== fileIndex) : prev.galleryFiles,
+      };
+    });
 
   const exportProducts = () => {
     console.log("Exporting products...");
@@ -1140,7 +1157,14 @@ const ProductManagement = () => {
                           <div className="w-40 aspect-square rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center group hover:border-primary hover:bg-primary/5 transition-all cursor-pointer overflow-hidden relative">
                             <input type="file" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={(e) => handleImageUpload(e, "main")} />
                             {formData.mainImage ? (
+                              <>
                               <img src={formData.mainImage} alt="Main Preview" className="w-full h-full object-cover" />
+                              {formData.mainImageFile && (
+                                <button type="button" onClick={removeNewMainImage} aria-label="Remove selected cover photo" className="absolute top-1.5 right-1.5 z-20 grid h-7 w-7 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500">
+                                  <HiOutlineXMark className="h-4 w-4" />
+                                </button>
+                              )}
+                              </>
                             ) : (
                               <div className="flex flex-col items-center">
                                 <HiOutlinePhoto className="h-8 w-8 text-slate-300" />
@@ -1157,6 +1181,11 @@ const ProductManagement = () => {
                           {(formData.galleryImages || []).slice(0, 4).map((img, idx) => (
                             <div key={`${img}-${idx}`} className="aspect-square rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 overflow-hidden relative">
                               <img src={img} alt={`Gallery ${idx + 1}`} className="w-full h-full object-cover" />
+                              {String(img).startsWith("data:") && (
+                                <button type="button" onClick={() => removeGalleryImageAt(idx)} aria-label={`Remove gallery photo ${idx + 1}`} className="absolute top-1 right-1 z-20 grid h-6 w-6 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500">
+                                  <HiOutlineXMark className="h-3.5 w-3.5" />
+                                </button>
+                              )}
                             </div>
                           ))}
                           {Array.from({ length: Math.max(0, 4 - (formData.galleryImages || []).length) }).map((_, idx) => (

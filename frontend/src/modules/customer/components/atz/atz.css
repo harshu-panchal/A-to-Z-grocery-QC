@@ -131,3 +131,8 @@
 .atz .tile-row .selected .category-image { border-color: var(--green); }
 .atz .tile-row .selected span { color: var(--green); font-weight: 700; }
 .atz .tab-browser .shelf { margin: 0 -20px; }
+.atz .img-arrow { position: absolute; top: 50%; transform: translateY(-50%); z-index: 1; width: 22px; height: 22px; border-radius: 50%; background: #ffffffe6 !important; border: 1px solid #d7e0d1 !important; color: #173c2c !important; font-size: 16px; line-height: 1; display: grid; place-items: center; box-shadow: 0 1px 4px #25402a1f; }
+.atz .img-arrow.prev { left: 2px; }
+.atz .img-arrow.next { right: 2px; }
+.atz .img-arrow:active { transform: translateY(-50%) scale(.92); }
+.atz .product-bottom .quantity button:disabled { opacity: .35; cursor: not-allowed; }

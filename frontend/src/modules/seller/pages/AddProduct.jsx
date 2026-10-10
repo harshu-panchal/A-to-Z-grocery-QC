@@ -11,6 +11,7 @@ import {
   HiOutlineTrash,
   HiOutlinePlus,
   HiOutlineSquaresPlus,
+  HiOutlineXMark,
 } from "react-icons/hi2";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -250,7 +251,19 @@ const AddProduct = () => {
       };
       reader.readAsDataURL(file);
     }
+    // allow picking the same file again after removing it
+    e.target.value = "";
   };
+
+  const removeMainImage = () =>
+    setFormData((prev) => ({ ...prev, mainImage: null, mainImageFile: null }));
+
+  const removeGalleryImage = (index) =>
+    setFormData((prev) => ({
+      ...prev,
+      galleryImages: prev.galleryImages.filter((_, i) => i !== index),
+      galleryFiles: (prev.galleryFiles || []).filter((_, i) => i !== index),
+    }));
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
@@ -786,10 +799,19 @@ const AddProduct = () => {
                       onChange={(e) => handleImageUpload(e, "main")}
                     />
                     {formData.mainImage ? (
-                      <img
-                        src={formData.mainImage}
-                        className="w-full h-full object-cover"
-                      />
+                      <>
+                        <img
+                          src={formData.mainImage}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={removeMainImage}
+                          aria-label="Remove cover photo"
+                          className="absolute top-1.5 right-1.5 z-20 grid h-7 w-7 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500">
+                          <HiOutlineXMark className="h-4 w-4" />
+                        </button>
+                      </>
                     ) : (
                       <>
                         <HiOutlinePhoto className="h-10 w-10 text-slate-200 group-hover:text-primary transition-colors" />
@@ -825,10 +847,19 @@ const AddProduct = () => {
                       key={i}
                       className="aspect-square rounded-md border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center group hover:border-primary hover:bg-primary/5 transition-all cursor-pointer relative overflow-hidden">
                       {formData.galleryImages[i - 1] ? (
-                        <img
-                          src={formData.galleryImages[i - 1]}
-                          className="w-full h-full object-cover"
-                        />
+                        <>
+                          <img
+                            src={formData.galleryImages[i - 1]}
+                            className="w-full h-full object-cover"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeGalleryImage(i - 1)}
+                            aria-label={`Remove gallery photo ${i}`}
+                            className="absolute top-1 right-1 z-20 grid h-6 w-6 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500">
+                            <HiOutlineXMark className="h-3.5 w-3.5" />
+                          </button>
+                        </>
                       ) : (
                         <>
                           <input

@@ -18,7 +18,7 @@ const ProductCard = React.memo(
   ({ product, badge, className }) => {
     const { toggleWishlist: toggleWishlistGlobal, isInWishlist } =
       useWishlist();
-    const { cart, addToCart, updateQuantity, removeFromCart } = useCart();
+    const { cart, addToCart, updateQuantity, removeFromCart, getAvailableStock } = useCart();
     const { showToast } = useToast();
     const { animateAddToCart, animateRemoveFromCart } = useCartAnimation();
 
@@ -89,6 +89,20 @@ const ProductCard = React.memo(
       [cart, cartKey],
     );
     const quantity = cartItem ? cartItem.quantity : 0;
+    const maxQuantity = getAvailableStock(cartItem ? { ...product, ...cartItem } : product, variantKey);
+
+    // Main image + gallery, browsable with the arrows on the card
+    const images = React.useMemo(() => {
+      const list = [product.image || product.mainImage, ...(Array.isArray(product.galleryImages) ? product.galleryImages : [])];
+      return [...new Set(list.filter(Boolean))];
+    }, [product.image, product.mainImage, product.galleryImages]);
+    const [imageIndex, setImageIndex] = React.useState(0);
+    const currentImage = images[imageIndex] || images[0];
+    const slideImage = (step) => (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setImageIndex((i) => (i + step + images.length) % images.length);
+    };
     const isWishlisted = isInWishlist(product.id || product._id);
 
     const handleProductClick = React.useCallback(
@@ -208,10 +222,16 @@ const ProductCard = React.memo(
             onClick={toggleWishlist}>
             <AtzIcon name="heart" size={17} />
           </button>
-          {product.image ? (
-            <img ref={imageRef} src={applyCloudinaryTransform(product.image)} alt={product.name} loading="lazy" />
+          {currentImage ? (
+            <img ref={imageRef} src={applyCloudinaryTransform(currentImage)} alt={product.name} loading="lazy" />
           ) : (
             <Package ref={imageRef} size={32} strokeWidth={1.5} className="text-slate-300" aria-label={product.name} />
+          )}
+          {images.length > 1 && (
+            <>
+              <button type="button" className="img-arrow prev" aria-label="Previous image" onClick={slideImage(-1)}>‹</button>
+              <button type="button" className="img-arrow next" aria-label="Next image" onClick={slideImage(1)}>›</button>
+            </>
           )}
         </div>
         <span className="delivery-time">
@@ -228,7 +248,7 @@ const ProductCard = React.memo(
             <div className="quantity" role="group" aria-label={`${product.name} quantity`}>
               <button type="button" aria-label={`Remove one ${product.name}`} onClick={handleDecrement}>−</button>
               <span aria-live="polite">{quantity}</span>
-              <button type="button" aria-label={`Add one ${product.name}`} onClick={handleIncrement} disabled={outOfStock}>+</button>
+              <button type="button" aria-label={`Add one ${product.name}`} onClick={handleIncrement} disabled={outOfStock || quantity >= maxQuantity} title={quantity >= maxQuantity ? `Only ${maxQuantity} available` : undefined}>+</button>
             </div>
           ) : (
             <button

@@ -32,6 +32,9 @@ const OfferSections = ({ sections, noServiceData, design }) => {
               originalPrice: p.mrp ?? p.sellingPrice,
               weight: p.weight,
               deliveryTime: p.deliveryTime,
+              stock: p.stock,
+              variants: p.variants,
+              galleryImages: p.galleryImages,
             }));
 
           const sectionSellers = (section.sellerIds || [])
