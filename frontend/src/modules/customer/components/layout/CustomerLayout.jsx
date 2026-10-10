@@ -12,6 +12,7 @@ import { useAuth } from '@core/context/AuthContext';
 import { onReturnPickupOtp, onReturnDropOtp } from '@core/services/orderSocket';
 import { toast } from 'sonner';
 import { ShieldCheck, Package } from 'lucide-react';
+import '../atz/customer-theme.css';
 
 const CustomerLayout = ({ children, showHeader: showHeaderProp, fullHeight = false, showCart: showCartProp, showBottomNav: showBottomNavProp }) => {
     const location = useLocation();
@@ -20,9 +21,9 @@ const CustomerLayout = ({ children, showHeader: showHeaderProp, fullHeight = fal
 
     // Hide page scrollbar while customer shell is mounted (scroll still works).
     useEffect(() => {
-        document.documentElement.classList.add('customer-no-scrollbar');
+        document.documentElement.classList.add('customer-no-scrollbar', 'atz-customer');
         return () => {
-            document.documentElement.classList.remove('customer-no-scrollbar');
+            document.documentElement.classList.remove('customer-no-scrollbar', 'atz-customer');
         };
     }, []);
 

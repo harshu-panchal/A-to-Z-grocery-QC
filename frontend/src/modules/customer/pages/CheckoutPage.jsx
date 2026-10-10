@@ -949,7 +949,7 @@ const CheckoutPage = () => {
       <CheckoutOrderSuccess orderId={orderId} show={showSuccess} />
 
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white">
+      <header className="atz-page-header sticky top-0 z-40">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-2 md:px-8">
           <button
             type="button"

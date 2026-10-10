@@ -2,6 +2,8 @@ import React, { useMemo, useState } from "react";
 import { ChevronRight, Flame } from "lucide-react";
 import ProductCard from "../shared/ProductCard";
 import { cn } from "@/lib/utils";
+import AtzIcon from "../atz/AtzIcon";
+import Shelf from "../atz/Shelf";
 
 const FALLBACK_ICON = "https://cdn-icons-png.flaticon.com/128/2321/2321831.png";
 const MIXED_LIMIT = 12;
@@ -45,7 +47,7 @@ const ProductGrid = ({ items }) => (
 // Flipkart-style browser for a header tab: level-2 category tiles on top.
 // "All" = mixed products from every level-2 category + Trending in this header.
 // A tile = grid of that category's products.
-const CategoryProductRows = ({ categories, products, trendingProducts = [], onSeeAll, onSeeAllHeader }) => {
+const CategoryProductRows = ({ categories, products, trendingProducts = [], onSeeAll, onSeeAllHeader, design }) => {
   const [selectedId, setSelectedId] = useState("all");
 
   const productsByCategory = useMemo(() => {
@@ -68,6 +70,47 @@ const CategoryProductRows = ({ categories, products, trendingProducts = [], onSe
   const selected = categories.find((c) => String(c.id) === String(selectedId));
   const selectedItems = selected ? productsByCategory[String(selected.id)] || [] : [];
   const tiles = [{ id: "all", name: "All", image: FALLBACK_ICON }, ...categories];
+
+  if (design === "atz") {
+    const heading = (title, seeAll) => (
+      <div className="section-heading">
+        <h2>{title}</h2>
+        {seeAll && <button type="button" onClick={seeAll}>See all <AtzIcon name="arrow" size={13} /></button>}
+      </div>
+    );
+    return (
+      <section className="tab-browser">
+        <div className="tile-row">
+          {tiles.map((cat) => (
+            <button key={cat.id} type="button" className={String(selectedId) === String(cat.id) ? "selected" : ""} aria-pressed={String(selectedId) === String(cat.id)} onClick={() => setSelectedId(cat.id)}>
+              <div className="category-image"><img src={cat.image || FALLBACK_ICON} alt="" loading="lazy" /></div>
+              <span>{cat.name}</span>
+            </button>
+          ))}
+        </div>
+        {selected ? (
+          <>
+            {heading(selected.name, () => onSeeAll(selected.id))}
+            {selectedItems.length ? (
+              <div className="results-grid">{selectedItems.map((p) => <ProductCard key={p.id} product={p} />)}</div>
+            ) : (
+              <p className="empty-state">No products in {selected.name} yet</p>
+            )}
+          </>
+        ) : (
+          <>
+            {mixedProducts.length > 0 && (
+              <>
+                {heading("Top picks for you", mixedProducts.length > MIXED_LIMIT ? onSeeAllHeader : undefined)}
+                <div className="results-grid">{mixedProducts.slice(0, MIXED_LIMIT).map((p) => <ProductCard key={p.id} product={p} />)}</div>
+              </>
+            )}
+            <Shelf title="Trending now" products={trendingProducts} />
+          </>
+        )}
+      </section>
+    );
+  }
 
   return (
     <div className="container mx-auto px-4 md:px-8 lg:px-[50px] pt-2 pb-6">

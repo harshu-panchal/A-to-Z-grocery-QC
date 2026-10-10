@@ -279,7 +279,7 @@ const SearchPage = () => {
         <div className="min-h-screen bg-white font-outfit">
             {/* Header / Search Input */}
             <div className={cn(
-                "sticky top-0 z-50 border-b border-slate-200 bg-white",
+                "atz-page-header sticky top-0 z-50",
                 isProductDetailOpen && "hidden md:block"
             )}>
                 <div className="mx-auto flex max-w-3xl items-center gap-2 px-2 py-2.5 md:px-4">

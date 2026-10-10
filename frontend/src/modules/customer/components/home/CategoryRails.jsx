@@ -1,10 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import ProductRail from "./ProductRail";
+import Shelf from "../atz/Shelf";
 import { customerApi } from "../../services/customerApi";
 import { onlyInStock } from "../../utils/stock";
 
 const MIN_PRODUCTS = 3;
 const MAX_RAILS = 4;
+// categories checked at once beyond the shelves still needed, so near-empty
+// categories don't make shelves load one slow request at a time
+const LOOKAHEAD = 1;
 const PER_RAIL = 12;
 const PREFETCH_MARGIN = "500px 0px";
 
@@ -36,7 +40,7 @@ const toCardProduct = (p) => ({
  * then reports back so the next shelf can start. Renders nothing until it
  * has enough in-stock products.
  */
-const LazyCategoryRail = ({ category, location, onSeeAll, onSettled }) => {
+const LazyCategoryRail = ({ category, location, onSeeAll, onSettled, design, visible, friendly }) => {
   const sentinelRef = useRef(null);
   const [products, setProducts] = useState(null);
 
@@ -88,12 +92,16 @@ const LazyCategoryRail = ({ category, location, onSeeAll, onSettled }) => {
   }, [products, shown, category._id, onSettled]);
 
   if (!products) return <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />;
-  if (!shown) return null;
+  // wait for earlier categories so shelves keep their order
+  if (!shown || !visible) return null;
 
-  const copy = RAIL_COPY[copyIndex(category.name)] || {
+  const copy = (friendly && RAIL_COPY[copyIndex(category.name)]) || {
     title: category.name,
     subtitle: `${products.length} items available now`,
   };
+  if (design === "atz") {
+    return <Shelf title={copy.title} subtitle={copy.subtitle} products={products} onSeeAll={() => onSeeAll(category._id)} />;
+  }
   return (
     <ProductRail
       id={category._id}
@@ -106,7 +114,7 @@ const LazyCategoryRail = ({ category, location, onSeeAll, onSettled }) => {
 };
 
 /** Category shelves for the home "All" tab, loaded one by one as the user scrolls. */
-const CategoryRails = ({ categoryMap, latitude, longitude, onSeeAll }) => {
+const CategoryRails = ({ categoryMap, latitude, longitude, onSeeAll, design }) => {
   const candidates = useMemo(() => {
     const list = Object.values(categoryMap || {}).filter((c) => c?._id && c.name);
     // known grocery shelves first (in RAIL_COPY order), then the rest by name
@@ -131,26 +139,49 @@ const CategoryRails = ({ categoryMap, latitude, longitude, onSeeAll }) => {
 
   if (!candidates.length) return null;
 
+  // Check several categories at once; a shelf shows only once every earlier
+  // category has settled. Only the first shelf of each keyword group gets the
+  // friendly title, later ones use their own name (no two "Morning Essentials").
   const mounted = [];
+  const usedGroups = new Set();
   let shownCount = 0;
+  let pending = 0;
   for (const cat of candidates) {
     if (shownCount >= MAX_RAILS) break;
-    mounted.push(cat);
-    if (!(cat._id in settled)) break; // wait for this one before mounting the next
-    if (settled[cat._id]) shownCount += 1;
+    const state = settled[cat._id];
+    if (state === undefined) {
+      if (pending >= MAX_RAILS - shownCount + LOOKAHEAD) break;
+      pending += 1;
+      mounted.push({ cat, visible: false, friendly: false });
+      continue;
+    }
+    let friendly = false;
+    if (state) {
+      shownCount += 1;
+      const group = copyIndex(cat.name);
+      friendly = group !== -1 && !usedGroups.has(group);
+      if (friendly) usedGroups.add(group);
+    }
+    mounted.push({ cat, visible: pending === 0, friendly });
   }
 
+  const rails = mounted.map(({ cat, visible, friendly }) => (
+    <LazyCategoryRail
+      key={cat._id}
+      category={cat}
+      location={location}
+      onSeeAll={onSeeAll}
+      onSettled={onSettled}
+      design={design}
+      visible={visible}
+      friendly={friendly}
+    />
+  ));
+
+  if (design === "atz") return rails;
   return (
     <div className="container mx-auto px-0 md:px-8 lg:px-[50px]">
-      {mounted.map((cat) => (
-        <LazyCategoryRail
-          key={cat._id}
-          category={cat}
-          location={location}
-          onSeeAll={onSeeAll}
-          onSettled={onSettled}
-        />
-      ))}
+      {rails}
     </div>
   );
 };

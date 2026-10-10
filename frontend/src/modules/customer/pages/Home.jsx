@@ -39,6 +39,9 @@ import CategoryRails from "../components/home/CategoryRails";
 import CategoryProductRows from "../components/home/CategoryProductRows";
 import { onlyInStock } from "../utils/stock";
 import OfferSections from "../components/home/OfferSections";
+import AtzHome from "../components/atz/AtzHome";
+
+const PHONE_QUERY = "(max-width: 767px)";
 
 const DEFAULT_CATEGORY_THEME = {
   gradient: "linear-gradient(to bottom, var(--primary), var(--brand-400))",
@@ -244,15 +247,11 @@ const Home = () => {
 
   const fetchData = async ({ forceRefresh = false } = {}) => {
     const cacheKey = getHomePageDataCacheKey(currentLocation);
-    if (!forceRefresh) {
-      const cached = homePageDataCache.get(cacheKey);
-      if (cached) {
-        applyHomePageData(cached, { cacheKey, persist: false });
-        setIsLoading(false);
-        return;
-      }
-    }
-    setIsLoading(true);
+    // Show the cached copy instantly, but always refetch in the background so
+    // newly created offer sections / products appear without a page reload
+    const cached = forceRefresh ? null : homePageDataCache.get(cacheKey);
+    if (cached) applyHomePageData(cached, { cacheKey, persist: false });
+    setIsLoading(!cached);
     try {
       const hasValidLocation = Number.isFinite(currentLocation?.latitude) && Number.isFinite(currentLocation?.longitude);
       const productParams = { limit: 20 };
@@ -433,6 +432,14 @@ const Home = () => {
       .map((c) => ({ id: c._id, name: c.name, image: c.image }));
   }, [isHeaderTab, activeCategory, categoryMap]);
   const isMobile = useMemo(() => isMobileOrWebView(), []);
+  // Phones get the mobile design (AtzHome); tablet/desktop keep the layout below
+  const [isPhone, setIsPhone] = useState(() => window.matchMedia(PHONE_QUERY).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(PHONE_QUERY);
+    const onChange = (e) => setIsPhone(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
   const opacity = useTransform(scrollY, (heroVisible && !isMobile) ? [0, 300] : [0, 0], [1, 0.6]);
   const y = useTransform(scrollY, (heroVisible && !isMobile) ? [0, 300] : [0, 0], [0, 80]);
   const scale = useTransform(scrollY, (heroVisible && !isMobile) ? [0, 300] : [0, 0], [1, 0.95]);
@@ -457,6 +464,68 @@ const Home = () => {
     if (isMobile) return null;
     return null; // Particles were already simplified out earlier
   };
+
+  const headerTabEmpty = isHeaderTab && headerProducts && headerProducts.length === 0 && (
+    <div className="mx-4 my-6 rounded-2xl border border-slate-100 bg-white py-10 text-center">
+      <p className="text-sm font-bold text-slate-700">No products in {activeCategory.name} yet</p>
+      <p className="text-xs text-slate-500 mt-1">Check back soon or explore other categories.</p>
+    </div>
+  );
+  const headerTabRows = isHeaderTab && (
+    <CategoryProductRows
+      key={activeCategory._id}
+      categories={headerLevel2Categories}
+      products={tabProducts}
+      trendingProducts={headerTrending}
+      onSeeAll={(id) => navigate(`/category/${id}`)}
+      onSeeAllHeader={() => navigate(`/category/${activeCategory._id}`)}
+    />
+  );
+  const adminSections = (
+    <>
+      <OfferSections sections={offerSections} noServiceData={noServiceData} />
+      {sectionsForRenderer.length > 0 && (
+        <div className="container mx-auto px-4 md:px-8 lg:px-[50px] py-10 md:py-16">
+          <SectionRenderer sections={sectionsForRenderer} productsById={productsById} categoriesById={categoryMap} subcategoriesById={subcategoryMap} />
+        </div>
+      )}
+    </>
+  );
+
+  // AtzHome has its own "Explore top categories" grid, so skip admin category grids there
+  const phoneSections = sectionsForRenderer.filter((s) => s.displayType !== "categories");
+
+  if (isPhone && !(products.length === 0 && !isLoading)) {
+    return (
+      <AtzHome
+        categories={categories}
+        activeCategory={activeCategory}
+        onCategorySelect={handleHeaderCategorySelect}
+        banners={heroConfig.banners?.items || []}
+        products={tabProducts}
+        quickCategories={effectiveQuickCategories}
+        categoryMap={categoryMap}
+        offerSections={<OfferSections sections={offerSections} noServiceData={noServiceData} design="atz" />}>
+        {headerTabEmpty}
+        {isHeaderTab && (
+          <CategoryProductRows
+            key={activeCategory._id}
+            design="atz"
+            categories={headerLevel2Categories}
+            products={tabProducts}
+            trendingProducts={headerTrending}
+            onSeeAll={(id) => navigate(`/category/${id}`)}
+            onSeeAllHeader={() => navigate(`/category/${activeCategory._id}`)}
+          />
+        )}
+        {phoneSections.length > 0 && (
+          <div className="px-5 py-6">
+            <SectionRenderer sections={phoneSections} productsById={productsById} categoriesById={categoryMap} subcategoriesById={subcategoryMap} />
+          </div>
+        )}
+      </AtzHome>
+    );
+  }
 
   return (
     <div className={`min-h-screen bg-[#f7f8f6] pt-[190px] md:pt-[250px] ${products.length === 0 && !isLoading ? "bg-white" : ""}`}>
@@ -494,34 +563,14 @@ const Home = () => {
           <PromoMarquee />
           {/* Header tabs use the in-page category browser below instead */}
           {!isHeaderTab && <QuickCategorySlider categories={effectiveQuickCategories} onCategoryClick={(id) => navigate(`/category/${id}`)} />}
-          {isHeaderTab && headerProducts && headerProducts.length === 0 && (
-            <div className="mx-4 my-6 rounded-2xl border border-slate-100 bg-white py-10 text-center">
-              <p className="text-sm font-bold text-slate-700">No products in {activeCategory.name} yet</p>
-              <p className="text-xs text-slate-500 mt-1">Check back soon or explore other categories.</p>
-            </div>
-          )}
-          {isHeaderTab ? (
-            <CategoryProductRows
-              key={activeCategory._id}
-              categories={headerLevel2Categories}
-              products={tabProducts}
-              trendingProducts={headerTrending}
-              onSeeAll={(id) => navigate(`/category/${id}`)}
-              onSeeAllHeader={() => navigate(`/category/${activeCategory._id}`)}
-            />
-          ) : (
+          {headerTabEmpty}
+          {isHeaderTab ? headerTabRows : (
             <div className="pt-1 md:pt-2">
               <LowestPriceSection products={tabProducts} onSeeAll={() => navigate("/category/all")} />
               <CategoryRails key={`${currentLocation?.latitude},${currentLocation?.longitude}`} categoryMap={categoryMap} latitude={currentLocation?.latitude} longitude={currentLocation?.longitude} onSeeAll={(id) => navigate(`/category/${id}`)} />
             </div>
           )}
-          <OfferSections sections={offerSections} noServiceData={noServiceData} />
-
-          {sectionsForRenderer.length > 0 && (
-            <div className="container mx-auto px-4 md:px-8 lg:px-[50px] py-10 md:py-16">
-              <SectionRenderer sections={sectionsForRenderer} productsById={productsById} categoriesById={categoryMap} subcategoriesById={subcategoryMap} />
-            </div>
-          )}
+          {adminSections}
         </>
       )}
     </div>

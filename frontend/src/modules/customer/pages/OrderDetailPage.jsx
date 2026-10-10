@@ -795,7 +795,7 @@ const OrderDetailPage = () => {
       data-return-status={returnDetails?.returnStatus || order?.returnStatus || "none"}
     >
       {/* Minimal Header */}
-      <div className="bg-white/80 backdrop-blur-md sticky top-0 z-30 px-4 py-3 flex items-center justify-between border-b border-slate-100">
+      <div className="atz-page-header sticky top-0 z-30 px-4 py-3 flex items-center justify-between">
         <button
           type="button"
           onClick={handleBack}

@@ -201,7 +201,7 @@ const CategoryProductsPage = () => {
         <div className="relative flex min-h-screen flex-col bg-slate-50 font-sans">
             {/* Header */}
             <header className={cn(
-                "sticky top-0 z-50 border-b border-slate-200 bg-white",
+                "atz-page-header sticky top-0 z-50",
                 isProductDetailOpen && "hidden md:block"
             )}>
                 <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-2 md:px-6">

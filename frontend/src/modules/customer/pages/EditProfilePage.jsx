@@ -43,7 +43,7 @@ const EditProfilePage = () => {
     return (
         <div className="min-h-screen bg-slate-50 font-sans pb-10">
             {/* Header */}
-            <div className="bg-white sticky top-0 z-30 px-4 py-3 flex items-center gap-3 shadow-sm">
+            <div className="atz-page-header sticky top-0 z-30 px-4 py-3 flex items-center gap-3">
                 <Link to="/profile" className="p-2 -ml-2 rounded-full hover:bg-slate-100 transition-colors">
                     <ArrowLeft size={24} className="text-slate-600" />
                 </Link>

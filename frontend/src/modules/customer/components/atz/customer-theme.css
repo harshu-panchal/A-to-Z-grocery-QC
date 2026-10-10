@@ -1,0 +1,23 @@
+/* Customer-wide theme from the mobile design. CustomerLayout puts .atz-customer on <html>
+   while a customer route is mounted, so admin/seller pages keep their own brand colour. */
+html.atz-customer {
+  --primary: #126b3e;
+  --primary-color: #126b3e;
+  --primary-foreground: #ffffff;
+  --ring: #126b3e;
+  --customer-mini-cart-color: #126b3e;
+}
+html.atz-customer body { background: #fffefa; color: #172b21; font-family: 'DM Sans', sans-serif; }
+html.atz-customer :is(.font-sans, .font-outfit) { font-family: 'DM Sans', sans-serif; }
+html.atz-customer :is(h1, h2, h3) { font-family: 'Manrope', sans-serif; letter-spacing: -.4px; }
+html.atz-customer :is(.min-h-screen, main).bg-slate-50,
+html.atz-customer .min-h-screen.bg-white,
+html.atz-customer .min-h-screen.bg-\[\#f7f8f6\] { background-color: #fffefa; }
+
+/* Page headers: the design's green bar */
+.atz-page-header { background: linear-gradient(90deg, #116b3d, #20834b); color: #fff; border: 0; }
+.atz-page-header :is(h1, h2, h3, p, span, a, svg, button) { color: inherit; }
+.atz-page-header p { color: #e1f0dd; }
+.atz-page-header button:hover { background-color: #ffffff1f; }
+.atz-page-header input { background: #fffefa; border-color: #dae5d4; color: #263629; border-radius: 13px; }
+.atz-page-header .relative :is(svg, span) { color: #71806c; }

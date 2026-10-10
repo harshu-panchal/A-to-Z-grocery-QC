@@ -9,15 +9,16 @@ import {
   getBackgroundGradientByValue,
 } from "@/shared/constants/offerSectionOptions";
 import { applyCloudinaryTransform } from "@/core/utils/imageUtils";
+import Collection from "../atz/Collection";
 
-const OfferSections = ({ sections, noServiceData }) => {
+const OfferSections = ({ sections, noServiceData, design }) => {
   if (!sections || sections.length === 0) return null;
 
   return (
-    <div className="w-full px-0 pt-0 pb-2 md:pb-4">
+    <div className={design === "atz" ? undefined : "w-full px-0 pt-0 pb-2 md:pb-4"}>
       {[...sections]
         .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
-        .map((section) => {
+        .map((section, idx) => {
           const bgColor = getBackgroundColorByValue(section.backgroundColor);
           const sectionProducts = (section.productIds || [])
             // browsing surface: out-of-stock products are hidden (they show only in search)
@@ -40,6 +41,24 @@ const OfferSections = ({ sections, noServiceData }) => {
               name: s.shopName || s.name,
               image: s.logo || "",
             }));
+
+          const categoryNames =
+            (section.categoryIds || [])
+              .map((c) => (typeof c === "object" && c?.name ? c.name : null))
+              .filter(Boolean)
+              .join(", ") || section.categoryId?.name;
+
+          if (design === "atz") {
+            return (
+              <Collection
+                key={section._id}
+                tone={idx % 2 ? "yellow" : "blue"}
+                title={section.title}
+                subtitle={categoryNames}
+                products={sectionProducts}
+              />
+            );
+          }
 
           return (
             <motion.div
