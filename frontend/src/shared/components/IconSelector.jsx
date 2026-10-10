@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { categoryIcons } from '../constants/categoryIcons';
 import { Search, X } from 'lucide-react';
 import { motion } from 'framer-motion';
@@ -7,11 +7,9 @@ import { motion } from 'framer-motion';
 import HomeIcon from '@mui/icons-material/Home';
 import DevicesIcon from '@mui/icons-material/Devices';
 import LocalGroceryStoreIcon from '@mui/icons-material/LocalGroceryStore';
-import KitchenIcon from '@mui/icons-material/Kitchen';
 import ChildCareIcon from '@mui/icons-material/ChildCare';
 import PetsIcon from '@mui/icons-material/Pets';
 import SportsSoccerIcon from '@mui/icons-material/SportsSoccer';
-import CardGiftcardIcon from '@mui/icons-material/CardGiftcard';
 import MenuBookIcon from '@mui/icons-material/MenuBook';
 import SpaIcon from '@mui/icons-material/Spa';
 import ToysIcon from '@mui/icons-material/Toys';

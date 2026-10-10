@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { FileText, Loader2, Save, ScrollText } from "lucide-react";
 import Card from "@shared/components/ui/Card";

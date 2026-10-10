@@ -10,7 +10,6 @@ import {
   LEDGER_TRANSACTION_TYPE,
   ORDER_PAYMENT_STATUS,
   OWNER_TYPE,
-  isWalletRedemptionReducesPayableEnabled,
   isServerSideCouponEngineEnabled,
   getMaxCustomerTipAmount,
 } from "../constants/finance.js";

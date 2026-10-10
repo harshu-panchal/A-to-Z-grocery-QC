@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { MessageCircle, Phone, Mail, ChevronDown, ChevronUp, FileText, ChevronLeft, PlusCircle, X, Send } from 'lucide-react';
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import axiosInstance from '@core/api/axios';
 import { getJSON, setJSON, STORAGE_KEYS } from '@core/utils/storage';
 import { legalPagesApi } from '@core/services/legalPagesApi';
+import { sanitizeHtml } from '@core/utils/sanitizeHtml';
 
 const FAQ_CACHE_KEY = STORAGE_KEYS.FAQ_CACHE;
 const FAQ_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -138,7 +139,7 @@ const SupportPage = () => {
                         )}
                         <div
                             className="prose prose-slate prose-sm max-w-none text-slate-600 [&_a]:text-primary [&_a]:underline"
-                            dangerouslySetInnerHTML={{ __html: supportIntroHtml }}
+                            dangerouslySetInnerHTML={{ __html: sanitizeHtml(supportIntroHtml) }}
                         />
                     </div>
                 )}

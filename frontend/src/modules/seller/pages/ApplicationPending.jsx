@@ -1,4 +1,3 @@
-import React from "react";
 import { Link, Navigate, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import { CheckCircle2, Clock3, ShieldAlert, Store } from "lucide-react";

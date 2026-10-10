@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronLeft, Loader2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { legalPagesApi } from "@core/services/legalPagesApi";
+import { sanitizeHtml } from "@core/utils/sanitizeHtml";
 import { cn } from "@/lib/utils";
 
 /**
@@ -129,7 +130,7 @@ const LegalDocumentView = ({
                 "[&_a]:text-primary [&_a]:underline",
                 contentClassName,
               )}
-              dangerouslySetInnerHTML={{ __html: html }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(html) }}
             />
           )}
         </div>

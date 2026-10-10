@@ -3,7 +3,7 @@ import handleResponse from "../utils/helper.js";
 import Seller from "../models/seller.js";
 import Admin from "../models/admin.js";
 
-function extractJwtFromHeaders(req) {
+export function extractJwtFromHeaders(req) {
   const authHeader = String(req.headers.authorization || "").trim();
   if (authHeader) {
     const parts = authHeader.split(/\s+/);
@@ -39,7 +39,7 @@ export const verifyToken = async (req, res, next) => {
       return handleResponse(res, 401, "Unauthorized, token missing");
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
 
     // Audit fix H5: admin/seller password change increments `tokenVersion`
     // in the DB (see admin/profileController.js updateAdminPassword and
@@ -75,7 +75,7 @@ export const optionalVerifyToken = (req, res, next) => {
 
     if (token) {
       try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
         req.user = decoded; // { id, role }
       } catch (error) {
         // Token is invalid, but we don't block the request

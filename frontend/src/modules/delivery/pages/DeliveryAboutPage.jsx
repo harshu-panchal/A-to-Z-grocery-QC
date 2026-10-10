@@ -1,4 +1,3 @@
-import React from "react";
 import { Bike } from "lucide-react";
 import LegalDocumentView from "@shared/components/LegalDocumentView";
 

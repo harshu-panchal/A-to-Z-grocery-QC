@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import Sidebar from './Sidebar';
@@ -12,7 +12,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import SellerOrdersContext from '@/modules/seller/context/SellerOrdersContext';
 import SellerEarningsContext, { defaultEarnings } from '@/modules/seller/context/SellerEarningsContext';
-import { getOrderSocket, onSellerOrderNew, onReturnDropOtp } from '@/core/services/orderSocket';
+import { getOrderSocket, onSellerOrderNew, onReturnDropOtp, onOrderStatusUpdate } from '@/core/services/orderSocket';
 import { createSocketTokenReader } from '@core/utils/authStorage';
 import { STORAGE_KEYS } from '@core/utils/storage';
 import orderAlertSound from '@/assets/sounds/order_alert.mp3';
@@ -274,11 +274,29 @@ const DashboardLayout = ({ children, navItems, title }) => {
             audio.play().catch(() => { });
         });
 
+        // As soon as the rider enters the seller's OTP the return is "returned":
+        // flip the OTP popup to a "Received at store" confirmation.
+        const unsubscribeStatus = onOrderStatusUpdate(getToken, (payload) => {
+            if (!payload?.orderId) return;
+            if (!['returned', 'qc_passed', 'refund_completed'].includes(payload.returnStatus)) return;
+            setReturnDropOtpAlert((prev) =>
+                prev && prev.orderId === payload.orderId ? { ...prev, received: true } : prev,
+            );
+        });
+
         return () => {
             unsubscribeSellerNew();
             unsubscribeDrop();
+            unsubscribeStatus();
         };
     }, [role]);
+
+    // Close the "Received at store" confirmation by itself after a few seconds
+    useEffect(() => {
+        if (!returnDropOtpAlert?.received) return undefined;
+        const t = setTimeout(() => setReturnDropOtpAlert(null), 6000);
+        return () => clearTimeout(t);
+    }, [returnDropOtpAlert]);
 
     // Single earnings fetch when seller is on earnings/withdrawals/transactions – no duplicate calls
     useEffect(() => {
@@ -562,6 +580,29 @@ const DashboardLayout = ({ children, navItems, title }) => {
                             exit={{ scale: 0.9, opacity: 0, y: 20 }}
                             className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl border border-brand-100"
                         >
+                            {returnDropOtpAlert.received ? (
+                            <div className="flex flex-col items-center text-center" data-testid="return-received">
+                                <div className="h-20 w-20 bg-success/10 rounded-full flex items-center justify-center mb-6">
+                                    <Check className="h-10 w-10 text-success" strokeWidth={3} />
+                                </div>
+                                <h2 className="text-2xl font-black text-slate-900 mb-2">Received at Store</h2>
+                                <p className="text-slate-600 font-medium mb-2">
+                                    Return <span className="text-brand-600 font-bold">#{returnDropOtpAlert.orderId}</span> has been handed over to you.
+                                </p>
+                                <p className="text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded-xl px-4 py-2 mb-8">
+                                    Refund in process — the customer is refunded after quality check.
+                                </p>
+                                <button
+                                    onClick={() => {
+                                        setReturnDropOtpAlert(null);
+                                        navigate('/seller/returns');
+                                    }}
+                                    className="w-full py-4 rounded-2xl bg-primary text-primary-foreground font-black hover:bg-primary/90 shadow-xl shadow-primary/20 transition-all active:scale-95 uppercase tracking-widest text-xs"
+                                >
+                                    View Returns
+                                </button>
+                            </div>
+                            ) : (
                             <div className="flex flex-col items-center text-center">
                                 <div className="h-20 w-20 bg-brand-50 rounded-full flex items-center justify-center mb-6 animate-pulse">
                                     <Truck className="h-10 w-10 text-brand-600" />
@@ -592,6 +633,7 @@ const DashboardLayout = ({ children, navItems, title }) => {
                                     Dismiss Alert
                                 </button>
                             </div>
+                            )}
                         </motion.div>
                     </div>
                 )}

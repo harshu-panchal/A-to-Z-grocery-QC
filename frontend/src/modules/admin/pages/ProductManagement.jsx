@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Badge from '@shared/components/ui/Badge';
 import Button from '@shared/components/ui/Button';
 import PageHeader from '@shared/components/ui/PageHeader';
@@ -10,7 +10,6 @@ import { SkeletonStatCard, SkeletonCard } from '@shared/components/ui/Skeleton';
 import { adminApi } from '../services/adminApi';
 import { toast } from 'sonner';
 import {
-    HiOutlinePlus,
     HiOutlineCube,
     HiOutlineMagnifyingGlass,
     HiOutlineFunnel,
@@ -19,7 +18,6 @@ import {
     HiOutlinePhoto,
     HiOutlineArchiveBox,
     HiOutlineTag,
-    HiOutlineArrowPath,
     HiOutlineXMark,
     HiOutlineChevronRight,
     HiOutlineCheckCircle,
@@ -1059,10 +1057,15 @@ const ProductManagement = () => {
                                                                 <label className="ml-1 text-[8px] font-bold uppercase tracking-widest text-slate-400">Stock</label>
                                                                 <input
                                                                     type="number"
+                                                                    min="0"
+                                                                    step="1"
+                                                                    inputMode="numeric"
                                                                     value={v.stock}
+                                                                    onKeyDown={e => { if (['-', '+', 'e', 'E', '.', ','].includes(e.key)) e.preventDefault(); }}
                                                                     onChange={e => {
+                                                                        // whole units, never negative
                                                                         const news = [...formData.variants];
-                                                                        news[i].stock = e.target.value;
+                                                                        news[i].stock = e.target.value.replace(/[^\d]/g, '');
                                                                         setFormData({ ...formData, variants: news });
                                                                     }}
                                                                     placeholder="50"

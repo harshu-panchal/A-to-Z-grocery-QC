@@ -1,5 +1,8 @@
-import React, { useState, useMemo, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useState, useMemo, useEffect } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { onOrderStatusUpdate } from "@/core/services/orderSocket";
+import { createSocketTokenReader } from "@core/utils/authStorage";
+import { STORAGE_KEYS } from "@core/utils/storage";
 import Card from "@shared/components/ui/Card";
 import Badge from "@shared/components/ui/Badge";
 import PageHeader from "@shared/components/ui/PageHeader";
@@ -20,6 +23,50 @@ import { cn } from "@/lib/utils";
 import { sellerApi } from "../services/sellerApi";
 import { useToast } from "@shared/components/ui/Toast";
 import Pagination from "@shared/components/ui/Pagination";
+
+/**
+ * Tracking label from the order workflow (v2), which the delivery flow actually
+ * updates; the legacy `status` field can lag behind (e.g. still
+ * "out_for_delivery" on a DELIVERED order). Returns null for orders that don't
+ * belong on the tracking board (pending / cancelled).
+ */
+function trackingStatusOf(order) {
+  const wf = Number(order.workflowVersion) >= 2 ? String(order.workflowStatus || "").toUpperCase() : "";
+  switch (wf) {
+    case "SELLER_ACCEPTED":
+    case "DELIVERY_SEARCH":
+      return "Finding Partner";
+    case "DELIVERY_ASSIGNED":
+      return "Partner Assigned";
+    case "PICKUP_READY":
+      return "At Store";
+    case "OUT_FOR_DELIVERY":
+      return "On the Way";
+    case "DELIVERED":
+      return "Delivered";
+    case "CREATED":
+    case "SELLER_PENDING":
+    case "CANCELLED":
+      return null;
+    default:
+      break;
+  }
+  // Legacy (pre-workflow) orders
+  switch (order.status) {
+    case "confirmed": return "Partner Assigned";
+    case "packed": return "At Store";
+    case "out_for_delivery": return "On the Way";
+    case "delivered": return "Delivered";
+    default: return null;
+  }
+}
+
+const isToday = (value) => {
+  if (!value) return false;
+  const d = new Date(value);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+};
 
 const DeliveryTracking = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -59,14 +106,12 @@ const DeliveryTracking = () => {
         requestedPage += 1;
       }
 
-      // Only show orders that are confirmed, packed, or out for delivery (Tracking flow)
+      // Tracking board: accepted orders through delivery (pending/cancelled excluded)
       const formattedDeliveries = collectedOrders
-        .filter(order => order.status !== 'pending' && order.status !== 'cancelled')
+        .filter(order => trackingStatusOf(order) !== null)
         .map(order => {
-          let uiStatus = "Active";
-          if (order.status === 'delivered') uiStatus = "Delivered";
-          else if (order.status === 'out_for_delivery') uiStatus = "On the Way";
-          else uiStatus = "Picked Up";
+          const uiStatus = trackingStatusOf(order);
+          const deliveredAt = order.deliveredAt || (uiStatus === "Delivered" ? order.updatedAt : null);
 
           return {
             id: order._id,
@@ -85,11 +130,12 @@ const DeliveryTracking = () => {
               image: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=100&h=100&fit=crop",
               rating: 0,
             },
-            location: order.status === 'delivered' && order.updatedAt
-              ? `Delivered at ${new Date(order.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+            location: deliveredAt
+              ? `Delivered at ${new Date(deliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
               : "In Progress",
+            deliveredAt,
             orderDate: order.createdAt
-              ? new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
+              ? new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
               : "",
             startTime: order.createdAt
               ? new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -106,6 +152,21 @@ const DeliveryTracking = () => {
       return formattedDeliveries;
     },
   });
+
+  // Live: refresh the board whenever one of this seller's orders changes status
+  const queryClient = useQueryClient();
+  useEffect(() => {
+    const getToken = createSocketTokenReader(STORAGE_KEYS.AUTH_SELLER);
+    let timer = null;
+    const off = onOrderStatusUpdate(getToken, () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => queryClient.invalidateQueries({ queryKey: ["seller", "deliveryTracking"] }), 600);
+    });
+    return () => {
+      off();
+      clearTimeout(timer);
+    };
+  }, [queryClient]);
 
   useEffect(() => {
     if (isError) {
@@ -152,15 +213,15 @@ const DeliveryTracking = () => {
         bg: "bg-primary/10",
       },
       {
-        label: "At Store",
-        value: deliveries.filter((d) => d.status === "Picked Up").length,
+        label: "At Store / Assigned",
+        value: deliveries.filter((d) => d.status === "At Store" || d.status === "Partner Assigned").length,
         icon: HiOutlineMapPin,
         color: "text-warning",
         bg: "bg-warning/10",
       },
       {
         label: "Completed Today",
-        value: deliveries.filter((d) => d.status === "Delivered").length,
+        value: deliveries.filter((d) => d.status === "Delivered" && isToday(d.deliveredAt)).length,
         icon: HiOutlineCheckCircle,
         color: "text-success",
         bg: "bg-success/10",
@@ -173,8 +234,11 @@ const DeliveryTracking = () => {
     switch (status) {
       case "On the Way":
         return "info";
-      case "Picked Up":
+      case "At Store":
+      case "Partner Assigned":
         return "warning";
+      case "Finding Partner":
+        return "danger";
       case "Delivered":
         return "success";
       default:
@@ -313,10 +377,10 @@ const DeliveryTracking = () => {
                           </div>
                           <div className="shrink-0 sm:text-right">
                             <p className="text-[8px] font-bold uppercase leading-none tracking-widest text-slate-400">
-                              Timing
+                              Ordered
                             </p>
                             <p className="mt-0.5 text-[10px] font-black tracking-tight text-primary">
-                              {dlv.startTime || "—"}
+                              {dlv.startTime ? `${dlv.orderDate}, ${dlv.startTime}` : "—"}
                             </p>
                           </div>
                         </div>

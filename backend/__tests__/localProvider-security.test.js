@@ -1,4 +1,3 @@
-import { jest } from "@jest/globals";
 import fs from "fs";
 import os from "os";
 import path from "path";
@@ -84,5 +83,5 @@ describe("localProvider server-side image validation", () => {
     const writtenPath = path.join(testRoot, result.localPath);
     const stat = await fs.promises.stat(writtenPath);
     expect(stat.isFile()).toBe(true);
-  });
+  }, 30000); // sharp WebP conversion can exceed the 5s default under a parallel full-suite run
 });

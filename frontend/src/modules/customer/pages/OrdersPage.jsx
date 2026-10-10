@@ -1,7 +1,11 @@
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { Skeleton } from '@shared/components/ui/Skeleton';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { onOrderStatusUpdate } from '@/core/services/orderSocket';
+import { createSocketTokenReader } from '@core/utils/authStorage';
+import { STORAGE_KEYS } from '@core/utils/storage';
 import { useNavigate, Link } from 'react-router-dom';
-import { Package, ChevronRight, Clock, CheckCircle, Loader2, ChevronLeft } from 'lucide-react';
+import { Package, ChevronRight, CheckCircle, ChevronLeft } from 'lucide-react';
 import { customerApi } from '../services/customerApi';
 import { getOrderStatusLabel, getLegacyStatusFromOrder } from '@/shared/utils/orderStatus';
 import { applyCloudinaryTransform } from '@/core/utils/imageUtils';
@@ -36,12 +40,45 @@ const OrdersPage = () => {
         },
     });
 
+    // Live: refresh the list whenever any of this customer's orders changes status
+    const queryClient = useQueryClient();
+    useEffect(() => {
+        const getToken = createSocketTokenReader(STORAGE_KEYS.AUTH_CUSTOMER);
+        let timer = null;
+        const off = onOrderStatusUpdate(getToken, () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => queryClient.invalidateQueries({ queryKey: ['customer', 'myOrders'] }), 400);
+        });
+        return () => {
+            off();
+            clearTimeout(timer);
+        };
+    }, [queryClient]);
+
     if (loading) {
         return (
-            <div className="min-h-screen flex items-center justify-center bg-slate-50">
-                <div className="flex items-center gap-3 px-4 py-3 rounded-2xl bg-white shadow-sm border border-slate-100">
-                    <Loader2 className="animate-spin text-brand-600" size={22} />
-                    <span className="text-sm font-medium text-slate-600">Loading your orders…</span>
+            <div className="min-h-screen bg-slate-50 pb-24">
+                <div className="sticky top-0 z-30 bg-slate-50/95 px-4 pt-4 pb-3 border-b border-slate-200/60 mb-4">
+                    <h1 className="text-xl font-semibold text-slate-900 tracking-tight pl-11">My Orders</h1>
+                </div>
+                <div className="space-y-4 px-4" role="status" aria-label="Loading your orders">
+                    {[0, 1, 2].map((i) => (
+                        <div key={i} className="rounded-xl border border-slate-200 bg-white p-4">
+                            <div className="flex items-center justify-between">
+                                <Skeleton className="h-4 w-28" />
+                                <Skeleton className="h-6 w-20 rounded-full" />
+                            </div>
+                            <div className="mt-4 flex gap-2">
+                                <Skeleton className="h-12 w-12 rounded-lg" />
+                                <Skeleton className="h-12 w-12 rounded-lg" />
+                                <Skeleton className="h-12 w-12 rounded-lg" />
+                            </div>
+                            <div className="mt-4 flex items-center justify-between">
+                                <Skeleton className="h-3 w-24" />
+                                <Skeleton className="h-4 w-14" />
+                            </div>
+                        </div>
+                    ))}
                 </div>
             </div>
         );
@@ -67,7 +104,7 @@ const OrdersPage = () => {
                         <p className="text-slate-500 text-sm mb-6 max-w-[260px]">
                             When you place an order, it will appear here so you can track it easily.
                         </p>
-                        <Link to="/" className="bg-primary hover:bg-[#0a6d19] text-white px-7 py-2.5 rounded-full font-semibold text-sm shadow-sm transition-colors">
+                        <Link to="/" className="inline-flex h-11 items-center bg-primary hover:opacity-90 text-primary-foreground px-7 rounded-xl font-semibold text-sm shadow-sm transition-opacity">
                             Start Shopping
                         </Link>
                     </div>
@@ -98,7 +135,7 @@ const OrdersPage = () => {
                                         <h3 className="font-semibold text-slate-900 text-sm tracking-tight leading-snug">
                                             Order #{order.orderId.slice(-6)}
                                         </h3>
-                                        <p className="mt-0.5 text-[11px] text-slate-500 font-medium leading-tight">
+                                        <p className="mt-0.5 whitespace-nowrap text-[11px] text-slate-500 font-medium leading-tight">
                                             {new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}{' '}
                                             <span className="mx-1 text-slate-400">•</span>
                                             {new Date(order.createdAt).toLocaleTimeString('en-IN', {
@@ -106,37 +143,36 @@ const OrdersPage = () => {
                                                 minute: '2-digit',
                                             })}
                                         </p>
+                                        {/* status lives under the title: long return labels used to
+                                            push into (and print over) the order number on phones */}
+                                        <span
+                                            className={`mt-2 inline-flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1 text-left text-[10px] font-semibold uppercase leading-tight tracking-[0.08em] ${
+                                                legacy === 'delivered'
+                                                    ? 'bg-brand-50 text-brand-700 border-brand-100'
+                                                    : legacy === 'cancelled'
+                                                        ? 'bg-rose-50 text-rose-700 border-rose-100'
+                                                        : 'bg-brand-50 text-brand-700 border-brand-100'
+                                            }`}
+                                        >
+                                            <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-white/80">
+                                                <CheckCircle
+                                                    size={9}
+                                                    className={`${
+                                                        legacy === 'delivered'
+                                                            ? 'text-brand-600'
+                                                            : legacy === 'cancelled'
+                                                                ? 'text-rose-500'
+                                                                : 'text-brand-500'
+                                                    }`}
+                                                />
+                                            </span>
+                                            <span className="min-w-0 break-words">{getOrderStatusLabel(order).toUpperCase()}</span>
+                                        </span>
                                     </div>
                                 </div>
-                                <div className="flex flex-col items-end gap-1 shrink-0 text-right">
-                                    <span
-                                        className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${
-                                            legacy === 'delivered'
-                                                ? 'bg-brand-50 text-brand-700 border-brand-100'
-                                                : legacy === 'cancelled'
-                                                    ? 'bg-rose-50 text-rose-700 border-rose-100'
-                                                    : 'bg-brand-50 text-brand-700 border-brand-100'
-                                        }`}
-                                    >
-                                        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-white/80">
-                                            <CheckCircle
-                                                size={9}
-                                                className={`${
-                                                    legacy === 'delivered'
-                                                        ? 'text-brand-600'
-                                                        : legacy === 'cancelled'
-                                                            ? 'text-rose-500'
-                                                            : 'text-brand-500'
-                                                }`}
-                                            />
-                                        </span>
-                                        <span>{getOrderStatusLabel(order).toUpperCase()}</span>
-                                    </span>
-                                    <span className="inline-flex items-center text-[10px] font-medium text-slate-400">
-                                        <span className="h-1 w-1 rounded-full bg-slate-300 mr-1" />
-                                        Tap to view details
-                                    </span>
-                                </div>
+                                <span className="shrink-0 pt-0.5 text-[10px] font-medium text-slate-400 whitespace-nowrap">
+                                    Tap to view
+                                </span>
                             </div>
 
                             <div className="border-t border-slate-100 pt-3 flex justify-between items-center gap-3">

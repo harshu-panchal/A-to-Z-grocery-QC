@@ -213,6 +213,10 @@ async function dispatchPhoneOtp({ phone, otp }) {
     return;
   }
 
+  if (process.env.NODE_ENV === "production") {
+    console.warn("[SellerPhoneOTP][mock] Real SMS is disabled; OTP not delivered.");
+    return;
+  }
   console.log(`[SellerPhoneOTP][mock] ${phone} -> ${otp}`);
 }
 
@@ -247,7 +251,7 @@ export function verifySellerVerificationToken({ channel, rawValue, token, purpos
 
   let payload;
   try {
-    payload = jwt.verify(token, verificationSecret());
+    payload = jwt.verify(token, verificationSecret(), { algorithms: ["HS256"] });
   } catch {
     const error = new Error("Verification expired. Please verify again.");
     error.statusCode = 400;

@@ -1,7 +1,6 @@
 import Seller from "../models/seller.js";
 import Transaction from "../models/transaction.js";
 import { handleResponse, calculateDistance } from "../utils/helper.js";
-import mongoose from "mongoose";
 import { invalidateSellerName } from "../services/entityNameCache.js";
 import { getSellerSidebarBadges } from "../services/sidebarBadgesService.js";
 import { withLock } from "../utils/distributedLock.js";

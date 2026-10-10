@@ -725,4 +725,69 @@ function preUpdateMirror(next) {
 orderSchema.pre('updateOne', preUpdateMirror);
 orderSchema.pre('updateMany', preUpdateMirror);
 
+/* ------------------------------------------------------------------
+ * Live updates for the RETURN flow.
+ * returnStatus is changed from ~15 places (controllers, services, jobs) and
+ * none of them pushed a socket event, so customer / seller / rider screens
+ * only changed on refresh. Emitting here covers every path, including future
+ * ones. Fire-and-forget: a socket failure must never fail the write.
+ * ------------------------------------------------------------------ */
+async function emitReturnStatusChange(doc) {
+  if (!doc?.orderId) return;
+  try {
+    const { emitToRooms } = await import("../services/orderSocketEmitter.js");
+    const idOf = (v) => (v ? String(v._id || v) : null);
+    const customer = idOf(doc.customer);
+    const seller = idOf(doc.seller);
+    const rider = idOf(doc.returnDeliveryBoy);
+    emitToRooms(
+      [
+        `order:${doc.orderId}`,
+        customer && `customer:${customer}`,
+        seller && `seller:${seller}`,
+        rider && `delivery:${rider}`,
+      ],
+      {
+        event: "order:status:update",
+        payload: {
+          orderId: doc.orderId,
+          returnStatus: doc.returnStatus,
+          kind: "return",
+          at: new Date().toISOString(),
+        },
+      },
+    );
+  } catch {
+    /* socket layer not ready (scripts/tests) — ignore */
+  }
+}
+
+orderSchema.pre('save', function(next) {
+  this.$locals = this.$locals || {};
+  this.$locals.returnStatusChanged = !this.isNew && this.isModified('returnStatus');
+  next();
+});
+orderSchema.post('save', function(doc) {
+  if (doc.$locals?.returnStatusChanged) emitReturnStatusChange(doc);
+});
+
+function updateTouchesReturnStatus(update = {}) {
+  return (
+    Object.prototype.hasOwnProperty.call(update, 'returnStatus') ||
+    Object.prototype.hasOwnProperty.call(update.$set || {}, 'returnStatus')
+  );
+}
+orderSchema.post('findOneAndUpdate', async function(res) {
+  if (!updateTouchesReturnStatus(this.getUpdate())) return;
+  const doc = res?.orderId
+    ? res
+    : await this.model.findOne(this.getQuery()).select('orderId customer seller returnDeliveryBoy returnStatus').lean();
+  emitReturnStatusChange(doc);
+});
+orderSchema.post('updateOne', async function(result) {
+  if (!result?.modifiedCount || !updateTouchesReturnStatus(this.getUpdate())) return;
+  const doc = await this.model.findOne(this.getQuery()).select('orderId customer seller returnDeliveryBoy returnStatus').lean();
+  emitReturnStatusChange(doc);
+});
+
 export default mongoose.model("Order", orderSchema);

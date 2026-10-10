@@ -1,5 +1,5 @@
 import Order from "../models/order.js";
-import Cart from "../models/cart.js";
+import OrderOtp from "../models/orderOtp.js";
 import Product from "../models/product.js";
 import Transaction from "../models/transaction.js";
 import StockHistory from "../models/stockHistory.js";
@@ -7,17 +7,13 @@ import Seller from "../models/seller.js";
 import Delivery from "../models/delivery.js";
 import User from "../models/customer.js";
 import Payout from "../models/payout.js";
-import OrderOtp from "../models/orderOtp.js";
 import handleResponse from "../utils/helper.js";
 import getPagination from "../utils/pagination.js";
 import {
   WORKFLOW_STATUS,
-  DEFAULT_SELLER_TIMEOUT_MS,
   workflowFromLegacyStatus,
 } from "../constants/orderWorkflow.js";
-import { ORDER_PAYMENT_STATUS } from "../constants/finance.js";
 import {
-  afterPlaceOrderV2,
   sellerAcceptAtomic,
   sellerRejectAtomic,
   deliveryAcceptAtomic,
@@ -27,13 +23,10 @@ import {
 } from "../services/orderWorkflowService.js";
 import { applyDeliveredSettlement } from "../services/orderSettlement.js";
 import {
-  freezeFinancialSnapshot,
   reverseOrderFinanceOnCancellation,
 } from "../services/finance/orderFinanceService.js";
-import {
-  generateOrderPaymentBreakdown,
-  hydrateOrderItems,
-} from "../services/finance/pricingService.js";
+
+
 import { distanceMeters } from "../utils/geoUtils.js";
 import {
   fetchAvailableOrdersForDelivery,
@@ -48,20 +41,18 @@ import { placeOrderAtomic } from "../services/orderPlacementService.js";
 import { emitNotificationEvent } from "../modules/notifications/notification.emitter.js";
 import { NOTIFICATION_EVENTS } from "../modules/notifications/notification.constants.js";
 import {
-  emitDeliveryBroadcastForSeller,
   retractDeliveryBroadcastForOrder,
-  emitToSeller,
   emitToDelivery,
   emitOrderStatusUpdate,
+  emitToRooms,
 } from "../services/orderSocketEmitter.js";
 import * as walletService from "../services/finance/walletService.js";
-import { OWNER_TYPE } from "../constants/finance.js";
 import { processPayout } from "../services/finance/payoutService.js";
 import { buildKey, invalidate } from "../services/cacheService.js";
-import { computeReturnWindowForOrder } from "../utils/returnWindow.js";
 import logger from "../services/logger.js";
 import { validateBody as validateWithJoi } from "../middleware/validate.js";
 import OrderReturnService from "../services/order/orderReturnService.js";
+import { assertRiderWithinRange, returnSearchRadiusM } from "../services/delivery/riderRange.js";
 
 function normalizePaymentMode(value) {
   const raw = String(value || "").trim().toUpperCase();
@@ -272,7 +263,78 @@ export const getOrderDetails = async (req, res) => {
         result.payload,
       );
     }
-    return handleResponse(res, 200, "Order details fetched", result.payload);
+    // The delivery OTP used to reach the customer only as a live socket event,
+    // so refreshing the order page lost it. Re-attach the active (unconsumed,
+    // unexpired) code — for the order's own customer only, never for riders.
+    let payload = result.payload;
+    const role = String(req.user?.role || "").toLowerCase();
+    const ownerId = String(payload?.customer?._id || payload?.customer || "");
+    if (
+      payload &&
+      role === "customer" &&
+      ownerId &&
+      ownerId === String(userIdRaw) &&
+      String(payload.workflowStatus || "").toUpperCase() === "OUT_FOR_DELIVERY"
+    ) {
+      const otpDoc = await OrderOtp.findOne({
+        orderId: payload.orderId,
+        type: "delivery",
+        consumedAt: null,
+        expiresAt: { $gt: new Date() },
+      })
+        .sort({ createdAt: -1 })
+        .select("code expiresAt")
+        .lean();
+      if (otpDoc?.code) {
+        payload = { ...payload, activeDeliveryOtp: { code: otpDoc.code, expiresAt: otpDoc.expiresAt } };
+      }
+    }
+    // Assigned rider: only WHETHER an OTP is pending (never the code), so the
+    // rider app can reopen on the OTP-entry step after a refresh instead of
+    // sliding again — which would issue a new code and void the customer's.
+    const riderId = String(payload?.deliveryBoy?._id || payload?.deliveryBoy || "");
+    if (
+      payload &&
+      role === "delivery" &&
+      riderId &&
+      riderId === String(userIdRaw) &&
+      String(payload.workflowStatus || "").toUpperCase() === "OUT_FOR_DELIVERY"
+    ) {
+      const pending = await OrderOtp.findOne({
+        orderId: payload.orderId,
+        type: "delivery",
+        consumedAt: null,
+        expiresAt: { $gt: new Date() },
+      })
+        .sort({ createdAt: -1 })
+        .select("expiresAt")
+        .lean();
+      if (pending) {
+        payload = { ...payload, deliveryOtpPending: { expiresAt: pending.expiresAt } };
+      }
+    }
+    // Same for the return-pickup rider: customer pickup OTP / seller drop OTP
+    // already issued -> the app reopens on the OTP box after a refresh.
+    const returnRiderId = String(payload?.returnDeliveryBoy?._id || payload?.returnDeliveryBoy || "");
+    const returnOtpType =
+      payload?.returnStatus === "return_pickup_assigned" ? "return_pickup"
+        : payload?.returnStatus === "return_drop_pending" ? "return_drop"
+          : null;
+    if (payload && role === "delivery" && returnRiderId && returnRiderId === String(userIdRaw) && returnOtpType) {
+      const pendingReturn = await OrderOtp.findOne({
+        orderId: payload.orderId,
+        type: returnOtpType,
+        consumedAt: null,
+        expiresAt: { $gt: new Date() },
+      })
+        .sort({ createdAt: -1 })
+        .select("expiresAt")
+        .lean();
+      if (pendingReturn) {
+        payload = { ...payload, returnOtpPending: { type: returnOtpType, expiresAt: pendingReturn.expiresAt } };
+      }
+    }
+    return handleResponse(res, 200, "Order details fetched", payload);
   } catch (error) {
     if (!error.statusCode || error.statusCode === 500) {
       logger.error("Error fetching order details", {
@@ -883,14 +945,40 @@ export const acceptReturnPickup = async (req, res) => {
     }
 
     if (!order.returnDeliveryBoy) {
-      order.returnDeliveryBoy = userId;
-      order.returnStatus = "return_pickup_assigned";
+      // Range: rider must be within the return search radius of the customer
+      try {
+        await assertRiderWithinRange(userId, order.address?.location, returnSearchRadiusM(order), "customer");
+      } catch (rangeErr) {
+        return handleResponse(res, rangeErr.statusCode || 403, rangeErr.message);
+      }
       const acceptedAttempt = order.returnSearchMeta?.attempt || 1;
-      // Clear the assignment expiry now that a rider owns this pickup —
-      // prevents the orderQueryService stale-filter from accidentally
-      // hiding this pickup from the rider's own task list.
+      // Atomic claim (same as order accept): only the first rider whose update
+      // still sees returnDeliveryBoy = null wins. The old read-check-save let
+      // two riders accepting at the same moment both "win" the pickup.
+      // Clearing returnSearchExpiresAt keeps the pickup in the rider's own
+      // task list (orderQueryService stale-filter).
+      const claimed = await Order.findOneAndUpdate(
+        {
+          _id: order._id,
+          returnDeliveryBoy: null,
+          returnStatus: { $in: ["return_approved", "return_pickup_assigned"] },
+        },
+        {
+          $set: { returnDeliveryBoy: userId, returnStatus: "return_pickup_assigned" },
+          $unset: { returnSearchExpiresAt: 1 },
+        },
+        { new: true },
+      );
+      if (!claimed) {
+        return handleResponse(
+          res,
+          409,
+          "This return pickup was already accepted by another delivery partner.",
+        );
+      }
+      order.returnDeliveryBoy = claimed.returnDeliveryBoy;
+      order.returnStatus = claimed.returnStatus;
       order.returnSearchExpiresAt = undefined;
-      await order.save();
 
       // Cancel the pending timeout for whichever attempt the rider grabbed.
       try {
@@ -905,6 +993,18 @@ export const acceptReturnPickup = async (req, res) => {
       // Retract broadcast so other riders stop seeing this task
       try {
         await retractDeliveryBroadcastForOrder(order.orderId, userId);
+        // Return offers can reach riders without a notification row (dev
+        // fallback / re-broadcasts), so also tell every online rider: their
+        // popup for this return closes right away.
+        emitToRooms(["delivery:online"], {
+          event: "delivery:broadcast:withdrawn",
+          payload: {
+            orderId: order.orderId,
+            type: "RETURN_PICKUP",
+            winnerDeliveryId: userId,
+            at: new Date().toISOString(),
+          },
+        });
       } catch (e) {
         logger.warn("acceptReturnPickup retract broadcast failed", {
           scope: "acceptReturnPickup",

@@ -3,9 +3,14 @@ import { handleResponse } from '../utils/helper.js';
 import getPagination from '../utils/pagination.js';
 import { buildSearchRegex } from '../utils/regex.js';
 
-export const getFAQs = async (req, res) => {
+export const getFAQs = (req, res) => findFAQs(req, res, req.query.status);
+
+// Public listing never exposes drafts, whatever `status` is requested.
+export const getPublishedFAQs = (req, res) => findFAQs(req, res, 'published');
+
+const findFAQs = async (req, res, status) => {
     try {
-        const { category, status, search } = req.query;
+        const { category, search } = req.query;
         const query = {};
         if (category && category !== 'All') query.category = category;
         if (status) query.status = status;

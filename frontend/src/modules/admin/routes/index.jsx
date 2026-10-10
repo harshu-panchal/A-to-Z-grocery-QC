@@ -8,7 +8,6 @@ import {
   LayoutDashboard,
   Tag,
   Box,
-  Building2,
   Truck,
   Wallet,
   Banknote,

@@ -1,13 +1,10 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import Card from "@shared/components/ui/Card";
 import Badge from "@shared/components/ui/Badge";
 import {
   HiOutlineTruck,
-  HiOutlineMapPin,
   HiOutlineBolt,
   HiOutlineClock,
-  HiOutlineExclamationCircle,
-  HiOutlineInformationCircle,
   HiOutlineXMark,
   HiOutlineChevronRight,
   HiOutlineSignal,

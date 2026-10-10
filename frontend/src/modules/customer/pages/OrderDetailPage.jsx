@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, Link, useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import InvoiceModal from "../components/order/InvoiceModal";
 import HelpModal from "../components/order/HelpModal";
 import LiveTrackingMap from "../components/order/LiveTrackingMap";
@@ -14,7 +14,6 @@ import {
   Package,
   Truck,
   CheckCircle,
-  Clock,
   MapPin,
   CreditCard,
   Download,
@@ -46,7 +45,6 @@ import {
   onOrderStatusUpdate,
   onCustomerOtp,
   onReturnPickupOtp,
-  onReturnDropOtp,
 } from "@/core/services/orderSocket";
 import { getLegacyStatusFromOrder } from "@/shared/utils/orderStatus";
 import { createSocketTokenReader } from "@core/utils/authStorage";
@@ -273,6 +271,22 @@ const OrderDetailPage = () => {
     };
 
     const offStatus = onOrderStatusUpdate(getToken, (payload) => {
+      // The customer's personal room carries updates for ALL their orders —
+      // ignore other orders, otherwise one order's status overwrote this page.
+      if (payload?.orderId && !matchesOrderIdentifier(payload.orderId, identifiersRef.current)) {
+        return;
+      }
+      // Return flow: move the return tracker immediately (refetch follows below)
+      if (payload?.returnStatus) {
+        queryClient.setQueryData(orderDetailQueryKey, (prev) => {
+          if (!prev?.order) return prev;
+          return {
+            ...prev,
+            order: { ...prev.order, returnStatus: payload.returnStatus },
+            returnDetails: { ...(prev.returnDetails || {}), returnStatus: payload.returnStatus },
+          };
+        });
+      }
       // Immediately update order state from socket payload — no waiting for API re-fetch
       const ws = String(payload?.workflowStatus || "").toUpperCase();
       if (ws) {
@@ -445,6 +459,14 @@ const OrderDetailPage = () => {
       return {
         arrivalTimeText: "Arrived",
         arrivingInText: "Delivered",
+      };
+    }
+
+    // No rider yet: don't invent an ETA (the old fallback showed "8 mins" regardless)
+    if (!order.deliveryBoy) {
+      return {
+        arrivalTimeText: "--",
+        arrivingInText: "--",
       };
     }
 
@@ -767,7 +789,11 @@ const OrderDetailPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white pb-24 font-sans">
+    <div
+      className="min-h-screen bg-gradient-to-b from-slate-50 to-white pb-24 font-sans"
+      data-order-status={order?.workflowStatus || status}
+      data-return-status={returnDetails?.returnStatus || order?.returnStatus || "none"}
+    >
       {/* Minimal Header */}
       <div className="bg-white/80 backdrop-blur-md sticky top-0 z-30 px-4 py-3 flex items-center justify-between border-b border-slate-100">
         <button
@@ -827,6 +853,7 @@ const OrderDetailPage = () => {
               eta={estimatedArrival.arrivingInText}
               riderName={order.deliveryBoy?.name || "Delivery Partner"}
               riderPhone={order.deliveryBoy?.phone || ""}
+              riderRating={order.deliveryBoy?.rating}
               riderLocation={liveLocation}
               sellerLocation={sellerLocation}
               destinationLocation={
@@ -856,6 +883,7 @@ const OrderDetailPage = () => {
           <DeliveryOtpDisplay
             orderId={order?.orderId || orderId}
             checkoutGroupId={order?.checkoutGroupId || orderId}
+            initialOtp={order?.activeDeliveryOtp || null}
           />
         )}
 
@@ -880,9 +908,10 @@ const OrderDetailPage = () => {
                     <User size={24} className="text-white" />
                   )}
                 </div>
-                {order.deliveryBoy && (
+                {/* real rating only — this used to be a hard-coded "4.8" for every rider */}
+                {Number(order.deliveryBoy?.rating) > 0 && (
                   <div className="absolute -bottom-1 -right-1 bg-white text-primary text-[9px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5 shadow-md">
-                    4.8 ★
+                    {Number(order.deliveryBoy.rating).toFixed(1)} ★
                   </div>
                 )}
               </div>
@@ -930,9 +959,10 @@ const OrderDetailPage = () => {
               <div className="flex items-center gap-2 mb-1">
                 <p className="text-xs font-bold text-orange-600 uppercase tracking-wider">Pickup Location</p>
               </div>
-              <h4 className="font-bold text-slate-900 text-base mb-1">Store Location</h4>
+              {/* This used to print order.address — the customer's own delivery address */}
+              <h4 className="font-bold text-slate-900 text-base mb-1">{order.seller?.shopName || "Store Location"}</h4>
               <p className="text-sm text-slate-500 leading-relaxed">
-                {order.address?.address || "Address not available"}
+                {(typeof order.seller?.address === "string" ? order.seller.address : order.seller?.address?.address) || "Store address not available"}
               </p>
             </div>
             <button
@@ -1136,7 +1166,10 @@ const OrderDetailPage = () => {
               returnDetails.returnStatus &&
               returnDetails.returnStatus !== "none" ? (
               <div className="space-y-4 text-sm">
-                <ReturnProgressTracker returnStatus={returnDetails.returnStatus} />
+                <ReturnProgressTracker
+                  returnStatus={returnDetails.returnStatus}
+                  refundAmount={returnDetails.returnRefundAmount}
+                />
 
                 {/* Return OTP Display for Customer if pickup is assigned */}
                 {returnDetails.returnStatus === "return_pickup_assigned" && (

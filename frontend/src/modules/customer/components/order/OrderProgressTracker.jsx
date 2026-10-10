@@ -1,4 +1,3 @@
-import React from "react";
 import { motion } from "framer-motion";
 import { CheckCircle, Circle, Clock, Truck, Home } from "lucide-react";
 import { getLegacyStatusFromOrder } from "@/shared/utils/orderStatus";

@@ -1,12 +1,9 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import {
   Bell,
   ArrowLeft,
-  Calendar,
   Megaphone,
-  CheckCircle,
   Clock,
-  Trash2,
 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";

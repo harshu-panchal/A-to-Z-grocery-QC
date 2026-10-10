@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Badge from '@shared/components/ui/Badge';
 import Button from '@shared/components/ui/Button';
 import PageHeader from '@shared/components/ui/PageHeader';
@@ -20,7 +20,6 @@ import {
     User,
     Star,
     DollarSign,
-    ShieldCheck,
     XCircle,
     Pencil,
     Trash2,

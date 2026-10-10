@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import { CheckCircle, Clock, MapPin, Shield } from "lucide-react";
 import {
   getOrderSocket,
@@ -33,7 +33,7 @@ const matchesOrderIdentifier = (payloadOrderId, identifiers = []) => {
     .includes(normalizedPayloadId);
 };
 
-const DeliveryOtpDisplay = ({ orderId, checkoutGroupId = null }) => {
+const DeliveryOtpDisplay = ({ orderId, checkoutGroupId = null, initialOtp = null }) => {
   const [otpData, setOtpData] = useState(null);
   const [isDelivered, setIsDelivered] = useState(false);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
@@ -126,10 +126,25 @@ const DeliveryOtpDisplay = ({ orderId, checkoutGroupId = null }) => {
     };
   }, [orderId, checkoutGroupId]);
 
-  // Countdown timer
-  // Requirement 7.5: Display countdown timer showing remaining validity
+  // Restore the active OTP after a page refresh: the code used to arrive only as
+  // a live socket event, so reloading the page lost it.
   useEffect(() => {
-    if (!otpData || remainingSeconds <= 0) {
+    const code = initialOtp?.code;
+    if (!code || !initialOtp?.expiresAt) return;
+    if (calculateRemainingTime(initialOtp.expiresAt) <= 0) return;
+    setOtpData((current) => current || {
+      otp: code,
+      expiresAt: initialOtp.expiresAt,
+      deliveryPersonNearby: true,
+    });
+    setRemainingSeconds((s) => s || calculateRemainingTime(initialOtp.expiresAt));
+  }, [initialOtp?.code, initialOtp?.expiresAt]);
+
+  // Countdown timer
+  // Requirement 7.5: Display countdown timer showing remaining validity.
+  // Always derived from the real expiry time (no drift, no interval re-creation each tick).
+  useEffect(() => {
+    if (!otpData?.expiresAt) {
       if (timerRef.current) {
         clearInterval(timerRef.current);
         timerRef.current = null;
@@ -137,18 +152,17 @@ const DeliveryOtpDisplay = ({ orderId, checkoutGroupId = null }) => {
       return;
     }
 
-    timerRef.current = setInterval(() => {
-      setRemainingSeconds((prev) => {
-        const next = prev - 1;
-        if (next <= 0) {
-          clearInterval(timerRef.current);
-          timerRef.current = null;
-          setOtpData(null);
-          return 0;
-        }
-        return next;
-      });
-    }, 1000);
+    const tick = () => {
+      const left = calculateRemainingTime(otpData.expiresAt);
+      setRemainingSeconds(left);
+      if (left <= 0) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+        setOtpData(null);
+      }
+    };
+    tick();
+    timerRef.current = setInterval(tick, 1000);
 
     return () => {
       if (timerRef.current) {
@@ -156,7 +170,7 @@ const DeliveryOtpDisplay = ({ orderId, checkoutGroupId = null }) => {
         timerRef.current = null;
       }
     };
-  }, [otpData, remainingSeconds]);
+  }, [otpData]);
 
   // Show delivery confirmation
   if (isDelivered) {

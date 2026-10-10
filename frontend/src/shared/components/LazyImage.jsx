@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 const LazyImage = ({ src, alt = '', className = '', ...rest }) => {
   const [loaded, setLoaded] = useState(false);

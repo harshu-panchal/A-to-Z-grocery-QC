@@ -22,7 +22,21 @@ import { SkeletonTableRows, SkeletonCard } from './Skeleton';
  */
 const DataTable = ({ columns, data, rowKey, onRowClick, loading = false, emptyState, className }) => {
     const rows = Array.isArray(data) ? data : [];
-    const getRowKey = (row, index) => (rowKey ? rowKey(row) : row?._id || row?.id || index);
+    // Row keys must be unique. Callers pass rowKey(row, index) (the index used to
+    // be dropped, so `(row, i) => i` gave every row `undefined`), and some ids
+    // repeat (several wallet transactions share one reference). Missing or
+    // repeated keys get the row index appended.
+    const rowKeys = React.useMemo(() => {
+        const seen = new Set();
+        return (rows || []).map((row, index) => {
+            const raw = rowKey ? rowKey(row, index) : row?._id || row?.id;
+            let key = raw === undefined || raw === null || raw === '' ? `row-${index}` : String(raw);
+            if (seen.has(key)) key = `${key}__${index}`;
+            seen.add(key);
+            return key;
+        });
+    }, [rows, rowKey]);
+    const getRowKey = (row, index) => rowKeys[index] ?? `row-${index}`;
 
     const primaryColumn = columns.find((c) => c.primary) || columns[0];
     const secondaryColumns = columns.filter((c) => c !== primaryColumn && !c.hideOnMobile);

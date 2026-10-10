@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Badge from '@shared/components/ui/Badge';
 import Button from '@shared/components/ui/Button';
@@ -22,7 +22,6 @@ import {
     HiOutlineCalendarDays,
     HiOutlineClock,
     HiOutlineXMark,
-    HiOutlineArrowPath,
     HiOutlineArrowTopRightOnSquare
 } from 'react-icons/hi2';
 import { cn } from '@/lib/utils';

@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Badge from "@shared/components/ui/Badge";
 import Button from "@shared/components/ui/Button";
@@ -21,7 +22,7 @@ import {
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Loader2, X } from "lucide-react";
-import { onReturnDropOtp } from "@core/services/orderSocket";
+import { onReturnDropOtp, onOrderStatusUpdate } from "@core/services/orderSocket";
 import { createSocketTokenReader } from "@core/utils/authStorage";
 import { STORAGE_KEYS } from "@core/utils/storage";
 
@@ -45,9 +46,11 @@ const Returns = () => {
         "Rejected",
         "Pickup Assigned",
         "In Transit",
+        "At Store (OTP)",
+        "Received",
         "QC Passed",
         "QC Failed",
-        "Completed",
+        "Refunded",
     ];
 
     const mapReturnStatusLabel = (status) => {
@@ -61,15 +64,20 @@ const Returns = () => {
             case "return_pickup_assigned":
                 return "Pickup Assigned";
             case "return_in_transit":
-            case "return_drop_pending":
                 return "In Transit";
+            case "return_drop_pending":
+                // rider is at the store waiting for the seller's OTP
+                return "At Store (OTP)";
             case "qc_passed":
                 return "QC Passed";
             case "qc_failed":
                 return "QC Failed";
+            // "returned" = item back at the store, refund still pending admin QC;
+            // it used to share the "Completed" label with an actual refund.
             case "returned":
+                return "Received";
             case "refund_completed":
-                return "Completed";
+                return "Refunded";
             default:
                 return status || "Unknown";
         }
@@ -92,8 +100,9 @@ const Returns = () => {
             case "qc_failed":
                 return "error";
             case "refund_completed":
-            case "returned":
                 return "success";
+            case "returned":
+                return "info";
             default:
                 return "secondary";
         }
@@ -138,6 +147,31 @@ const Returns = () => {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // Live: any return status change for this seller (rider assigned, picked up,
+    // dropped, refunded...) now arrives over the socket — refresh the list.
+    useEffect(() => {
+        const getToken = createSocketTokenReader(STORAGE_KEYS.AUTH_SELLER);
+        let timer = null;
+        const off = onOrderStatusUpdate(getToken, () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => queryClient.invalidateQueries({ queryKey: returnsQueryKey }), 500);
+        });
+        return () => {
+            off();
+            clearTimeout(timer);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Keep an open details modal in sync with the refreshed list (it held a
+    // frozen copy, so live changes never showed inside it).
+    useEffect(() => {
+        if (!selectedReturn) return;
+        const fresh = returns.find((r) => (r.orderId || r._id) === (selectedReturn.orderId || selectedReturn._id));
+        if (fresh && fresh !== selectedReturn) setSelectedReturn(fresh);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [returns]);
 
     useEffect(() => {
         if (isDetailsOpen || isRejectModalOpen) {
@@ -243,12 +277,13 @@ const Returns = () => {
                 </div>
             ) : (
                 <>
-                    <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
                         {[
                             { label: "Requested", icon: HiOutlineClock, color: "text-warning", bg: "bg-warning/10" },
                             { label: "Approved", icon: HiOutlineCheckCircle, color: "text-info", bg: "bg-info/10" },
                             { label: "Rejected", icon: HiOutlineXCircle, color: "text-danger", bg: "bg-danger/10" },
-                            { label: "Completed", icon: HiOutlineInboxStack, color: "text-success", bg: "bg-success/10" },
+                            { label: "Received", icon: HiOutlineInboxStack, color: "text-info", bg: "bg-info/10" },
+                            { label: "Refunded", icon: HiOutlineCheckCircle, color: "text-success", bg: "bg-success/10" },
                         ].map((stat) => {
                             const count = returns.filter(
                                 (r) => mapReturnStatusLabel(r.returnStatus) === stat.label
@@ -349,6 +384,11 @@ const Returns = () => {
                                                     >
                                                         {mapReturnStatusLabel(ret.returnStatus)}
                                                     </Badge>
+                                                    {(ret.returnStatus === "returned" || ret.returnStatus === "qc_passed") && (
+                                                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 rounded-full px-2 py-0.5">
+                                                            Refund in process
+                                                        </span>
+                                                    )}
                                                     <p className="text-xs font-black text-slate-900">
                                                         {"\u20B9"}
                                                         {ret.returnRefundAmount ||
@@ -369,9 +409,10 @@ const Returns = () => {
                 </>
             )}
 
-            <AnimatePresence>
+            {/* Portaled + z-[500]: these sat under the fixed navbar (z-200) at z-100/110 */}
+            {createPortal(<AnimatePresence>
                 {isDetailsOpen && selectedReturn && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6 lg:p-8">
+                    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4 sm:p-6 lg:p-8">
                         <motion.div
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
@@ -383,7 +424,7 @@ const Returns = () => {
                             initial={{ opacity: 0, scale: 0.95, y: 10 }}
                             animate={{ opacity: 1, scale: 1, y: 0 }}
                             exit={{ opacity: 0, scale: 0.95, y: 10 }}
-                            className="w-full max-w-2xl relative z-10 bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col"
+                            className="w-full max-w-2xl max-h-[calc(100dvh-2rem)] sm:max-h-[90vh] relative z-10 bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col"
                             style={{ maxHeight: 'calc(100vh - 2rem)' }}
                         >
                             <div className="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b border-slate-100 shrink-0">
@@ -412,7 +453,9 @@ const Returns = () => {
                                 </button>
                             </div>
 
-                            <div className="px-4 py-4 sm:px-6 sm:py-5 overflow-y-auto overscroll-contain flex-1 space-y-4">
+                            {/* max-h on the panel + min-h-0 here give this area a real height to scroll;
+                                data-lenis-prevent stops the global smooth-scroll from swallowing the wheel */}
+                            <div data-lenis-prevent data-lenis-prevent-touch className="px-4 py-4 sm:px-6 sm:py-5 overflow-y-auto overscroll-contain flex-1 min-h-0 space-y-4">
                                 <div className="space-y-2">
                                     <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">
                                         Customer
@@ -703,10 +746,10 @@ const Returns = () => {
                         </motion.div>
                     </div>
                 )}
-            </AnimatePresence>
-            <AnimatePresence>
+            </AnimatePresence>, document.body)}
+            {createPortal(<AnimatePresence>
                 {canManageReturns && isRejectModalOpen && (
-                    <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
+                    <div className="fixed inset-0 z-[510] flex items-center justify-center p-4">
                         <motion.div
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
@@ -756,7 +799,7 @@ const Returns = () => {
                         </motion.div>
                     </div>
                 )}
-            </AnimatePresence>
+            </AnimatePresence>, document.body)}
         </div>
     );
 };

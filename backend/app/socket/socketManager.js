@@ -80,11 +80,13 @@ export const initSocket = (io) => {
           ? { $or: [{ _id: raw }, { orderId: raw }] }
           : { orderId: raw };
         const order = await Order.findOne(query)
-          .select("customer seller deliveryBoy deliveryPartner")
+          .select("customer seller deliveryBoy deliveryPartner returnDeliveryBoy")
           .lean();
         if (!order) return;
 
-        const ownerIds = [order.customer, order.seller, order.deliveryBoy, order.deliveryPartner]
+        // returnDeliveryBoy included: the return rider was refused the order
+        // room, so they never got live updates for the return they were doing.
+        const ownerIds = [order.customer, order.seller, order.deliveryBoy, order.deliveryPartner, order.returnDeliveryBoy]
           .filter(Boolean)
           .map((id) => id.toString());
         if (!ownerIds.includes(userId.toString())) return;

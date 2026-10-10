@@ -1,16 +1,21 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { useNavigate, useLocation as useRouterLocation } from 'react-router-dom';
-import { Search, Mic, ArrowLeft, X, TrendingUp, ChevronRight, History } from 'lucide-react';
+import { Search, Mic, ArrowLeft, X, ChevronRight, History } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { customerApi } from '../services/customerApi';
 import ProductCard from '../components/shared/ProductCard';
+import { onlyInStock } from '../utils/stock';
+import ProductCardSkeleton, { ProductGridSkeleton } from '../components/shared/ProductCardSkeleton';
 import { useProductDetail } from '../context/ProductDetailContext';
 import { useSettings } from '@core/context/SettingsContext';
 import { cn } from '@/lib/utils';
 import { useLocation as useAppLocation } from '../context/LocationContext';
 import { getJSON, setJSON, STORAGE_KEYS } from '@core/utils/storage';
 import Lottie from 'lottie-react';
+
+// Shared empty array: a fresh [] each render made results -> setResults loop forever
+const EMPTY_LIST = [];
 
 const SearchPage = () => {
     const navigate = useNavigate();
@@ -114,13 +119,15 @@ const SearchPage = () => {
         Number.isFinite(currentLocation?.latitude) &&
         Number.isFinite(currentLocation?.longitude);
 
-    const { data: allProducts = [], isLoading } = useQuery({
+    const { data: allProducts = EMPTY_LIST, isLoading } = useQuery({
         queryKey: ['customer', 'searchAllProducts', hasValidLocation ? currentLocation.latitude : null, hasValidLocation ? currentLocation.longitude : null],
         queryFn: async () => {
             const response = await customerApi.getProducts({
                 limit: 100,
                 lat: currentLocation.latitude,
                 lng: currentLocation.longitude,
+                // Search is the one place out-of-stock products appear (shown greyed out)
+                includeOutOfStock: true,
             });
             if (response.data.success) {
                 const rawResult = response.data.result;
@@ -175,7 +182,7 @@ const SearchPage = () => {
 
     // Real-time filtering logic
     const filteredResults = useMemo(() => {
-        if (!debouncedQuery.trim()) return [];
+        if (!debouncedQuery.trim()) return EMPTY_LIST;
         return allProducts.filter(p =>
             p.name.toLowerCase().includes(debouncedQuery.toLowerCase()) ||
             p.categoryId?.name?.toLowerCase().includes(debouncedQuery.toLowerCase())
@@ -185,6 +192,34 @@ const SearchPage = () => {
     useEffect(() => {
         setResults(filteredResults);
     }, [filteredResults]);
+
+    // Autocomplete: up to 5 product names matching what's typed so far,
+    // names that start with the term first. Uses the live query (not the
+    // debounced one) so suggestions keep pace with typing.
+    const suggestions = useMemo(() => {
+        const term = query.trim().toLowerCase();
+        if (term.length < 2) return [];
+        const seen = new Set();
+        const starts = [];
+        const contains = [];
+        for (const p of allProducts) {
+            const name = String(p.name || '').trim();
+            const key = name.toLowerCase();
+            if (!name || seen.has(key) || key === term) continue;
+            const idx = key.indexOf(term);
+            if (idx === -1) continue;
+            seen.add(key);
+            (idx === 0 ? starts : contains).push({ name, idx, image: p.image });
+            if (starts.length >= 5) break;
+        }
+        return [...starts, ...contains].slice(0, 5);
+    }, [query, allProducts]);
+
+    const handleSuggestionClick = (name) => {
+        setQuery(name);
+        setDebouncedQuery(name);
+        saveSearch(name);
+    };
 
     // Dynamically load no-service Lottie when results are empty
     useEffect(() => {
@@ -205,7 +240,8 @@ const SearchPage = () => {
 
     // Lowest Price Section
     const lowestPriceProducts = useMemo(() => {
-        return [...allProducts]
+        // Browsing strip, not search results: keep it to in-stock products
+        return onlyInStock(allProducts)
             .sort((a, b) => a.price - b.price)
             .slice(0, 10);
     }, [allProducts]);
@@ -215,37 +251,61 @@ const SearchPage = () => {
         setResults([]);
     };
 
+    const clearAllSearches = () => {
+        setPastSearches([]);
+        setJSON(STORAGE_KEYS.RECENT_SEARCHES, []);
+    };
+
+    // Level-2 categories for "Shop by category" suggestions and category matches
+    const { data: categoryTree = EMPTY_LIST } = useQuery({
+        queryKey: ['customer', 'categoryTree'],
+        queryFn: async () => {
+            const catRes = await customerApi.getCategories({ tree: true });
+            return catRes.data.success ? (catRes.data.results || catRes.data.result || []) : [];
+        },
+        staleTime: 5 * 60 * 1000,
+    });
+    const allCategories = useMemo(
+        () => (Array.isArray(categoryTree) ? categoryTree : []).flatMap((h) => (h.children || []).map((c) => ({ id: c._id, name: c.name, image: c.image }))),
+        [categoryTree]
+    );
+    const matchingCategories = useMemo(() => {
+        const term = query.trim().toLowerCase();
+        if (term.length < 2) return [];
+        return allCategories.filter((c) => c.name.toLowerCase().includes(term)).slice(0, 6);
+    }, [query, allCategories]);
+
     return (
         <div className="min-h-screen bg-white font-outfit">
             {/* Header / Search Input */}
             <div className={cn(
-                "sticky top-0 z-50 bg-linear-to-r from-primary to-[var(--brand-400)] shadow-[0_4px_20px_rgba(0,0,0,0.12)] relative overflow-hidden",
+                "sticky top-0 z-50 border-b border-slate-200 bg-white",
                 isProductDetailOpen && "hidden md:block"
             )}>
-                {/* Decorative background elements */}
-                <div className="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -mr-16 -mt-16 blur-2xl pointer-events-none" />
-                <div className="absolute bottom-0 left-0 w-24 h-24 bg-white/5 rounded-full -ml-12 -mb-12 blur-xl pointer-events-none" />
-
-                <div className="px-4 pt-5 pb-6 flex items-center md:justify-center gap-3 relative z-10">
+                <div className="mx-auto flex max-w-3xl items-center gap-2 px-2 py-2.5 md:px-4">
                         <button
+                            type="button"
                             onClick={() => navigate(-1)}
-                            className="flex items-center justify-center w-12 h-12 bg-white/20 hover:bg-white/30 rounded-full text-white backdrop-blur-md border border-white/10 transition-all flex-shrink-0 shadow-sm active:scale-90"
+                            aria-label="Go back"
+                            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-slate-800 hover:bg-slate-100 active:scale-90"
                         >
-                            <ArrowLeft size={22} strokeWidth={2.5} />
+                            <ArrowLeft size={22} />
                         </button>
 
-                        <div className="flex-1 relative md:flex-none md:w-[500px] lg:w-[600px]">
-                            <div className="absolute left-4 top-1/2 -translate-y-1/2 z-10">
-                                <Search size={18} strokeWidth={3} className="text-slate-400" />
+                        <div className="relative flex-1">
+                            <div className="absolute left-3.5 top-1/2 z-10 -translate-y-1/2">
+                                <Search size={18} className="text-slate-400" />
                             </div>
                             <input
                                 autoFocus
-                                type="text"
+                                type="search"
+                                enterKeyHint="search"
+                                aria-label="Search products"
                                 placeholder='Search items, categories...'
                                 value={query}
                                 onKeyDown={handleKeyDown}
                                 onChange={(e) => setQuery(e.target.value)}
-                                className="w-full h-12 bg-white rounded-2xl pl-11 pr-14 shadow-xl shadow-black/10 border-none outline-none text-slate-800 font-bold placeholder:text-slate-400 placeholder:font-medium focus:ring-4 focus:ring-white/20 transition-all"
+                                className="h-11 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-20 [&::-webkit-search-cancel-button]:appearance-none text-[15px] font-medium text-slate-900 outline-none transition-colors placeholder:text-slate-400 focus:border-primary focus:bg-white"
                             />
                             
                             {/* Integrated Actions inside Search Input */}
@@ -253,6 +313,7 @@ const SearchPage = () => {
                                 {query && (
                                     <button
                                         onClick={handleClear}
+                                        aria-label="Clear search"
                                         className="p-1.5 bg-slate-100 hover:bg-slate-200 rounded-full transition-colors"
                                     >
                                         <X size={12} strokeWidth={3} className="text-slate-600" />
@@ -261,6 +322,7 @@ const SearchPage = () => {
                                 <div className="w-[1px] h-6 bg-slate-100 mx-1" />
                                 <button 
                                     onClick={handleVoiceSearch}
+                                    aria-label="Search by voice"
                                     className={cn(
                                         "p-2 transition-all rounded-full relative",
                                         isListening ? "text-red-500 bg-red-50 scale-110" : "text-slate-400 hover:text-primary hover:bg-slate-50"
@@ -276,36 +338,82 @@ const SearchPage = () => {
                     </div>
                 </div>
 
-                <div className="p-5 space-y-10 pb-24">
+                <div className="mx-auto max-w-6xl space-y-8 p-4 pb-24 md:p-6">
                 {/* Search Results List */}
                 {query ? (
                     <section>
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-xl font-black text-slate-800 tracking-tight">
-                                Search Results
-                            </h2>
-                            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{results.length} found</span>
+                        {matchingCategories.length > 0 && (
+                            <div className="mb-5">
+                                <h3 className="mb-2 text-xs font-semibold text-slate-500">Categories</h3>
+                                <div className="no-scrollbar flex gap-2 overflow-x-auto">
+                                    {matchingCategories.map((cat) => (
+                                        <button
+                                            key={cat.id}
+                                            type="button"
+                                            onClick={() => { saveSearch(query); navigate(`/category/${cat.id}`); }}
+                                            className="flex h-10 flex-shrink-0 items-center gap-2 rounded-full border border-slate-200 bg-white pl-1.5 pr-3.5 text-sm font-medium text-slate-800 hover:border-primary"
+                                        >
+                                            <img src={cat.image || 'https://cdn-icons-png.flaticon.com/128/2321/2321831.png'} alt="" className="h-7 w-7 rounded-full bg-slate-50 object-contain" />
+                                            {cat.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                        {suggestions.length > 0 && (
+                            <ul className="-mt-1 mb-6 divide-y divide-slate-100 border border-slate-100 rounded-2xl overflow-hidden" aria-label="Search suggestions">
+                                {suggestions.map(({ name, idx, image }) => {
+                                    const end = idx + query.trim().length;
+                                    return (
+                                        <li key={name}>
+                                            <button
+                                                type="button"
+                                                onClick={() => handleSuggestionClick(name)}
+                                                className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-slate-50 active:bg-slate-100 transition-colors"
+                                            >
+                                                <span className="h-9 w-9 rounded-lg bg-slate-50 border border-slate-100 overflow-hidden flex items-center justify-center flex-shrink-0">
+                                                    {image ? (
+                                                        <img src={image} alt="" loading="lazy" className="h-full w-full object-contain" />
+                                                    ) : (
+                                                        <Search size={14} className="text-slate-400" />
+                                                    )}
+                                                </span>
+                                                <span className="flex-1 min-w-0 truncate text-sm text-slate-500">
+                                                    {name.slice(0, idx)}
+                                                    <span className="font-medium text-slate-500">{name.slice(idx, end)}</span>
+                                                    <span className="font-bold text-slate-800">{name.slice(end)}</span>
+                                                </span>
+                                                <ArrowLeft size={16} className="rotate-[135deg] text-slate-300 flex-shrink-0" aria-hidden="true" />
+                                            </button>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                        <div className="mb-3 flex items-baseline justify-between">
+                            <h2 className="text-base font-bold text-slate-900">Products</h2>
+                            {!isLoading && <span className="text-xs text-slate-500">{results.length} found</span>}
                         </div>
 
-                        {results.length > 0 ? (
-                            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-x-3 md:gap-x-4 gap-y-6 md:gap-y-10">
+                        {isLoading && allProducts.length === 0 ? (
+                            <ProductGridSkeleton count={6} className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 md:gap-4 lg:grid-cols-5" />
+                        ) : results.length > 0 ? (
+                            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 md:gap-4 lg:grid-cols-5">
                                 {results.map((product) => (
-                                    <div key={product.id} onClick={() => saveSearch(query)} className="flex justify-center">
+                                    <div key={product.id} onClick={() => saveSearch(query)}>
                                         <ProductCard product={product} compact={isMobile} />
                                     </div>
                                 ))}
                             </div>
                         ) : (
-                            <div className="py-16 flex flex-col items-center text-center">
-                                <div className="w-48 h-48 md:w-64 md:h-64 mb-6">
-                                    {noServiceData ? (
-                                        <Lottie animationData={noServiceData} loop={true} />
-                                    ) : (
-                                        <div className="w-48 h-48 md:w-64 md:h-64" />
-                                    )}
+                            <div className="flex flex-col items-center py-12 text-center">
+                                <div className="mb-4 h-40 w-40">
+                                    {noServiceData && <Lottie animationData={noServiceData} loop={true} />}
                                 </div>
-                                <h3 className="text-xl font-black text-slate-800 tracking-tight mb-2">No items found</h3>
-                                <p className="text-slate-500 font-medium max-w-xs">We couldn't find anything for "{query}". Try different keywords!</p>
+                                <h3 className="mb-1 text-lg font-bold text-slate-900">No products found</h3>
+                                <p className="max-w-xs text-sm text-slate-500">
+                                    Nothing matches &ldquo;{query}&rdquo;. Check the spelling or try a more general word.
+                                </p>
                             </div>
                         )}
                     </section>
@@ -314,25 +422,57 @@ const SearchPage = () => {
                         {/* 1. Recently Searched Item Section */}
                         {pastSearches.length > 0 && (
                             <section>
-                                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-4">Recently Searched</h3>
-                                <div className="flex gap-2 overflow-x-auto no-scrollbar">
+                                <div className="mb-3 flex items-center justify-between">
+                                    <h2 className="text-base font-bold text-slate-900">Recent searches</h2>
+                                    <button type="button" onClick={clearAllSearches} className="text-sm font-medium text-primary">
+                                        Clear all
+                                    </button>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
                                     {pastSearches.map((term) => (
-                                        <div
+                                        <span
                                             key={term}
-                                            className="flex items-center gap-2 px-3 py-1.5 bg-white border border-slate-100 shadow-sm rounded-full whitespace-nowrap active:scale-95 transition-transform cursor-pointer"
-                                            onClick={() => setQuery(term)}
+                                            className="flex h-9 items-center rounded-full border border-slate-200 bg-white text-sm text-slate-700"
                                         >
-                                            <div className="h-5 w-5 rounded flex items-center justify-center" style={{ backgroundColor: (settings?.primaryColor || 'var(--primary)') + '20' }}>
-                                                <History size={12} style={{ color: settings?.primaryColor || 'var(--primary)' }} />
-                                            </div>
-                                            <span className="text-sm font-bold text-slate-700">{term}</span>
                                             <button
-                                                onClick={(e) => handleRemoveSearch(e, term)}
-                                                className="ml-1 p-0.5 hover:bg-slate-100 rounded-full transition-colors"
+                                                type="button"
+                                                onClick={() => setQuery(term)}
+                                                className="flex h-full items-center gap-1.5 pl-3 pr-1"
                                             >
-                                                <X size={12} className="text-slate-400 hover:text-red-500" />
+                                                <History size={14} className="text-slate-400" aria-hidden="true" />
+                                                {term}
                                             </button>
-                                        </div>
+                                            <button
+                                                type="button"
+                                                onClick={(e) => handleRemoveSearch(e, term)}
+                                                aria-label={`Remove ${term} from recent searches`}
+                                                className="flex h-full w-8 items-center justify-center rounded-r-full text-slate-400 hover:text-red-500"
+                                            >
+                                                <X size={14} />
+                                            </button>
+                                        </span>
+                                    ))}
+                                </div>
+                            </section>
+                        )}
+
+                        {/* Category suggestions */}
+                        {allCategories.length > 0 && (
+                            <section>
+                                <h2 className="mb-3 text-base font-bold text-slate-900">Shop by category</h2>
+                                <div className="grid grid-cols-4 gap-x-2 gap-y-4 sm:grid-cols-6 lg:grid-cols-8">
+                                    {allCategories.slice(0, 12).map((cat) => (
+                                        <button
+                                            key={cat.id}
+                                            type="button"
+                                            onClick={() => navigate(`/category/${cat.id}`)}
+                                            className="flex flex-col items-center gap-1.5"
+                                        >
+                                            <span className="flex aspect-square w-full items-center justify-center rounded-xl bg-slate-50 p-2">
+                                                <img src={cat.image || 'https://cdn-icons-png.flaticon.com/128/2321/2321831.png'} alt="" loading="lazy" className="h-full w-full object-contain" />
+                                            </span>
+                                            <span className="line-clamp-2 text-center text-[11px] font-medium leading-tight text-slate-700">{cat.name}</span>
+                                        </button>
                                     ))}
                                 </div>
                             </section>
@@ -340,23 +480,23 @@ const SearchPage = () => {
 
                         {/* 2. Lowest Price Ever Section */}
                         <section>
-                            <div className="flex justify-between items-center mb-5">
-                                <h2 className="text-xl font-black text-slate-800 tracking-tight">Lowest Price Ever!</h2>
-                                <button 
-                                    className="flex items-center gap-1 md:gap-1.5 px-3 py-1 md:px-4 md:py-1.5 bg-slate-50 hover:bg-slate-100 rounded-full text-xs md:text-sm font-black transition-all" 
-                                    style={{ color: settings?.primaryColor || 'var(--primary)' }}
+                            <div className="mb-3 flex items-center justify-between">
+                                <h2 className="text-base font-bold text-slate-900">Lowest prices</h2>
+                                <button
+                                    type="button"
+                                    className="flex items-center gap-0.5 text-sm font-semibold text-primary"
                                     onClick={() => navigate('/category/all')}
                                 >
-                                    See All <ChevronRight size={14} strokeWidth={3} />
+                                    See all <ChevronRight size={16} />
                                 </button>
                             </div>
-                            <div className="flex gap-2 md:gap-4 overflow-x-auto no-scrollbar -mx-5 px-5 pb-3 snap-x">
+                            <div className="no-scrollbar -mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-3 md:gap-4">
                                 {isLoading && allProducts.length === 0 ? (
                                     [...Array(4)].map((_, i) => (
-                                        <div key={i} className="min-w-[126px] sm:min-w-[136px] md:min-w-[148px] h-52 md:h-64 bg-slate-50 rounded-2xl animate-pulse" />
+                                        <div key={i} className="w-[140px] flex-shrink-0 md:w-[160px]"><ProductCardSkeleton /></div>
                                     ))
                                 ) : lowestPriceProducts.map((product) => (
-                                    <div key={product.id} className="min-w-[126px] sm:min-w-[136px] md:min-w-[148px] snap-start">
+                                    <div key={product.id} className="w-[140px] flex-shrink-0 snap-start md:w-[160px]">
                                         <ProductCard product={product} compact={isMobile} />
                                     </div>
                                 ))}

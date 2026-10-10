@@ -7,9 +7,15 @@ import { isServerSideCouponEngineEnabled } from "../constants/finance.js";
 import { computeOrderDiscount } from "../services/finance/couponService.js";
 import { hydrateOrderItems } from "../services/finance/pricingService.js";
 
-export const listCoupons = async (req, res) => {
+export const listCoupons = (req, res) => findCoupons(req, res, req.query.status);
+
+// Public listing: only currently-active coupons, whatever `status` the
+// caller asks for — inactive/expired/future coupons stay admin-only.
+export const listActiveCoupons = (req, res) => findCoupons(req, res, "active");
+
+const findCoupons = async (req, res, status) => {
     try {
-        const { status, search } = req.query;
+        const { search } = req.query;
         const query = {};
 
         if (status === "active") {
@@ -39,9 +45,36 @@ export const listCoupons = async (req, res) => {
     }
 };
 
+/**
+ * Business rules the schema doesn't enforce. Returns an error message or null.
+ * Used on create and on update (merged with the stored coupon), so a coupon
+ * can never end before it starts, give a negative discount, or take more
+ * than 100% off.
+ */
+function checkCouponRules(c) {
+    const num = (v) => (v === undefined || v === null || v === "" ? null : Number(v));
+    const value = num(c.discountValue);
+    if (value === null || Number.isNaN(value)) return "Discount value is required.";
+    if (value < 0) return "Discount value cannot be negative.";
+    if (c.discountType !== "free_delivery" && value === 0) return "Discount value must be more than 0.";
+    if (c.discountType === "percentage" && value > 100) return "Percentage discount cannot be more than 100%.";
+    for (const [field, label] of [["maxDiscount", "Max discount"], ["minOrderValue", "Minimum order value"], ["minItems", "Minimum items"], ["usageLimit", "Usage limit"], ["perUserLimit", "Per-user limit"]]) {
+        const v = num(c[field]);
+        if (v !== null && (Number.isNaN(v) || v < 0)) return `${label} cannot be negative.`;
+    }
+    const from = c.validFrom ? new Date(c.validFrom) : null;
+    const till = c.validTill ? new Date(c.validTill) : null;
+    if (from && Number.isNaN(from.getTime())) return "Start date is invalid.";
+    if (till && Number.isNaN(till.getTime())) return "End date is invalid.";
+    if (from && till && till <= from) return "End date must be after the start date.";
+    return null;
+}
+
 export const createCoupon = async (req, res) => {
     try {
         const data = { ...req.body };
+        const invalid = checkCouponRules(data);
+        if (invalid) return handleResponse(res, 400, invalid);
         const coupon = await Coupon.create(data);
         return handleResponse(res, 201, "Coupon created successfully", coupon);
     } catch (error) {
@@ -56,6 +89,12 @@ export const updateCoupon = async (req, res) => {
     try {
         const { id } = req.params;
         const data = { ...req.body };
+        const existing = await Coupon.findById(id).lean();
+        if (!existing) {
+            return handleResponse(res, 404, "Coupon not found");
+        }
+        const invalid = checkCouponRules({ ...existing, ...data });
+        if (invalid) return handleResponse(res, 400, invalid);
         const coupon = await Coupon.findByIdAndUpdate(id, data, {
             new: true,
             runValidators: true,
@@ -82,7 +121,11 @@ export const deleteCoupon = async (req, res) => {
 // Simple validation engine for checkout
 export const validateCoupon = async (req, res) => {
     try {
-        const { code, cartTotal, items, customerId } = req.body;
+        const { code, cartTotal, items } = req.body;
+        // Identify the customer from the verified token only: a body-supplied
+        // customerId would let anyone read another customer's cart through
+        // coupon validation and dodge per-user usage limits.
+        const customerId = req.user?.id || null;
 
         if (!code) {
             return handleResponse(res, 400, "Coupon code is required");
@@ -105,7 +148,7 @@ export const validateCoupon = async (req, res) => {
         // When the flag is OFF the legacy code path below runs
         // unchanged, preserving every existing client integration.
         if (isServerSideCouponEngineEnabled()) {
-            const effectiveCustomerId = customerId || req.user?.id || null;
+            const effectiveCustomerId = customerId;
             let hydratedItems = [];
 
             if (effectiveCustomerId) {

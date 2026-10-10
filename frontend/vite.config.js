@@ -53,8 +53,13 @@ function firebaseMessagingSwPlugin() {
 }
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ command }) => ({
   plugins: [react(), firebaseMessagingSwPlugin()],
+  // Production builds ship without debug output: console.log/debug/info
+  // calls and `debugger` statements are removed (console.warn/error stay).
+  esbuild: command === 'build'
+    ? { pure: ['console.log', 'console.debug', 'console.info'], drop: ['debugger'] }
+    : undefined,
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
@@ -68,7 +73,20 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
+        // Hash-only file names: by default each chunk is named after the module
+        // inside it (Home-xxxx.js, CartContext-xxxx.js, customerApi-xxxx.js),
+        // which spells out the app's structure in the Network tab.
+        entryFileNames: 'assets/[hash].js',
+        chunkFileNames: 'assets/[hash].js',
+        assetFileNames: 'assets/[hash][extname]',
         manualChunks(id) {
+          // Vite's dynamic-import preload helper must live in its own tiny chunk.
+          // Otherwise Rollup places it inside whichever vendor chunk first uses
+          // import() (it landed in vendor-jspdf), and every lazy route then
+          // imports that whole chunk just to get the helper — jsPDF (378 KB)
+          // was being downloaded on every page load.
+          if (id.includes('vite/preload-helper')) return 'preload-helper'
+
           if (!id.includes('node_modules')) return
 
           // Perf audit FE-B3: keep only vendor buckets that measurably stay
@@ -87,10 +105,13 @@ export default defineConfig({
           // automatic chunking lets each lazy page that needs them pull in
           // only what it needs, without creating one grep-me-everywhere
           // shared chunk that tempts that hoisting behavior.
+          // Match the exact package folders only. A loose '/react/' also matched
+          // '@tiptap/react/' and '@emotion/react/', pulling the whole TipTap +
+          // ProseMirror editor (admin-only) into the chunk every visitor loads.
           if (
-            id.includes('/react/') ||
-            id.includes('/react-dom/') ||
-            id.includes('/scheduler/')
+            id.includes('/node_modules/react/') ||
+            id.includes('/node_modules/react-dom/') ||
+            id.includes('/node_modules/scheduler/')
           ) {
             return 'vendor-react'
           }
@@ -104,4 +125,4 @@ export default defineConfig({
       },
     },
   },
-})
+}))

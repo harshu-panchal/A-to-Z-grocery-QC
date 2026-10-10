@@ -1,4 +1,4 @@
-import React, { createContext, useContext } from 'react';
+import { createContext, useContext } from 'react';
 import { Toaster } from '@/components/ui/sonner';
 import { toast } from 'sonner';
 

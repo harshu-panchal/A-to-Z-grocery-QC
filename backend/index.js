@@ -20,6 +20,7 @@ import {
 import { structuredRequestLogger, correlationIdMiddleware } from "./app/middleware/requestLogger.js";
 import { trackInFlightRequests } from "./app/middleware/metricsMiddleware.js";
 import { errorHandler, notFoundHandler } from "./app/middleware/errorMiddleware.js";
+import { sanitizeRequestBody } from "./app/middleware/sanitizeInput.js";
 import { getProcessRole, isComponentEnabled } from "./app/core/processRole.js";
 import { startup } from "./app/core/startup.js";
 import {
@@ -149,6 +150,7 @@ function createApp() {
 
   app.use(express.json({ limit: process.env.API_JSON_LIMIT || "1mb" }));
   app.use(express.urlencoded({ limit: process.env.API_URLENCODED_LIMIT || "1mb", extended: true }));
+  app.use(sanitizeRequestBody);
 
   // Serves locally-stored media (Setting.mediaStorage.provider = "local").
   // In production this should be served by Nginx directly instead (see

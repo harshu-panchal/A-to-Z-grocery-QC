@@ -1,4 +1,4 @@
-import React, { lazy, useMemo, Suspense } from 'react';
+import { lazy, useMemo, Suspense } from 'react';
 import { createBrowserRouter, RouterProvider, Outlet, Navigate } from 'react-router-dom';
 import ProtectedRoute from '../guards/ProtectedRoute';
 import RoleGuard from '../guards/RoleGuard';

@@ -1,5 +1,4 @@
-import React from 'react';
-import { X, Printer, Download, Share2 } from 'lucide-react';
+import { X, Printer } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useSettings } from '@core/context/SettingsContext';
 

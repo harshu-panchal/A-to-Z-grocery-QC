@@ -12,38 +12,86 @@ import { invalidate, buildKey } from "../services/cacheService.js";
 /* ===============================
    ADJUST STOCK MANUALLY
 ================================ */
+const MAX_ADJUST_QTY = 100000;
+
 export const adjustStock = async (req, res) => {
     try {
         const { productId, type, quantity, note } = req.body;
         const sellerId = req.user.id;
 
-        const product = await Product.findOne({ _id: productId, sellerId });
+        // "Restock" adds; "Remove" (or legacy "Correction") subtracts. The quantity is
+        // always treated as a positive amount — the old page sent Remove as a negative
+        // number and `stock - (-n)` silently ADDED stock.
+        const isRestock = type === "Restock";
+        if (!isRestock && type !== "Remove" && type !== "Correction") {
+            return handleResponse(res, 400, "type must be Restock or Remove");
+        }
+        const qty = Math.abs(Number(quantity));
+        if (!Number.isInteger(qty) || qty < 1 || qty > MAX_ADJUST_QTY) {
+            return handleResponse(res, 400, `Quantity must be a whole number between 1 and ${MAX_ADJUST_QTY}`);
+        }
+        const delta = isRestock ? qty : -qty;
+
+        const product = await Product.findOne({ _id: productId, sellerId })
+            .select("name stock lowStockAlert variants sellerId")
+            .lean();
         if (!product) {
             return handleResponse(res, 404, "Product not found or unauthorized");
         }
 
-        const qtyChange = Number(quantity);
-        const previousStock = Number(product.stock || 0);
-        const finalStock = type === 'Restock' ? product.stock + qtyChange : product.stock - qtyChange;
-
-        if (finalStock < 0) {
-            return handleResponse(res, 400, "Stock cannot be negative");
+        // Products with variants: the variant's stock and the master stock move
+        // together (same as order placement in stockService), otherwise checkout —
+        // which requires both — would still treat a "restocked" product as sold out.
+        const variants = Array.isArray(product.variants) ? product.variants : [];
+        let variantSku = String(req.body.variantSku || "").trim();
+        if (variants.length === 1 && !variantSku) variantSku = String(variants[0].sku || "").trim();
+        if (variants.length > 1 && !variantSku) {
+            return handleResponse(res, 400, "Select which variant to adjust");
+        }
+        const variant = variantSku ? variants.find((v) => String(v.sku || "").trim() === variantSku) : null;
+        if (variantSku && !variant) {
+            return handleResponse(res, 400, "Variant not found on this product");
         }
 
-        // 1. Update Product Stock
-        product.stock = finalStock;
-        await product.save();
+        const previousStock = Number(product.stock || 0);
 
-        // 2. Create History Entry
-        const historyEntry = new StockHistory({
+        // Atomic $inc with guards: never lost-updates a concurrent order, and a
+        // removal can't take stock below zero.
+        const filter = { _id: productId, sellerId };
+        const inc = { stock: delta };
+        if (variant) {
+            filter.variants = isRestock
+                ? { $elemMatch: { sku: variant.sku } }
+                : { $elemMatch: { sku: variant.sku, stock: { $gte: qty } } };
+            inc["variants.$.stock"] = delta;
+        }
+        if (!isRestock) filter.stock = { $gte: qty };
+
+        const updated = await Product.findOneAndUpdate(filter, { $inc: inc }, { new: true })
+            .select("name stock lowStockAlert variants sellerId")
+            .lean();
+
+        if (!updated) {
+            const available = variant ? Number(variant.stock || 0) : previousStock;
+            return handleResponse(
+                res,
+                400,
+                `Cannot remove ${qty}: only ${available} in stock${variant ? ` for ${variant.name || variant.sku}` : ""}`,
+            );
+        }
+
+        const variantLabel = variant ? ` [${variant.name || variant.sku}]` : "";
+        const historyEntry = await StockHistory.create({
             product: productId,
             seller: sellerId,
-            type, // Restock, Correction
-            quantity: type === 'Restock' ? qtyChange : -qtyChange,
-            note: note || `Manual ${type} adjustment`
+            type: isRestock ? "Restock" : "Correction",
+            quantity: delta,
+            note: (note && String(note).trim()) || `Manual ${isRestock ? "restock" : "removal"}${variantLabel}`,
         });
-
-        await historyEntry.save();
+        const finalStock = Number(updated.stock || 0);
+        const updatedVariant = variant
+            ? (updated.variants || []).find((v) => v.sku === variant.sku)
+            : null;
 
         // Audit fix: manual stock adjustments (seller restock/correction)
         // never invalidated the product cache, so a just-restocked product
@@ -53,13 +101,9 @@ export const adjustStock = async (req, res) => {
         await invalidate(`cache:catalog:product:${productId}`);
         await invalidate(buildKey("catalog", "productList", "*"));
 
-        if (
-            type !== 'Restock' &&
-            qtyChange > 0 &&
-            await isLowStockAlertsEnabled()
-        ) {
+        if (!isRestock && await isLowStockAlertsEnabled()) {
             const lowStockAlert = createLowStockAlertCandidate({
-                product,
+                product: updated,
                 previousStock,
                 currentStock: finalStock,
             });
@@ -69,7 +113,9 @@ export const adjustStock = async (req, res) => {
         }
 
         return handleResponse(res, 200, "Stock adjusted successfully", {
-            newStock: product.stock,
+            newStock: finalStock,
+            variantSku: updatedVariant?.sku || null,
+            newVariantStock: updatedVariant ? Number(updatedVariant.stock || 0) : null,
             historyEntry
         });
 

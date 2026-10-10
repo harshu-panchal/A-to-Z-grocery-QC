@@ -1,4 +1,3 @@
-import React from 'react';
 
 const stories = [
     { id: 1, title: 'Big Savings', image: 'https://images.unsplash.com/photo-1607082348824-0a96f2a4b9da?q=80&w=150&auto=format&fit=crop', color: 'border-orange-500' },

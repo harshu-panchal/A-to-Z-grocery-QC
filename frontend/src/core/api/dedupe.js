@@ -13,12 +13,17 @@ const buildCacheKey = (url, params = {}) => {
  * Generic helper to deduplicate and cache GET requests across the whole app
  */
 export const getWithDedupe = async (url, params = {}, options = {}) => {
-    const ttl = options.ttl || DEFAULT_CACHE_TTL_MS;
+    // `??`, not `||`: callers pass ttl: 0 to mean "never cache" (live order
+    // status). `0 || DEFAULT` silently cached those responses for 30s, so a
+    // socket-triggered refetch got the stale order back and the customer's
+    // screen didn't change until the cache expired.
+    const ttl = options.ttl ?? DEFAULT_CACHE_TTL_MS;
+    const useCache = ttl > 0;
     const forceRefresh = options.forceRefresh || false;
     const key = buildCacheKey(url, params);
     const now = Date.now();
 
-    if (!forceRefresh) {
+    if (!forceRefresh && useCache) {
         const cached = apiCache.get(key);
         if (cached && now - cached.ts < ttl) {
             return cached.response;
@@ -32,7 +37,7 @@ export const getWithDedupe = async (url, params = {}, options = {}) => {
 
     const request = axiosInstance.get(url, { params })
         .then((response) => {
-            apiCache.set(key, { ts: Date.now(), response });
+            if (useCache) apiCache.set(key, { ts: Date.now(), response });
             return response;
         })
         .finally(() => {

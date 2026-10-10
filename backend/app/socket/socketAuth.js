@@ -3,7 +3,7 @@ import jwt from "jsonwebtoken";
 export function verifySocketToken(token) {
   if (!token || typeof token !== "string") return null;
   try {
-    return jwt.verify(token, process.env.JWT_SECRET);
+    return jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
   } catch {
     return null;
   }

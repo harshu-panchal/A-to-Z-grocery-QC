@@ -1,5 +1,5 @@
 // Ultimate FAQ Management System - Functional Version
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Card from '@shared/components/ui/Card';
 import Badge from '@shared/components/ui/Badge';
 import Button from '@shared/components/ui/Button';
@@ -313,7 +313,7 @@ const FAQManagement = () => {
                         <AnimatePresence mode='popLayout'>
                             {filteredAndSortedFaqs.map((faq) => (
                                 <motion.div
-                                    key={faq.id}
+                                    key={faq._id || faq.id}
                                     layout
                                     initial={{ opacity: 0, scale: 0.98 }}
                                     animate={{ opacity: 1, scale: 1 }}

@@ -1,4 +1,5 @@
-﻿import Order from "../models/order.js";
+import mongoose from "mongoose";
+import Order from "../models/order.js";
 import Delivery from "../models/delivery.js";
 import Seller from "../models/seller.js";
 import CheckoutGroup from "../models/checkoutGroup.js";
@@ -10,6 +11,7 @@ import {
 import { buildKey, getOrSet, getTTL } from "./cacheService.js";
 import { resolveWorkflowStatus } from "./orderWorkflowService.js";
 import logger from "./logger.js";
+import { deliverySearchRadiusM, ignoreRiderRange, maxDeliverySearchRadiusM, returnSearchRadiusM, toLatLng } from "./delivery/riderRange.js";
 
 function svcErr(message, statusCode) {
   const error = new Error(message);
@@ -71,6 +73,40 @@ function appendDateRange(query, { startDate, endDate }) {
   };
 }
 
+/** Cast id fields that find() would auto-cast but $match in an aggregation won't. */
+function toAggregateMatch(query) {
+  const match = { ...query };
+  for (const key of ["seller", "customer", "deliveryBoy"]) {
+    const v = match[key];
+    if ((typeof v === "string" || v instanceof String) && mongoose.isValidObjectId(String(v))) {
+      match[key] = new mongoose.Types.ObjectId(String(v));
+    }
+  }
+  return match;
+}
+
+// workflowStatus (v2) -> legacy status bucket, mirroring legacyStatusFromWorkflow;
+// orders without a v2 workflow fall back to their stored legacy status.
+const SUMMARY_STATUS_EXPR = {
+  $cond: [
+    { $and: [{ $gte: [{ $ifNull: ["$workflowVersion", 0] }, 2] }, { $ne: [{ $ifNull: ["$workflowStatus", ""] }, ""] }] },
+    {
+      $switch: {
+        branches: [
+          { case: { $in: ["$workflowStatus", [WORKFLOW_STATUS.CREATED, WORKFLOW_STATUS.SELLER_PENDING]] }, then: "pending" },
+          { case: { $in: ["$workflowStatus", [WORKFLOW_STATUS.SELLER_ACCEPTED, WORKFLOW_STATUS.DELIVERY_SEARCH, WORKFLOW_STATUS.DELIVERY_ASSIGNED]] }, then: "confirmed" },
+          { case: { $eq: ["$workflowStatus", WORKFLOW_STATUS.PICKUP_READY] }, then: "packed" },
+          { case: { $eq: ["$workflowStatus", WORKFLOW_STATUS.OUT_FOR_DELIVERY] }, then: "out_for_delivery" },
+          { case: { $eq: ["$workflowStatus", WORKFLOW_STATUS.DELIVERED] }, then: "delivered" },
+          { case: { $eq: ["$workflowStatus", WORKFLOW_STATUS.CANCELLED] }, then: "cancelled" },
+        ],
+        default: "$status",
+      },
+    },
+    "$status",
+  ],
+};
+
 export function buildSellerOrdersQuery({
   role,
   userId,
@@ -114,30 +150,35 @@ export async function fetchSellerOrdersPage({
       .populate("seller", "shopName name")
       .lean(),
     Order.countDocuments(query),
+    // Aggregations don't auto-cast like find()/countDocuments(): a string seller
+    // id never matched the ObjectId field, so every summary count came back 0.
+    // Statuses are derived from workflowStatus (v2) the same way the order list
+    // does, so the summary cards agree with the rows.
     Order.aggregate([
-      { $match: query },
+      { $match: toAggregateMatch(query) },
+      { $addFields: { _summaryStatus: SUMMARY_STATUS_EXPR } },
       {
         $group: {
           _id: null,
           totalOrders: { $sum: 1 },
           totalAmount: { $sum: { $ifNull: ["$pricing.total", 0] } },
           pending: {
-            $sum: { $cond: [{ $eq: ["$status", "pending"] }, 1, 0] },
+            $sum: { $cond: [{ $eq: ["$_summaryStatus", "pending"] }, 1, 0] },
           },
           confirmed: {
-            $sum: { $cond: [{ $eq: ["$status", "confirmed"] }, 1, 0] },
+            $sum: { $cond: [{ $eq: ["$_summaryStatus", "confirmed"] }, 1, 0] },
           },
           packed: {
-            $sum: { $cond: [{ $eq: ["$status", "packed"] }, 1, 0] },
+            $sum: { $cond: [{ $eq: ["$_summaryStatus", "packed"] }, 1, 0] },
           },
           outForDelivery: {
-            $sum: { $cond: [{ $eq: ["$status", "out_for_delivery"] }, 1, 0] },
+            $sum: { $cond: [{ $eq: ["$_summaryStatus", "out_for_delivery"] }, 1, 0] },
           },
           delivered: {
-            $sum: { $cond: [{ $eq: ["$status", "delivered"] }, 1, 0] },
+            $sum: { $cond: [{ $eq: ["$_summaryStatus", "delivered"] }, 1, 0] },
           },
           cancelled: {
-            $sum: { $cond: [{ $eq: ["$status", "cancelled"] }, 1, 0] },
+            $sum: { $cond: [{ $eq: ["$_summaryStatus", "cancelled"] }, 1, 0] },
           },
           returned: {
             $sum: {
@@ -199,7 +240,9 @@ async function resolveNearbySellerIds(deliveryPartner, userId) {
     location: {
       $near: {
         $geometry: deliveryPartner.location,
-        $maxDistance: 5000,
+        // widest a delivery search can grow to; each order is then checked
+        // against its own current search radius in filterV2OrdersByRadius
+        $maxDistance: maxDeliverySearchRadiusM(),
       },
     },
   }).select("_id");
@@ -207,13 +250,12 @@ async function resolveNearbySellerIds(deliveryPartner, userId) {
   let sellerIds = nearbySellers.map((seller) => seller._id);
   let usedFallback = false;
 
-  if (sellerIds.length === 0 && process.env.NODE_ENV !== "production") {
+  if (sellerIds.length === 0 && ignoreRiderRange()) {
     const allSellers = await Seller.find({}).select("_id");
     sellerIds = allSellers.map((seller) => seller._id);
     usedFallback = true;
-    console.log(
-      `DEV LOG - Radius search found 0 sellers. Bypassing radius check for Delivery Partner: ${userId}`,
-    );
+    // runs on every available-orders poll in dev, so debug level only
+    logger.debug("Radius search found 0 sellers; dev fallback to all sellers", { deliveryId: String(userId) });
   }
 
   return {
@@ -229,7 +271,7 @@ function filterV2OrdersByRadius(v2Orders, deliveryCoords) {
     if (!Array.isArray(coords) || coords.length < 2) return true;
 
     const [slng, slat] = coords;
-    const searchR = order.deliverySearchMeta?.radiusMeters || 5000;
+    const searchR = deliverySearchRadiusM(order);
     const serviceKm = Number(order.seller?.serviceRadius ?? 5);
     const serviceM = Math.max(serviceKm, 0) * 1000;
     const maxR = Math.min(searchR, serviceM);
@@ -348,7 +390,6 @@ export async function fetchAvailableOrdersForDelivery({
             {
               returnStatus: "return_approved",
               returnDeliveryBoy: null,
-              seller: { $in: sellerIds },
             },
             // Active broadcast â€” only show while the assignment window is
             // still open. Legacy rows without a stored expiry stay visible
@@ -356,7 +397,6 @@ export async function fetchAvailableOrdersForDelivery({
             {
               returnStatus: "return_pickup_assigned",
               returnDeliveryBoy: null,
-              seller: { $in: sellerIds },
               $or: [
                 { returnSearchExpiresAt: { $exists: false } },
                 { returnSearchExpiresAt: null },
@@ -364,13 +404,20 @@ export async function fetchAvailableOrdersForDelivery({
               ],
             },
             // Mine to handle right now â€” always show, regardless of expiry.
+            // Only in-progress statuses: finished returns (returned / refunded
+            // / QC) used to show up here as "Accept Pickup" tasks forever.
             {
               returnDeliveryBoy: userId,
+              returnStatus: {
+                $in: ["return_pickup_assigned", "return_in_transit", "return_drop_pending"],
+              },
             },
           ],
         })
           .sort({ createdAt: -1, _id: -1 })
-          .limit(limit)
+          // open returns are range-filtered by customer distance below, so
+          // read a wider page than the final limit
+          .limit(Math.max(limit * 5, 100))
           .populate("customer", "name phone")
           .populate("seller", "shopName address name location")
           .lean()
@@ -381,10 +428,22 @@ export async function fetchAvailableOrdersForDelivery({
     ? filterV2OrdersByRadius(v2OrdersRaw, deliveryPartner.location.coordinates)
     : [];
 
-  const returnPickups = returnPickupsRaw.map((rp) => ({
-    ...rp,
-    isReturnPickup: true,
-  }));
+  // Open return pickups are offered by distance to the CUSTOMER (where the
+  // rider collects the item), within the return search radius. Pickups
+  // already assigned to this rider are always listed.
+  const [rlng, rlat] = deliveryPartner.location.coordinates;
+  const returnPickups = returnPickupsRaw
+    .filter((rp) => {
+      if (String(rp.returnDeliveryBoy || "") === String(userId)) return true;
+      if (ignoreRiderRange()) return true;
+      const c = toLatLng(rp.address?.location);
+      if (!c) return true;
+      return distanceMeters(rlat, rlng, c.lat, c.lng) <= returnSearchRadiusM(rp);
+    })
+    .map((rp) => ({
+      ...rp,
+      isReturnPickup: true,
+    }));
 
   const orders = mergeAvailableOrders(
     v2Orders,

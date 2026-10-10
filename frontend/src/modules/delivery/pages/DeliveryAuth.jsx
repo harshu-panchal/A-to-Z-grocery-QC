@@ -140,8 +140,9 @@ const DeliveryAuth = () => {
       const normalize = (str) => str.replace(/o/g, "0").replace(/s/g, "5").replace(/[il]/g, "1");
       const normalizedCleanText = normalize(cleanText);
 
-      console.log(`OCR Raw [${type}]:`, rawText);
-      console.log(`OCR Cleaned [${type}]:`, cleanText);
+      if (import.meta.env.DEV) {
+        console.debug(`OCR [${type}]:`, cleanText);
+      }
 
       let isMatch = false;
       let targetNumber = "";

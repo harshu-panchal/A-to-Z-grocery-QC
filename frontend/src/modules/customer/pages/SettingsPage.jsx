@@ -1,4 +1,3 @@
-import React from 'react';
 import { Bell, Lock, User, Globe, ChevronRight, ToggleRight, LogOut } from 'lucide-react';
 
 const SettingsPage = () => {

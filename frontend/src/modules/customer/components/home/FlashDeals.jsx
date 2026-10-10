@@ -1,4 +1,3 @@
-import React from 'react';
 import { Timer, Zap, ArrowRight } from 'lucide-react';
 import ProductCard from '../shared/ProductCard';
 

@@ -1,5 +1,6 @@
 import handleResponse from "../../utils/helper.js";
 import getPagination from "../../utils/pagination.js";
+import logger from "../../services/logger.js";
 import {
   bulkSettleDeliveryTransactions,
   getAdminWalletOverview,
@@ -13,14 +14,14 @@ import {
 
 export const getAdminWalletData = async (req, res) => {
   try {
-    console.log('[WalletService] Fetching admin wallet data for ID:', req.user?.id);
+    logger.debug('[WalletService] Fetching admin wallet data', { adminId: req.user?.id });
     const { page, limit } = getPagination(req, {
       defaultLimit: 25,
       maxLimit: 100,
     });
 
     const data = await getAdminWalletOverview({ page, limit });
-    console.log('[WalletService] Successfully fetched wallet data');
+    logger.debug('[WalletService] Successfully fetched wallet data');
     return handleResponse(res, 200, "Admin wallet data fetched", data);
   } catch (error) {
     console.error('[WalletService] FATAL ERROR:', error);

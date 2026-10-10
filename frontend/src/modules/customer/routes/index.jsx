@@ -1,10 +1,8 @@
-import React from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Home from '../pages/Home';
 import CategoriesPage from '../pages/CategoriesPage';
 import CategoryProductsPage from '../pages/CategoryProductsPage';
 import WishlistPage from '../pages/WishlistPage';
-import CartPage from '../pages/CartPage';
 import OffersPage from '../pages/OffersPage';
 import ProfilePage from '../pages/ProfilePage';
 import OrdersPage from '../pages/OrdersPage';

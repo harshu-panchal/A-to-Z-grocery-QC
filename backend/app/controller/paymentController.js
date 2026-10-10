@@ -6,7 +6,6 @@ import {
 } from "../services/paymentService.js";
 import {
   createPaymentOrderSchema,
-  verifyPaymentClientSchema,
   validateSchema,
 } from "../validation/paymentValidation.js";
 import logger from "../services/logger.js";

@@ -36,6 +36,7 @@ import {
   emitReturnBroadcastForCustomer,
   emitToCustomer,
   emitToOrder,
+  emitToRooms,
   retractDeliveryBroadcastForOrder,
 } from "./orderSocketEmitter.js";
 import { distanceMeters } from "../utils/geoUtils.js";
@@ -43,6 +44,7 @@ import { applyDeliveredSettlement } from "./orderSettlement.js";
 import { requireCanonicalOrderId } from "../utils/orderLookup.js";
 import { emitNotificationEvent } from "../modules/notifications/notification.emitter.js";
 import logger from "./logger.js";
+import { assertRiderWithinRange, deliverySearchRadiusM } from "./delivery/riderRange.js";
 import { NOTIFICATION_EVENTS } from "../modules/notifications/notification.constants.js";
 
 const DELIVERY_SEARCH_MAX_ATTEMPTS = () =>
@@ -305,6 +307,17 @@ export async function deliveryAcceptAtomic(deliveryId, orderId, idempotencyKey) 
     } catch {
       /* idempotency optional if Redis unavailable */
     }
+  }
+
+  // Range: only riders within the order's current search radius of the store
+  // may take it (the popup is limited the same way; this also covers stale
+  // lists / notifications and direct API calls).
+  const pending = await Order.findOne({ orderId })
+    .select("seller deliverySearchMeta workflowStatus deliveryBoy")
+    .lean();
+  if (pending && pending.workflowStatus === WORKFLOW_STATUS.DELIVERY_SEARCH && !pending.deliveryBoy) {
+    const store = await Seller.findById(pending.seller).select("location").lean();
+    await assertRiderWithinRange(deliveryOid, store?.location, deliverySearchRadiusM(pending), "store");
   }
 
   const now = new Date();
@@ -1195,20 +1208,16 @@ export async function requestHandoffOtpAtomic(deliveryId, orderId, lat, lng) {
     deliveryPersonNearby: true,
   };
 
+  // SECURITY: the code goes ONLY to the customer's personal room. It used to be
+  // emitted to `order:<id>` as well — a room the assigned rider also joins — so
+  // the rider received the very OTP that is supposed to prove they met the
+  // customer. Every customer socket is already in `customer:<id>` on connect.
   emitToCustomer(customerId, { event: "order:otp", payload: otpPayload });
   emitToCustomer(customerId, {
     event: "delivery:otp:generated",
     payload: otpPayload,
   });
-  // Mirror the legacy fan-out: clients that joined `order:<id>` (the
-  // customer's open OrderDetailPage in particular) also expect to see
-  // these events without subscribing to the personal room.
-  emitToOrder(orderId, { event: "order:otp", payload: otpPayload });
-  emitToOrder(orderId, {
-    event: "delivery:otp:generated",
-    payload: otpPayload,
-  });
-  emitOrderStatusUpdate(orderId, { otpSent: true }, order.customer);
+  emitOrderStatusUpdate(orderId, { otpSent: true }, order.customer, order.seller);
 
   return { expiresAt, attemptsRemaining: 3, message: "OTP sent to customer" };
 }
@@ -1467,14 +1476,11 @@ export async function verifyHandoffOtpAndDeliver(deliveryId, orderId, code, cash
     status: "delivered",
     deliveredAt: now.toISOString(),
   };
-  emitToCustomer(updated.customer?._id || updated.customer, {
-    event: "delivery:otp:validated",
-    payload: validatedPayload,
-  });
-  emitToOrder(orderId, {
-    event: "delivery:otp:validated",
-    payload: validatedPayload,
-  });
+  // One emit across both rooms so each client receives it exactly once
+  emitToRooms(
+    [`customer:${String(updated.customer?._id || updated.customer)}`, `order:${orderId}`],
+    { event: "delivery:otp:validated", payload: validatedPayload },
+  );
 
   emitNotificationEvent(NOTIFICATION_EVENTS.ORDER_DELIVERED, {
     orderId: updated.orderId,

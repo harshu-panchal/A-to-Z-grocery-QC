@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import { useState, useMemo } from "react";
 import Badge from "@shared/components/ui/Badge";
 import Button from "@shared/components/ui/Button";
 import Modal from "@shared/components/ui/Modal";

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import Card from '@shared/components/ui/Card';
 import Badge from '@shared/components/ui/Badge';
 import {
@@ -9,7 +9,6 @@ import {
     HiOutlineBanknotes,
     HiOutlineClock,
     HiOutlineGlobeAsiaAustralia,
-    HiOutlineFunnel,
     HiOutlineCalendarDays,
     HiOutlineArrowDownTray,
     HiOutlineBolt
@@ -23,13 +22,9 @@ import {
     CartesianGrid,
     Tooltip,
     ResponsiveContainer,
-    BarChart,
-    Bar,
     PieChart,
     Pie,
-    Cell,
-    LineChart,
-    Line
+    Cell
 } from 'recharts';
 import { cn } from '@/lib/utils';
 

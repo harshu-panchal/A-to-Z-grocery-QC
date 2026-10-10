@@ -1,5 +1,5 @@
 // Ultimate Order Intelligence Dossier
-import React, { useState, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
@@ -205,17 +205,18 @@ const OrderDetail = () => {
         <div className="space-y-5">
             {/* Control Bar */}
             <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
-                <div className="flex items-center gap-4">
+                <div className="flex min-w-0 items-center gap-4">
                     <button
                         onClick={() => navigate(-1)}
                         className="group rounded-xl border border-slate-200 bg-white p-2.5 text-slate-400 transition-all hover:bg-slate-50"
                     >
                         <ChevronLeft className="h-5 w-5 transition-transform group-hover:-translate-x-1" />
                     </button>
-                    <div>
-                        <div className="flex items-center gap-3">
-                            <h1 className="text-xl font-black text-slate-900">Order #{order.orderId}</h1>
-                            <div className="relative inline-block w-40">
+                    <div className="min-w-0">
+                        {/* wraps on phones: the long order id + status dropdown overflowed by ~200px */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+                            <h1 className="min-w-0 break-all text-lg font-black text-slate-900 sm:text-xl">Order #{order.orderId}</h1>
+                            <div className="relative inline-block w-40 shrink-0">
                                 <select
                                     value={displayStatus}
                                     onChange={(e) => handleStatusUpdate(e.target.value)}
@@ -234,7 +235,7 @@ const OrderDetail = () => {
                                 <Info className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 opacity-60" />
                             </div>
                         </div>
-                        <p className="mt-1 flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                        <p className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">
                             <Calendar className="h-3.5 w-3.5" />
                             {new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} • <Clock className="ml-1 h-3.5 w-3.5" /> {new Date(order.createdAt).toLocaleTimeString()}
                         </p>
@@ -357,7 +358,13 @@ const OrderDetail = () => {
                                         <h4 className="text-xs font-black uppercase tracking-tight text-slate-900">
                                             Status: {displayStatus.replace(/_/g, ' ')}
                                         </h4>
-                                        <span className="text-[10px] font-bold uppercase text-slate-400">{new Date(order.updatedAt).toLocaleTimeString()}</span>
+                                        <span className="text-[10px] font-bold uppercase text-slate-400">
+                                            {(() => {
+                                                // updatedAt isn't always in the response; fall back to the last known timestamp
+                                                const d = new Date(order.updatedAt || order.deliveredAt || order.createdAt);
+                                                return Number.isNaN(d.getTime()) ? "" : d.toLocaleTimeString();
+                                            })()}
+                                        </span>
                                     </div>
                                     <p className="text-[11px] font-medium italic leading-relaxed text-slate-400">"System verified current logistical state as {displayStatus}."</p>
                                 </div>
@@ -546,6 +553,7 @@ const OrderDetail = () => {
 
                         {/* Top Meta Details */}
                         <table width="100%" cellPadding="0" cellSpacing="0" style={{ marginBottom: "50px", borderBottom: "1px solid #f1f5f9", paddingBottom: "25px" }}>
+                            <tbody>
                             <tr>
                                 <td width="50%" style={{ verticalAlign: "bottom" }}>
                                     <div style={{ fontSize: "28px", fontWeight: "900", color: "#0f172a" }}>INVOICE</div>
@@ -555,10 +563,12 @@ const OrderDetail = () => {
                                     <div style={{ fontSize: "10px", color: "#64748b", fontWeight: "700" }}>Issued: {new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
                                 </td>
                             </tr>
+                        </tbody>
                         </table>
 
                         {/* Address Grid */}
                         <table width="100%" cellPadding="0" cellSpacing="0" style={{ marginBottom: "55px" }}>
+                            <tbody>
                             <tr>
                                 <td width="48%" style={{ verticalAlign: "top", paddingRight: "25px" }}>
                                     <div style={{ fontSize: "9px", fontWeight: "900", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: "12px" }}>Billed To</div>
@@ -580,6 +590,7 @@ const OrderDetail = () => {
                                     <div style={{ fontSize: "11px", fontWeight: "800", color: "#2563eb", marginTop: "15px" }}>{settings?.taxId ? `GSTIN: ${settings.taxId}` : 'Tax Verified Partner'}</div>
                                 </td>
                             </tr>
+                        </tbody>
                         </table>
 
                         {/* Manifest Table */}
@@ -611,6 +622,7 @@ const OrderDetail = () => {
 
                         {/* Totals Summary */}
                         <table width="100%" cellPadding="0" cellSpacing="0" style={{ marginBottom: "60px" }}>
+                            <tbody>
                             <tr>
                                 <td width="50%" style={{ verticalAlign: "top" }}>
                                     <div style={{ backgroundColor: "#f8fafc", padding: "25px", borderRadius: "8px", border: "1px solid #f1f5f9" }}>
@@ -622,6 +634,7 @@ const OrderDetail = () => {
                                 <td width="10%"></td>
                                 <td width="40%" style={{ verticalAlign: "top" }}>
                                     <table width="100%" cellPadding="8" cellSpacing="0">
+                                        <tbody>
                                         <tr>
                                             <td align="left" style={{ fontSize: "12px", color: "#64748b", fontWeight: "700" }}>Subtotal Aggregate</td>
                                             <td align="right" style={{ fontSize: "13px", fontWeight: "800", color: "#0f172a" }}>₹{order.pricing?.subtotal || 0}</td>
@@ -637,9 +650,11 @@ const OrderDetail = () => {
                                             <td align="left" style={{ fontSize: "15px", fontWeight: "900", color: "#0f172a" }}>Grand Total</td>
                                             <td align="right" style={{ fontSize: "24px", fontWeight: "900", color: "#2563eb" }}>₹{order.pricing?.total || 0}</td>
                                         </tr>
+                                    </tbody>
                                     </table>
                                 </td>
                             </tr>
+                        </tbody>
                         </table>
 
                         {/* Footer: Centered Verification */}

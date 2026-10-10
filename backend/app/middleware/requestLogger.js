@@ -4,6 +4,8 @@ import logger from "../services/logger.js";
 import { incrementCounter, recordHistogram } from "../services/metrics.js";
 import { getProcessRole } from "../core/processRole.js";
 
+const SLOW_REQUEST_MS = Number(process.env.SLOW_REQUEST_MS) || 1000;
+
 function shouldLogRequest(pathname = "", method = "") {
   if (!pathname) return true;
   if (method === "OPTIONS") return false;
@@ -41,10 +43,18 @@ export function structuredRequestLogger(req, res, next) {
       const durationMs = Date.now() - start;
       const durationSeconds = durationMs / 1000;
 
+      // Successful, fast requests are routine (riders/sellers poll every few
+      // seconds) and used to flood the console at the default "info" level.
+      // They now log at "debug" (shown with LOG_LEVEL=debug); errors, 4xx and
+      // slow requests stay visible.
+      const isSlow = durationMs >= SLOW_REQUEST_MS;
       const logLevel =
-        res.statusCode >= 500 ? "error" : res.statusCode >= 400 ? "warn" : "info";
+        res.statusCode >= 500 ? "error"
+          : res.statusCode >= 400 ? "warn"
+            : isSlow ? "info"
+              : "debug";
 
-      logger.log(logLevel, "HTTP request completed", {
+      logger.log(logLevel, isSlow ? "HTTP request slow" : "HTTP request completed", {
         requestId: req.correlationId || null,
         method: req.method,
         path: req.originalUrl,

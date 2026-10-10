@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import {
@@ -17,6 +17,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import axiosInstance from "@core/api/axios";
 import { useSettings } from "@core/context/SettingsContext";
 import { legalPagesApi } from "@core/services/legalPagesApi";
+import { sanitizeHtml } from "@core/utils/sanitizeHtml";
 
 const HelpSupport = () => {
   const navigate = useNavigate();
@@ -87,7 +88,7 @@ const HelpSupport = () => {
           <Card className="p-4">
             <div
               className="prose prose-sm max-w-none text-gray-600"
-              dangerouslySetInnerHTML={{ __html: introHtml }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(introHtml) }}
             />
           </Card>
         )}

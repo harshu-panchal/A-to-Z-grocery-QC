@@ -1,4 +1,5 @@
 import Category from "../models/category.js";
+import Product from "../models/product.js";
 import handleResponse from "../utils/helper.js";
 import getPagination from "../utils/pagination.js";
 import { buildKey, getOrSet, getTTL, invalidate } from "../services/cacheService.js";
@@ -314,6 +315,32 @@ export const updateCategory = async (req, res) => {
 export const deleteCategory = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return handleResponse(res, 400, "Invalid category id");
+    }
+
+    // Collect the whole subtree first. Deleting it while products still point
+    // at any of these ids leaves those products without a category (they
+    // vanish from category pages and break the seller product form).
+    const subtreeIds = [new mongoose.Types.ObjectId(id)];
+    for (let i = 0; i < subtreeIds.length; i += 1) {
+      const children = await Category.find({ parentId: subtreeIds[i] }).select("_id").lean();
+      children.forEach((c) => subtreeIds.push(c._id));
+    }
+    const inUse = await Product.countDocuments({
+      $or: [
+        { headerId: { $in: subtreeIds } },
+        { categoryId: { $in: subtreeIds } },
+        { subcategoryId: { $in: subtreeIds } },
+      ],
+    });
+    if (inUse > 0) {
+      return handleResponse(
+        res,
+        409,
+        `Cannot delete: ${inUse} product${inUse === 1 ? " uses" : "s use"} this category or its sub-categories. Move or delete those products first.`,
+      );
+    }
 
     const deleteWithChildren = async (parentId) => {
       const children = await Category.find({ parentId });

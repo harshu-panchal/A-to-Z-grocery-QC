@@ -1,11 +1,11 @@
-import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, LayoutGrid, ShoppingBag, User } from 'lucide-react';
+import { Home, LayoutGrid, Search, ShoppingBag, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
     { label: 'Home', icon: Home, path: '/' },
-    { label: 'Category', icon: LayoutGrid, path: '/categories' },
+    { label: 'Categories', icon: LayoutGrid, path: '/categories' },
+    { label: 'Search', icon: Search, path: '/search' },
     { label: 'Orders', icon: ShoppingBag, path: '/orders' },
     { label: 'Profile', icon: User, path: '/profile' },
 ];
@@ -14,7 +14,10 @@ const BottomNav = () => {
     const location = useLocation();
 
     return (
-        <div className="fixed bottom-0 left-0 right-0 z-[500] bg-white border-t border-gray-100 flex items-center justify-around h-[70px] md:hidden shadow-[0_-8px_30px_rgba(0,0,0,0.06)] px-4 pb-[env(safe-area-inset-bottom)]">
+        <nav
+            aria-label="Main"
+            className="fixed bottom-0 left-0 right-0 z-[500] flex h-16 items-stretch justify-around border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-4px_16px_rgba(0,0,0,0.04)] md:hidden"
+        >
             {navItems.map((item) => {
                 const isActive = location.pathname === item.path ||
                     (item.path !== '/' && location.pathname.startsWith(item.path));
@@ -23,50 +26,31 @@ const BottomNav = () => {
                     <Link
                         key={item.path}
                         to={item.path}
-                        className="flex-1 flex flex-col items-center justify-center h-full relative group transition-all"
+                        aria-current={isActive ? 'page' : undefined}
+                        className="relative flex flex-1 flex-col items-center justify-center gap-0.5 focus-visible:outline-2 focus-visible:outline-primary"
                     >
                         {isActive && (
-                            <div className="absolute -inset-y-2 -inset-x-4 bg-primary/5 rounded-[20px] -z-10 transition-opacity duration-300" />
+                            <span className="absolute top-0 h-[3px] w-8 rounded-b-full bg-primary" aria-hidden="true" />
                         )}
-
-                        <div className="flex flex-col items-center justify-center relative">
-                            <div
-                                className={cn(
-                                    "transition-transform duration-300",
-                                    isActive ? "-translate-y-0.5 scale-110" : "translate-y-0 scale-100"
-                                )}
-                            >
-                                <item.icon
-                                    size={24}
-                                    strokeWidth={isActive ? 2.5 : 2}
-                                    className={cn(
-                                        "transition-colors duration-300",
-                                        isActive ? "text-primary" : "text-gray-400"
-                                    )}
-                                />
-                            </div>
-
-                            <span
-                                className={cn(
-                                    "text-[10px] font-bold tracking-tight mt-1 transition-all duration-300",
-                                    isActive ? "text-primary" : "text-gray-400"
-                                )}
-                                style={{ transform: isActive ? "translateY(1px)" : "translateY(0)" }}
-                            >
-                                {item.label}
-                            </span>
-                        </div>
-
-                        {/* Top Accent Line for Active State */}
-                        {isActive && (
-                            <div className="absolute -top-[1px] w-8 h-[3px] bg-primary rounded-full transition-opacity duration-300" />
-                        )}
+                        <item.icon
+                            size={22}
+                            strokeWidth={isActive ? 2.4 : 1.9}
+                            className={cn('transition-colors', isActive ? 'text-primary' : 'text-slate-500')}
+                            aria-hidden="true"
+                        />
+                        <span
+                            className={cn(
+                                'text-[11px] leading-none transition-colors',
+                                isActive ? 'font-semibold text-primary' : 'font-medium text-slate-500'
+                            )}
+                        >
+                            {item.label}
+                        </span>
                     </Link>
                 );
             })}
-        </div>
+        </nav>
     );
 };
 
 export default BottomNav;
-

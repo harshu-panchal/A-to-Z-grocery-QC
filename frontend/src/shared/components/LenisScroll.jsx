@@ -29,6 +29,9 @@ const LenisScroll = () => {
             },
         });
 
+        // shared so route/category changes can jump to the top (core/utils/scrollTop.js)
+        window.__lenis = lenis;
+
         let rafId;
 
         function raf(time) {
@@ -40,6 +43,7 @@ const LenisScroll = () => {
 
         return () => {
             cancelAnimationFrame(rafId);
+            if (window.__lenis === lenis) delete window.__lenis;
             lenis.destroy();
         };
     }, []);

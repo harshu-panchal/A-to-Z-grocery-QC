@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Badge from "@shared/components/ui/Badge";
 import Button from "@shared/components/ui/Button";
 import PageHeader from "@shared/components/ui/PageHeader";
@@ -13,7 +13,6 @@ import {
   Trash2,
   X,
   Image,
-  Filter,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { adminApi } from "../../services/adminApi";
@@ -200,7 +199,7 @@ const Level2Categories = () => {
       setDeleteTarget(null);
       invalidateCategories();
     } catch (error) {
-      toast.error("Failed to delete category");
+      toast.error(error.response?.data?.message || "Failed to delete category");
     }
   };
 
@@ -275,7 +274,7 @@ const Level2Categories = () => {
         invalidateCategories();
       } catch (error) {
         console.error("Bulk delete error:", error);
-        toast.error("Failed to delete some categories");
+        toast.error(error.response?.data?.message || "Failed to delete some categories");
       }
     }
   };

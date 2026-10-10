@@ -1,4 +1,3 @@
-import mongoose from "mongoose";
 import MediaMetadata from "../app/models/mediaMetadata.js";
 
 // Regression test: settingsController.uploadSettingsImage (logo/favicon

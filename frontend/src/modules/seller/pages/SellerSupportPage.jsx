@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   ChevronLeft,
@@ -12,6 +12,7 @@ import {
 import axiosInstance from "@core/api/axios";
 import { useSettings } from "@core/context/SettingsContext";
 import { legalPagesApi } from "@core/services/legalPagesApi";
+import { sanitizeHtml } from "@core/utils/sanitizeHtml";
 
 const SellerSupportPage = () => {
   const navigate = useNavigate();
@@ -80,7 +81,7 @@ const SellerSupportPage = () => {
           <div className="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm">
             <div
               className="prose prose-slate prose-sm max-w-none text-slate-600"
-              dangerouslySetInnerHTML={{ __html: introHtml }}
+              dangerouslySetInnerHTML={{ __html: sanitizeHtml(introHtml) }}
             />
           </div>
         )}

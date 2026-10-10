@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import Card from '@shared/components/ui/Card';
 import Button from '@shared/components/ui/Button';
@@ -83,6 +84,8 @@ const StockManagement = () => {
     const [adjustType, setAdjustType] = useState('Restock');
     const [adjustValue, setAdjustValue] = useState('');
     const [adjustNote, setAdjustNote] = useState('');
+    const [adjustVariantSku, setAdjustVariantSku] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
 
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
@@ -131,23 +134,49 @@ const StockManagement = () => {
         });
     }, [inventory, searchTerm, filterStatus]);
 
+    // Variant being adjusted (products with variants are adjusted per variant)
+    const selectedVariants = Array.isArray(selectedItem?.variants) ? selectedItem.variants : [];
+    const selectedVariant = selectedVariants.find((v) => String(v.sku) === adjustVariantSku) || null;
+    const availableStock = selectedVariant ? Number(selectedVariant.stock || 0) : Number(selectedItem?.stock || 0);
+    const parsedQty = Number(adjustValue);
+    const qtyIsValid = Number.isInteger(parsedQty) && parsedQty > 0;
+    const previewStock = qtyIsValid
+        ? availableStock + (adjustType === 'Restock' ? parsedQty : -parsedQty)
+        : availableStock;
+    const removingTooMuch = adjustType === 'Remove' && qtyIsValid && parsedQty > availableStock;
+
     const handleFullAdjustment = async () => {
-        const value = parseInt(adjustValue);
-        if (isNaN(value) || value <= 0) {
-            toast.error("Please enter a valid quantity");
+        if (!qtyIsValid) {
+            toast.error("Enter a whole number greater than 0");
+            return;
+        }
+        if (selectedVariants.length > 1 && !selectedVariant) {
+            toast.error("Select a variant to adjust");
+            return;
+        }
+        if (removingTooMuch) {
+            toast.error(`Only ${availableStock} in stock — you can't remove ${parsedQty}`);
             return;
         }
 
+        setIsSaving(true);
         try {
+            // Quantity is always positive; the type decides add vs remove
+            // (the old page sent Remove as a negative number, which the backend added).
             const res = await sellerApi.adjustStock({
                 productId: selectedItem.id,
-                type: adjustType === 'Restock' ? 'Restock' : 'Correction',
-                quantity: adjustType === 'Restock' ? value : -value,
+                type: adjustType === 'Restock' ? 'Restock' : 'Remove',
+                quantity: parsedQty,
+                variantSku: selectedVariant?.sku || undefined,
                 note: adjustNote
             });
 
             if (res.data.success) {
-                toast.success("Stock adjusted successfully");
+                const newStock = res.data.result?.newVariantStock ?? res.data.result?.newStock;
+                toast.success(
+                    `${adjustType === 'Restock' ? 'Added' : 'Removed'} ${parsedQty} unit${parsedQty === 1 ? '' : 's'}` +
+                    (newStock !== undefined && newStock !== null ? ` — now ${newStock} in stock` : '')
+                );
                 setIsAdjustModalOpen(false);
                 // Perf audit Phase 8: refreshes whichever stock-status
                 // filter the seller currently has selected (the original
@@ -161,13 +190,19 @@ const StockManagement = () => {
             }
         } catch (error) {
             toast.error(error.response?.data?.message || "Failed to adjust stock");
+        } finally {
+            setIsSaving(false);
         }
     };
 
     const openAdjustModal = (item) => {
         setSelectedItem(item);
+        setAdjustType('Restock');
         setAdjustValue('');
         setAdjustNote('');
+        const variants = Array.isArray(item.variants) ? item.variants : [];
+        // Single-variant products: preselect it; several: seller must choose
+        setAdjustVariantSku(variants.length === 1 ? String(variants[0].sku) : '');
         setIsAdjustModalOpen(true);
     };
 
@@ -203,6 +238,11 @@ const StockManagement = () => {
                     </span>
                     {item.stock <= item.threshold && (
                         <Badge variant="danger" className="mt-1 w-fit">Low Stock</Badge>
+                    )}
+                    {Array.isArray(item.variants) && item.variants.length > 0 && (
+                        <span className="mt-1 text-[11px] text-slate-500">
+                            {item.variants.map((v) => `${v.name || v.sku}: ${Number(v.stock || 0)}`).join(' · ')}
+                        </span>
                     )}
                 </div>
             ),
@@ -354,9 +394,11 @@ const StockManagement = () => {
             )}
 
             {/* Advanced Adjustment Modal */}
-            <AnimatePresence>
+            {/* Portaled to <body> and z-[500]: above the fixed navbar (z-200) and sidebar,
+                below the global new-order / OTP alerts (z-999 / z-1000) */}
+            {createPortal(<AnimatePresence>
                 {isAdjustModalOpen && selectedItem && (
-                    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+                    <div className="fixed inset-0 z-[500] flex items-center justify-center p-4">
                         <motion.div
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
@@ -414,18 +456,60 @@ const StockManagement = () => {
                                         ))}
                                     </div>
 
+                                    {selectedVariants.length > 0 && (
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-slate-700 ml-0.5">Variant</label>
+                                            <div className="flex flex-wrap gap-2">
+                                                {selectedVariants.map((v) => {
+                                                    const active = String(v.sku) === adjustVariantSku;
+                                                    return (
+                                                        <button
+                                                            key={v.sku}
+                                                            type="button"
+                                                            onClick={() => setAdjustVariantSku(String(v.sku))}
+                                                            aria-pressed={active}
+                                                            className={cn(
+                                                                "rounded-lg border px-3 py-2 text-left text-xs transition-all",
+                                                                active ? "border-primary bg-primary/5 text-primary" : "border-slate-200 text-slate-700 hover:border-slate-300"
+                                                            )}
+                                                        >
+                                                            <span className="block font-bold">{v.name || v.sku}</span>
+                                                            <span className="block text-[11px] opacity-80">{Number(v.stock || 0)} in stock</span>
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
+
                                     <div className="space-y-1.5">
-                                        <label className="text-xs font-medium text-slate-700 ml-0.5">Quantity Change</label>
+                                        <label htmlFor="adjust-qty" className="text-xs font-medium text-slate-700 ml-0.5">
+                                            {adjustType === 'Restock' ? 'Units to add' : 'Units to remove'}
+                                        </label>
                                         <div className="relative">
-                                            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-black text-slate-400">#</div>
+                                            <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-lg font-black text-slate-400">{adjustType === 'Restock' ? '+' : '−'}</div>
                                             <input
+                                                id="adjust-qty"
                                                 type="number"
+                                                inputMode="numeric"
+                                                min="1"
+                                                step="1"
                                                 value={adjustValue}
-                                                onChange={(e) => setAdjustValue(e.target.value)}
-                                                className="w-full rounded-md border border-slate-200 bg-slate-50 pl-10 pr-4 py-3 text-xl font-black text-slate-900 outline-none transition-all focus:border-primary focus:bg-white focus:ring-2 focus:ring-primary/20"
+                                                onChange={(e) => setAdjustValue(e.target.value.replace(/[^\d]/g, ''))}
+                                                className={cn(
+                                                    "w-full rounded-md border bg-slate-50 pl-10 pr-4 py-3 text-xl font-black text-slate-900 outline-none transition-all focus:bg-white focus:ring-2",
+                                                    removingTooMuch ? "border-danger focus:border-danger focus:ring-danger/20" : "border-slate-200 focus:border-primary focus:ring-primary/20"
+                                                )}
                                                 placeholder="0"
                                             />
                                         </div>
+                                        <p className={cn("text-xs ml-0.5", removingTooMuch ? "text-danger font-semibold" : "text-slate-500")}>
+                                            {selectedVariants.length > 1 && !selectedVariant
+                                                ? 'Select a variant first'
+                                                : removingTooMuch
+                                                    ? `Only ${availableStock} available to remove`
+                                                    : <>Stock after save: <span className="font-bold text-slate-900">{availableStock} → {previewStock}</span></>}
+                                        </p>
                                     </div>
 
                                     <div className="space-y-1.5">
@@ -444,14 +528,18 @@ const StockManagement = () => {
                                 <Button onClick={() => setIsAdjustModalOpen(false)} variant="outline" className="flex-1">
                                     Cancel
                                 </Button>
-                                <Button onClick={handleFullAdjustment} className="flex-1">
-                                    Save Changes
+                                <Button
+                                    onClick={handleFullAdjustment}
+                                    className="flex-1"
+                                    disabled={isSaving || !qtyIsValid || removingTooMuch || (selectedVariants.length > 1 && !selectedVariant)}
+                                >
+                                    {isSaving ? 'Saving…' : adjustType === 'Restock' ? 'Add stock' : 'Remove stock'}
                                 </Button>
                             </div>
                         </motion.div>
                     </div>
                 )}
-            </AnimatePresence>
+            </AnimatePresence>, document.body)}
         </div>
     );
 };

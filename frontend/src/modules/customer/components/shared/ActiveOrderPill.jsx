@@ -1,7 +1,5 @@
-import React from 'react';
-import { ChevronRight, Package } from 'lucide-react';
+import { Package } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { cn } from '@/lib/utils';
 import { applyCloudinaryTransform } from '@/core/utils/imageUtils';
 
 const ActiveOrderPill = ({ order }) => {

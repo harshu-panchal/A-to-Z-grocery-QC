@@ -1,5 +1,5 @@
 // Comprehensive Order Management System
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
 import Badge from '@shared/components/ui/Badge';

@@ -1,7 +1,6 @@
 import React from "react";
-import { Link, useLocation } from "react-router-dom";
-import { Heart, Plus, Minus, Star } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useLocation } from "react-router-dom";
+import { Heart, Plus, Minus, Package } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useWishlist } from "../../context/WishlistContext";
 import { useCart } from "../../context/CartContext";
@@ -13,6 +12,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Clock } from "lucide-react";
 
 import { useProductDetail } from "../../context/ProductDetailContext";
+import { isProductOutOfStock, isVariantOutOfStock } from "../../utils/stock";
 
 const ProductCard = React.memo(
   ({ product, badge, className, compact = false, neutralBg = false }) => {
@@ -52,19 +52,27 @@ const ProductCard = React.memo(
         return effective === displayed || mrp === displayed;
       };
 
-      const picked = variants.find(matchesDisplayedPrice) || variants[0];
+      // Show a size the customer can actually buy: prefer the price-matching
+      // variant only if it's in stock, otherwise the first in-stock variant;
+      // fall back to sold-out sizes only when every size is sold out.
+      const inStock = variants.filter((v) => !isVariantOutOfStock(v));
+      const pool = inStock.length ? inStock : variants;
+      const priceMatch = pool.find(matchesDisplayedPrice);
+      const picked = priceMatch || pool[0];
       const key = String(picked?.sku || picked?.name || "").trim();
-      
+
       const variantMrp = Number(picked?.mrp || 0);
       const variantSale = Number(picked?.sellingPrice || 0);
       const hasDiscount = variantSale > 0 && variantSale < variantMrp;
-      
+      // The product-level original price only describes the price-matching variant
+      const fallbackOriginal = priceMatch && displayedOriginal > displayed ? displayedOriginal : null;
+
       return {
         key,
         name: String(picked?.name || "").trim(),
         displayPrice: hasDiscount ? variantSale : (variantMrp || displayed),
-        displayOriginalPrice: hasDiscount ? variantMrp : (displayedOriginal > displayed ? displayedOriginal : null),
-        discountPercent: hasDiscount ? Math.round(((variantMrp - variantSale) / variantMrp) * 100) : (displayedOriginal > displayed ? Math.round(((displayedOriginal - displayed) / displayedOriginal) * 100) : 0)
+        displayOriginalPrice: hasDiscount ? variantMrp : fallbackOriginal,
+        discountPercent: hasDiscount ? Math.round(((variantMrp - variantSale) / variantMrp) * 100) : (fallbackOriginal ? Math.round(((fallbackOriginal - displayed) / fallbackOriginal) * 100) : 0)
       };
     }, [product]);
 
@@ -179,59 +187,55 @@ const ProductCard = React.memo(
       ],
     );
 
+    // Fall back to the cheapest variant price when the product has no top-level price
+    const lowestVariantPrice = (Array.isArray(product?.variants) ? product.variants : [])
+      .map((v) => Number(v?.sellingPrice) || Number(v?.mrp) || 0)
+      .filter((n) => n > 0)
+      .sort((a, b) => a - b)[0];
+    const price = defaultVariant?.displayPrice || product.price || lowestVariantPrice;
+    const formatRupees = (n) => Number(n).toLocaleString("en-IN");
+    const mrp = defaultVariant?.displayOriginalPrice;
+    const outOfStock = isProductOutOfStock(product);
+    const badgeText =
+      badge ||
+      product.discount ||
+      (defaultVariant?.discountPercent > 0 ? `${defaultVariant.discountPercent}% OFF` : null);
+
     return (
       <div
         className={cn(
-          "flex-shrink-0 w-full rounded-xl sm:rounded-2xl overflow-hidden flex flex-col h-full shadow-sm cursor-pointer transition-all duration-300 hover:scale-[1.02]",
-          compact
-            ? "bg-white border-[1.5px] border-brand-50 shadow-[0_8px_20px_-8px_rgba(0,0,0,0.08)]"
-            : neutralBg
-              ? "bg-white border border-slate-100 shadow-[0_8px_20px_-8px_rgba(0,0,0,0.08)]"
-              : "bg-primary/10 border border-primary/20",
+          "group relative flex-shrink-0 w-full h-full flex flex-col overflow-hidden rounded-xl border cursor-pointer transition-shadow duration-200",
+          outOfStock ? "bg-slate-50 border-slate-200" : "bg-white border-slate-200/80 hover:shadow-md",
           className,
         )}
         onClick={handleProductClick}>
-        {/* Top Image Section */}
-        <div className="relative">
-          {/* Badge (Custom or Discount) */}
-          {(badge ||
-            product.discount ||
-            defaultVariant?.discountPercent > 0) && (
-              <div
-                className={cn(
-                  "absolute z-10 bg-primary text-primary-foreground font-[900] rounded-md shadow-sm uppercase tracking-wider flex items-center justify-center",
-                  compact
-                    ? "top-2 left-2 px-1.5 py-0.5 text-[7px]"
-                    : "top-2 left-2 px-1 py-0.5 text-[7px] sm:top-3 sm:left-3 sm:px-2 sm:py-1 sm:text-[9px]",
-                )}>
-                {badge ||
-                  product.discount ||
-                  `${defaultVariant?.discountPercent}% OFF`}
-              </div>
-            )}
-
+        {/* Image */}
+        <div className="relative aspect-square bg-white p-2">
+          {outOfStock && (
+            <span className="absolute inset-x-2 top-1/2 z-10 -translate-y-1/2 rounded-md bg-slate-800/80 py-1 text-center text-xs font-semibold text-white">
+              Out of stock
+            </span>
+          )}
+          {badgeText && !outOfStock && (
+            <span className="absolute left-0 top-2 z-10 rounded-r-md bg-primary px-1.5 py-0.5 text-[10px] font-bold leading-tight text-primary-foreground">
+              {badgeText}
+            </span>
+          )}
           <button
+            type="button"
             onClick={toggleWishlist}
-            className={cn(
-              "absolute z-10 bg-white/90 backdrop-blur-sm rounded-full shadow-lg flex items-center justify-center cursor-pointer hover:bg-white transition-all active:scale-90",
-              compact
-                ? "top-2 right-2 h-7 w-7"
-                : "top-2 right-2 h-6.5 w-6.5 sm:top-3 sm:right-3 sm:h-8 sm:w-8",
-            )}>
+            aria-label={isWishlisted ? `Remove ${product.name} from wishlist` : `Add ${product.name} to wishlist`}
+            aria-pressed={isWishlisted}
+            className="absolute right-1 top-1 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 shadow-sm transition-transform active:scale-90 focus-visible:outline-2 focus-visible:outline-primary">
             <motion.div
               whileTap={{ scale: 0.8 }}
               animate={isWishlisted ? { scale: [1, 1.2, 1] } : {}}>
               <Heart
-                size={compact ? 12 : 14}
-                className={cn(
-                  isWishlisted
-                    ? "text-red-500 fill-current"
-                    : "text-neutral-400",
-                )}
+                size={15}
+                className={cn(isWishlisted ? "text-red-500 fill-current" : "text-slate-400")}
               />
             </motion.div>
           </button>
-
           <AnimatePresence>
             {showHeartPopup && (
               <motion.div
@@ -239,139 +243,106 @@ const ProductCard = React.memo(
                 animate={{ scale: 2, opacity: 0, y: -40 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.8, ease: "easeOut" }}
-                className="absolute top-3 right-3 z-50 pointer-events-none text-red-500">
+                className="pointer-events-none absolute right-3 top-3 z-50 text-red-500">
                 <Heart size={24} fill="currentColor" />
               </motion.div>
             )}
           </AnimatePresence>
-
-          <div
-            className={cn(
-              "block w-full overflow-hidden flex items-center justify-center transition-transform duration-500 group-hover:scale-105 aspect-square",
-              compact || neutralBg ? "bg-white/70" : "bg-white/50"
-            )}>
+          {product.image ? (
             <img
               ref={imageRef}
               src={applyCloudinaryTransform(product.image)}
               alt={product.name}
               loading="lazy"
-              className="w-full h-full object-cover mix-blend-multiply"
+              className={cn("h-full w-full object-contain", outOfStock && "opacity-40 grayscale")}
             />
-          </div>
+          ) : (
+            // no image saved: a placeholder instead of <img src=""> (which makes
+            // the browser re-request the page and logs a React warning)
+            <div
+              ref={imageRef}
+              role="img"
+              aria-label={product.name}
+              className={cn("flex h-full w-full items-center justify-center rounded-lg bg-slate-50", outOfStock && "opacity-40")}
+            >
+              <Package size={32} strokeWidth={1.5} className="text-slate-300" aria-hidden="true" />
+            </div>
+          )}
         </div>
 
-        {/* Info Section */}
-        <div
-          className={cn(
-            "flex flex-col flex-1",
-            compact
-              ? "p-2 pt-1 gap-0"
-              : "bg-white/40 p-1.5 pt-2 sm:p-3 sm:pt-4 gap-0.5",
-          )}>
-          <div className="flex items-center gap-1 mb-0.5 sm:gap-1.5 sm:mb-1">
-            <div
-              className={cn(
-                "border-2 border-primary rounded-full flex items-center justify-center",
-                compact ? "h-2.5 w-2.5" : "h-2.5 w-2.5 sm:h-3.5 sm:w-3.5",
-              )}>
-              <div
-                className={cn(
-                  "bg-primary rounded-full",
-                  compact ? "h-0.5 w-0.5" : "h-1 w-1",
-                )}
-              />
-            </div>
-            <div
-              className={cn(
-                "bg-brand-50 text-brand-600 font-bold rounded px-1.5 py-0 tracking-wide",
-                compact ? "text-[8px]" : "text-[8px] sm:text-[9px]",
-              )}>
-              {product.weight || "1 unit"}
-            </div>
-          </div>
-
-          <div className={cn(compact ? "h-8" : "h-8 sm:h-9")}>
-            <h4
-              className={cn(
-                "font-[600] text-[#1A1A1A] leading-tight line-clamp-2",
-                compact ? "text-[10.5px]" : "text-[12px] sm:text-[13px]",
-              )}>
-              {product.name}
-            </h4>
-          </div>
-
-          {/* Delivery Time & Unit info */}
-          <div className="flex items-center gap-1 text-gray-500 mt-0.5 mb-1 sm:gap-1.5 sm:mt-1 sm:mb-2">
-            <Clock size={compact ? 9 : 10} className="text-primary/80" />
-            <span
-              className={cn(
-                "font-semibold",
-                compact ? "text-[8px]" : "text-[9px] sm:text-[10px]",
-              )}>
+        {/* Info */}
+        <div className={cn("flex flex-1 flex-col px-2.5 pb-2.5", compact ? "gap-0.5" : "gap-1", outOfStock && "opacity-70")}>
+          {outOfStock ? (
+            <span className="inline-flex w-fit items-center rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-semibold text-red-600">
+              Currently unavailable
+            </span>
+          ) : (
+            <span className="inline-flex w-fit items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+              <Clock size={10} aria-hidden="true" />
               {product.deliveryTime || "8-12 mins"}
             </span>
-          </div>
+          )}
+          <h4
+            className={cn(
+              "line-clamp-2 font-semibold leading-snug",
+              outOfStock ? "text-slate-500" : "text-slate-900",
+              compact ? "min-h-[2.5rem] text-[13px]" : "min-h-[2.75rem] text-sm",
+            )}>
+            {product.name}
+          </h4>
+          <p className="text-xs text-slate-500">{defaultVariant?.name || product.weight || "1 unit"}</p>
 
-          {/* Price Row / ADD Button Combination for compact */}
-          <div className="mt-auto flex items-center justify-between gap-1">
-            <div className="flex flex-col">
-              <span
-                className={cn(
-                  "font-[1000] text-[#1A1A1A]",
-                  compact ? "text-[11px]" : "text-[13px] sm:text-sm",
-                )}>
-                ₹{defaultVariant?.displayPrice || product.price}
-              </span>
-              {defaultVariant?.displayOriginalPrice && (
-                <span
-                  className={cn(
-                    "font-medium text-gray-400 line-through leading-none",
-                    compact ? "text-[8px]" : "text-[9px] sm:text-[10px]",
-                  )}>
-                  ₹{defaultVariant.displayOriginalPrice}
-                </span>
-              )}
-            </div>
-
-            {/* ADD Button / Quantity Selector (Always in price row) */}
-            <div className="flex">
-              {quantity > 0 ? (
-                <div
-                  className={cn(
-                    "flex items-center bg-white border-[1.5px] border-primary rounded-lg p-0.5 justify-between",
-                    compact ? "min-w-[60px]" : "min-w-[68px] sm:min-w-[90px] md:min-w-[100px]",
-                  )}>
-                  <button
-                    onClick={handleDecrement}
-                    className="p-0.5 px-0.5 text-primary active:scale-90 transition-transform sm:p-1 sm:px-1">
-                    <Minus size={compact ? 10 : 12} strokeWidth={3.5} />
-                  </button>
-                  <span
-                    className={cn(
-                      "font-black text-primary",
-                      compact ? "text-[10px]" : "text-[11px] sm:text-[13px] md:text-sm",
-                    )}>
-                    {quantity}
-                  </span>
-                  <button
-                    onClick={handleIncrement}
-                    className="p-0.5 px-0.5 text-primary active:scale-90 transition-transform sm:p-1 sm:px-1">
-                    <Plus size={compact ? 10 : 12} strokeWidth={3.5} />
-                  </button>
-                </div>
+          {/* Price + ADD / quantity */}
+          {/* flex-wrap: long prices push the button onto its own line instead of overlapping */}
+          <div className="mt-auto flex flex-wrap items-end justify-between gap-x-1.5 gap-y-1.5 pt-1.5">
+            <div className="flex min-w-0 flex-col leading-tight">
+              {price ? (
+                <span className={cn("font-bold", outOfStock ? "text-slate-500" : "text-slate-900", compact ? "text-sm" : "text-[15px]")}>₹{formatRupees(price)}</span>
               ) : (
-                <button
-                  onClick={handleAddToCart}
-                  className={cn(
-                    "bg-white border-[1.5px] border-primary text-primary rounded-lg font-black shadow-sm hover:bg-primary/5 mb-0 transition-all uppercase tracking-wide leading-none active:scale-95",
-                    compact
-                      ? "px-2.5 py-1 text-[10px]"
-                      : "px-3.5 py-1.5 text-[11px] sm:px-7 sm:py-2 sm:text-[13px] md:text-sm md:px-8 md:py-2.5",
-                  )}>
-                  ADD
-                </button>
+                <span className="text-xs text-slate-500">See options</span>
               )}
+              {mrp && <span className="text-[11px] text-slate-400 line-through">₹{formatRupees(mrp)}</span>}
             </div>
+            {quantity > 0 ? (
+              <div
+                className="ml-auto flex h-9 min-w-[76px] items-center justify-between rounded-lg bg-primary text-primary-foreground"
+                role="group"
+                aria-label={`${product.name} quantity`}>
+                <button
+                  type="button"
+                  onClick={handleDecrement}
+                  aria-label={`Decrease ${product.name} quantity`}
+                  className="flex h-full w-7 items-center justify-center active:scale-90 transition-transform">
+                  <Minus size={14} strokeWidth={3} />
+                </button>
+                <span className="text-sm font-bold tabular-nums" aria-live="polite">{quantity}</span>
+                <button
+                  type="button"
+                  onClick={handleIncrement}
+                  disabled={outOfStock}
+                  aria-label={`Increase ${product.name} quantity`}
+                  className="flex h-full w-7 items-center justify-center active:scale-90 transition-transform disabled:opacity-40">
+                  <Plus size={14} strokeWidth={3} />
+                </button>
+              </div>
+            ) : outOfStock ? (
+              <button
+                type="button"
+                disabled
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+                aria-label={`${product.name} is out of stock`}
+                className="ml-auto h-9 min-w-[76px] cursor-not-allowed rounded-lg border border-slate-300 bg-slate-100 px-2 text-[11px] font-semibold text-slate-500">
+                Out of stock
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={handleAddToCart}
+                aria-label={`Add ${product.name} to cart`}
+                className="ml-auto h-9 min-w-[76px] rounded-lg border border-primary bg-white px-3 text-sm font-bold text-primary shadow-sm transition-colors hover:bg-primary/5 active:scale-95">
+                ADD
+              </button>
+            )}
           </div>
         </div>
       </div>

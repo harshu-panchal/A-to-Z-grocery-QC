@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import Badge from '@shared/components/ui/Badge';
 import Button from '@shared/components/ui/Button';
 import Modal from '@shared/components/ui/Modal';
@@ -21,7 +21,6 @@ import {
     ArrowRight,
     Search,
 } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { sellerApi } from "../services/sellerApi";
 import { toast } from "sonner";
 import { useSellerEarnings } from "../context/SellerEarningsContext";

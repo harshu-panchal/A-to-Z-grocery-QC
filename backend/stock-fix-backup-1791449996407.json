@@ -1,0 +1,322 @@
+[
+  {
+    "_id": "699d6ed235a8cb0f281b8777",
+    "name": "Millets & More Cheese Millet Bhel",
+    "before": {
+      "stock": 48,
+      "variants": [
+        49
+      ]
+    }
+  },
+  {
+    "_id": "699d6f6a1dc2065e99eec45b",
+    "name": "Dabur Cold Pressed Mustard Oi",
+    "before": {
+      "stock": 30,
+      "variants": [
+        5
+      ]
+    }
+  },
+  {
+    "_id": "6a41078551bfd538d2f8037b",
+    "name": "Blueberry",
+    "before": {
+      "stock": 10,
+      "variants": [
+        15
+      ]
+    }
+  },
+  {
+    "_id": "69c8ce8266c22c656c4bfaa6",
+    "name": "Mango",
+    "before": {
+      "stock": 34,
+      "variants": [
+        47,
+        50,
+        50
+      ]
+    }
+  },
+  {
+    "_id": "699d6f901dc2065e99eec488",
+    "name": "Parry's White Label Sulphurless Sugar",
+    "before": {
+      "stock": 12,
+      "variants": [
+        20
+      ]
+    }
+  },
+  {
+    "_id": "69eb00e4d5cf690808fbda19",
+    "name": "Banana",
+    "before": {
+      "stock": 95,
+      "variants": [
+        95,
+        100
+      ]
+    }
+  },
+  {
+    "_id": "6a312cbe6fb11977b02b8b9b",
+    "name": "Rasagola",
+    "before": {
+      "stock": 19,
+      "variants": [
+        20,
+        null
+      ]
+    }
+  },
+  {
+    "_id": "699d6fd1b199bc76efb67a9d",
+    "name": "Catch Cumin Seeds  Jeera Seeds",
+    "before": {
+      "stock": 13,
+      "variants": [
+        22
+      ]
+    }
+  },
+  {
+    "_id": "699d6ef635a8cb0f281b879a",
+    "name": "India Gate Kolam Rice",
+    "before": {
+      "stock": 26,
+      "variants": [
+        27
+      ]
+    }
+  },
+  {
+    "_id": "69e75d6c934e444730668c24",
+    "name": "apple",
+    "before": {
+      "stock": 46,
+      "variants": [
+        47,
+        24
+      ]
+    }
+  },
+  {
+    "_id": "6a41078951bfd538d2f803d8",
+    "name": "Apple",
+    "before": {
+      "stock": 10,
+      "variants": [
+        500
+      ]
+    }
+  },
+  {
+    "_id": "699d6f881dc2065e99eec479",
+    "name": "Everest Tikhalal Red Chilli Powder",
+    "before": {
+      "stock": 45,
+      "variants": [
+        46
+      ]
+    }
+  },
+  {
+    "_id": "699d6fc9b199bc76efb67a98",
+    "name": "Tata Salt Lite (15% Less Sodium)",
+    "before": {
+      "stock": 8,
+      "variants": [
+        15
+      ]
+    }
+  },
+  {
+    "_id": "699d6fe1b199bc76efb67aac",
+    "name": "Whole Farm Premium Red Chilli Whole",
+    "before": {
+      "stock": 999,
+      "variants": [
+        21
+      ]
+    }
+  },
+  {
+    "_id": "699d6fd8b199bc76efb67aa2",
+    "name": "Organic Tattva Organic Ajwain Seeds",
+    "before": {
+      "stock": 27,
+      "variants": [
+        16
+      ]
+    }
+  },
+  {
+    "_id": "699d6fd9b199bc76efb67aa7",
+    "name": "Whole Farm Premium Green Cardamom Whole  Elaichi",
+    "before": {
+      "stock": 11,
+      "variants": [
+        27
+      ]
+    }
+  },
+  {
+    "_id": "699d6edd35a8cb0f281b8781",
+    "name": "Nutrela Soya Granules",
+    "before": {
+      "stock": 30,
+      "variants": [
+        5
+      ]
+    }
+  },
+  {
+    "_id": "6a4f655005548e380014d4b5",
+    "name": "Test",
+    "before": {
+      "stock": 15,
+      "variants": [
+        999
+      ]
+    }
+  },
+  {
+    "_id": "699d6fe8b199bc76efb67ab1",
+    "name": "Whole Farm Premium Saunf Seeds",
+    "before": {
+      "stock": 21,
+      "variants": [
+        48
+      ]
+    }
+  },
+  {
+    "_id": "6a41078951bfd538d2f803cd",
+    "name": "Guava",
+    "before": {
+      "stock": 10,
+      "variants": [
+        75
+      ]
+    }
+  },
+  {
+    "_id": "6a689891d5fe23b86f1ae289",
+    "name": "Best Rice",
+    "before": {
+      "stock": 30,
+      "variants": [
+        500
+      ]
+    }
+  },
+  {
+    "_id": "699d6f8d1dc2065e99eec483",
+    "name": "Madhur Pure & Hygienic Sulphurless Sugar",
+    "before": {
+      "stock": 43,
+      "variants": [
+        45
+      ]
+    }
+  },
+  {
+    "_id": "699d6f941dc2065e99eec48d",
+    "name": "Tata Salt (Vacuum Evaporated Iodised Salt)",
+    "before": {
+      "stock": 28,
+      "variants": [
+        9
+      ]
+    }
+  },
+  {
+    "_id": "6a41078851bfd538d2f803be",
+    "name": "Farid",
+    "before": {
+      "stock": 12,
+      "variants": [
+        599
+      ]
+    }
+  },
+  {
+    "_id": "699d6f411dc2065e99eec429",
+    "name": "Whole Farm Premium WatermelonMagaj Seeds",
+    "before": {
+      "stock": 49,
+      "variants": [
+        50
+      ]
+    }
+  },
+  {
+    "_id": "6a3a60d882cc8c19b48093de",
+    "name": "narangi",
+    "before": {
+      "stock": 99,
+      "variants": [
+        9
+      ]
+    }
+  },
+  {
+    "_id": "6a41078851bfd538d2f803c4",
+    "name": "Papaya",
+    "before": {
+      "stock": 10,
+      "variants": [
+        50
+      ]
+    }
+  },
+  {
+    "_id": "69ece3527d4886d1a00aec48",
+    "name": "Unibic cookies",
+    "before": {
+      "stock": 34,
+      "variants": [
+        33
+      ]
+    }
+  },
+  {
+    "_id": "69eafc4adedf751f29232ca6",
+    "name": "Guava",
+    "before": {
+      "stock": 50,
+      "variants": [
+        50,
+        50
+      ]
+    }
+  },
+  {
+    "_id": "6ab3630709f91b69cfc72dab",
+    "name": "LASSI",
+    "before": {
+      "stock": 100,
+      "variants": [
+        50,
+        50,
+        5
+      ]
+    }
+  },
+  {
+    "_id": "6ac3d3f08b9b9548137dede5",
+    "name": "SPRITE",
+    "before": {
+      "stock": 147,
+      "variants": [
+        0,
+        0,
+        0.00999999999999801
+      ]
+    }
+  }
+]

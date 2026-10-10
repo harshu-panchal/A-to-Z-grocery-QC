@@ -1,8 +1,6 @@
-import React from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { HiOutlineBell, HiOutlineCheckCircle, HiOutlineExclamationCircle, HiOutlineClock } from 'react-icons/hi2';
 import { cn } from '@/lib/utils';
-import Button from '@shared/components/ui/Button';
 
 const NotificationPopup = ({ notifications, onMarkAsRead, onMarkAllAsRead, onClose }) => {
     return (
@@ -30,7 +28,14 @@ const NotificationPopup = ({ notifications, onMarkAsRead, onMarkAllAsRead, onClo
                 )}
             </div>
 
-            <div className="flex-1 md:max-h-[400px] overflow-y-auto custom-scrollbar">
+            {/* data-lenis-prevent: global Lenis smooth-scroll otherwise swallows wheel/touch
+                scrolling inside this list. min-h-0 lets the flex child shrink so it can scroll
+                within the popup's max-h on mobile. overscroll-contain stops the page scrolling behind. */}
+            <div
+                data-lenis-prevent
+                data-lenis-prevent-touch
+                className="flex-1 min-h-0 md:max-h-[400px] overflow-y-auto overscroll-contain custom-scrollbar"
+            >
                 {notifications.length > 0 ? (
                     <div className="divide-y divide-gray-50">
                         {notifications.map((notif) => {

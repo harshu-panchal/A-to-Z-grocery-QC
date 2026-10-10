@@ -1,4 +1,6 @@
+import jwt from "jsonwebtoken";
 import { byIp, byUserOrIp, createRateLimiter } from "./rateLimiter.js";
+import { extractJwtFromHeaders } from "./authMiddleware.js";
 
 const GLOBAL_RATE_LIMIT_WINDOW_MS = () =>
   parseInt(process.env.GLOBAL_RATE_LIMIT_WINDOW_MS || "60000", 10);
@@ -25,13 +27,44 @@ const ADMIN_BOOTSTRAP_RATE_LIMIT_WINDOW_MS = () =>
 const ADMIN_BOOTSTRAP_RATE_LIMIT_MAX = () =>
   parseInt(process.env.ADMIN_BOOTSTRAP_RATE_LIMIT_MAX || "10", 10);
 
-export const globalApiRateLimiter = createRateLimiter({
+const GLOBAL_USER_RATE_LIMIT_MAX = () =>
+  parseInt(process.env.GLOBAL_USER_RATE_LIMIT_MAX || "1200", 10);
+
+const globalIpRateLimiter = createRateLimiter({
   namespace: "global",
   windowMs: GLOBAL_RATE_LIMIT_WINDOW_MS(),
   max: GLOBAL_RATE_LIMIT_MAX(),
   keyGenerator: byIp,
   message: "Too many requests from this IP. Please retry shortly.",
 });
+
+const globalUserRateLimiter = createRateLimiter({
+  namespace: "global_user",
+  windowMs: GLOBAL_RATE_LIMIT_WINDOW_MS(),
+  max: GLOBAL_USER_RATE_LIMIT_MAX(),
+  keyGenerator: (req) => `user:${req.rateLimitUserId}`,
+  message: "Too many requests. Please slow down and retry shortly.",
+});
+
+// Authenticated users (admin/seller/delivery panels fire many parallel calls
+// per page, and staff often share one office IP) get their own per-user
+// bucket. Only a signature-verified JWT qualifies, so forged tokens fall back
+// to the stricter per-IP bucket.
+export const globalApiRateLimiter = (req, res, next) => {
+  const token = extractJwtFromHeaders(req);
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
+      if (decoded?.id) {
+        req.rateLimitUserId = `${decoded.role || "user"}:${decoded.id}`;
+        return globalUserRateLimiter(req, res, next);
+      }
+    } catch {
+      // invalid/expired token → treat as anonymous
+    }
+  }
+  return globalIpRateLimiter(req, res, next);
+};
 
 export const authRouteRateLimiter = createRateLimiter({
   namespace: "auth",

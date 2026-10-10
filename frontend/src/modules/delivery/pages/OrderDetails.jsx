@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
 import { useAuth } from "@/core/context/AuthContext";
@@ -66,6 +66,36 @@ const PUBLIC_STATUS_STEPS = [
   { id: 2, label: "Out for Delivery" },
   { id: 3, label: "Delivered" },
 ];
+const RETURN_STATUS_STEPS = [
+  { id: 1, label: "Pickup" },
+  { id: 2, label: "To Store" },
+  { id: 3, label: "Returned" },
+];
+
+// "Arrived at customer / at seller" is only a UI step (no server status), so
+// it is remembered on the device; otherwise a refresh or reopening the order
+// from "My orders" dropped the rider back to the arrive slider.
+const arrivedKey = (orderId, leg) => `rider-return-arrived:${orderId}:${leg}`;
+const markArrived = (orderId, leg) => {
+  try { localStorage.setItem(arrivedKey(orderId, leg), String(Date.now())); } catch { /* storage blocked */ }
+};
+const hasArrived = (orderId, leg) => {
+  try { return Boolean(localStorage.getItem(arrivedKey(orderId, leg))); } catch { return false; }
+};
+
+/** Return step restored from server state + the remembered "arrived" flags. */
+const restoreReturnStep = (order, baseStep) => {
+  const rs = String(order?.returnStatus || "");
+  if (rs === "return_pickup_assigned") {
+    const atCustomer =
+      (order.returnPickupImages?.length || 0) > 0 ||
+      order.returnOtpPending?.type === "return_pickup" ||
+      hasArrived(order.orderId, "customer");
+    return atCustomer ? 2 : 1;
+  }
+  if (rs === "return_in_transit" && hasArrived(order.orderId, "seller")) return 4;
+  return baseStep;
+};
 
 const getPersistedRiderStep = (order) => {
   if (!order) return 1;
@@ -201,9 +231,29 @@ const OrderDetails = () => {
   }, [isError]);
 
   useEffect(() => {
-    if (order) setStep(getPersistedRiderStep(order));
+    if (!order) return;
+    const base = getPersistedRiderStep(order);
+    const isRet = order.returnStatus && order.returnStatus !== "none";
+    setStep(isRet ? restoreReturnStep(order, base) : base);
+    // proof already uploaded -> go straight to "send customer OTP"
+    if (isRet && (order.returnPickupImages?.length || 0) > 0) setPickupProofSubmitted(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?._id]);
+
+  // Return OTPs: reopen the right OTP box after a refresh (never re-issue)
+  useEffect(() => {
+    const p = order?.returnOtpPending;
+    if (!p?.expiresAt || new Date(p.expiresAt).getTime() <= Date.now()) return;
+    if (p.type === "return_pickup") setShowOtpInput(true);
+    if (p.type === "return_drop") setShowDropOtpInput(true);
+  }, [order?.returnOtpPending?.type, order?.returnOtpPending?.expiresAt]);
+
+  // After a refresh, reopen on the OTP-entry step if a code is already pending
+  // (sliding again would issue a NEW code and void the one the customer has).
+  useEffect(() => {
+    const exp = order?.deliveryOtpPending?.expiresAt;
+    if (exp && new Date(exp).getTime() > Date.now()) setShowOtpInput(true);
+  }, [order?.deliveryOtpPending?.expiresAt]);
 
   const isReturn = order?.returnStatus && order.returnStatus !== "none";
 
@@ -219,16 +269,32 @@ const OrderDetails = () => {
     getOrderSocket(getToken);
     joinOrderRoom(orderId, getToken);
 
+    let refetchTimer = null;
     const off = onOrderStatusUpdate(getToken, (payload) => {
+      // The rider's personal room also carries other orders' updates — ignore them
+      if (payload?.orderId && String(payload.orderId) !== String(orderId)) return;
       const ws = String(payload?.workflowStatus || "").toUpperCase();
       if (ws === "DELIVERED") {
         setStep(4);
         queryClient.setQueryData(orderQueryKey, (prev) => prev ? { ...prev, status: "delivered", workflowStatus: "DELIVERED" } : prev);
       }
+      if (ws === "CANCELLED") {
+        toast.error("This order was cancelled.");
+        queryClient.setQueryData(orderQueryKey, (prev) => prev ? { ...prev, status: "cancelled", workflowStatus: "CANCELLED" } : prev);
+        setTimeout(() => navigate("/delivery/dashboard"), 1500);
+        return;
+      }
+      // Return flow: apply the new returnStatus right away, then pull fresh details
+      if (payload?.returnStatus) {
+        queryClient.setQueryData(orderQueryKey, (prev) => prev ? { ...prev, returnStatus: payload.returnStatus } : prev);
+      }
+      clearTimeout(refetchTimer);
+      refetchTimer = setTimeout(() => queryClient.invalidateQueries({ queryKey: orderQueryKey }), 500);
     });
 
     return () => {
       off();
+      clearTimeout(refetchTimer);
       leaveOrderRoom(orderId, getToken);
     };
   }, [orderId]);
@@ -408,6 +474,7 @@ const OrderDetails = () => {
       if (order?.returnStatus && order.returnStatus !== "none") {
         if (step === 1) {
           // Accepted → Arrived at Customer: just advance UI to show proof upload
+          markArrived(order.orderId, "customer");
           setStep(2);
           setIsSlideComplete(false);
           setDragX(0);
@@ -416,6 +483,7 @@ const OrderDetails = () => {
           return;
         } else if (step === 3) {
           // In transit → Arrived at Seller: advance UI to show seller OTP
+          markArrived(order.orderId, "seller");
           setStep(4);
           setIsSlideComplete(false);
           setDragX(0);
@@ -464,7 +532,11 @@ const OrderDetails = () => {
       }
     } catch (error) {
       console.error("Failed to update status", error);
-      const message = error.response?.data?.message || "Failed to update status";
+      // getCurrentPositionWithCache rejects with no error object when there is
+      // no GPS fix at all — say so instead of a generic failure.
+      const message = !error
+        ? "Couldn't get your location. Turn on GPS/location access and try again."
+        : error.response?.data?.message || "Failed to update status";
       toast.error(message);
     }
   };
@@ -507,9 +579,8 @@ const OrderDetails = () => {
   };
 
   const handleOtpGenerated = (data) => {
-    console.log("OTP generated successfully:", data);
+    // (the slide button already shows the success toast)
     setShowOtpInput(true);
-    toast.success("OTP sent to customer!");
   };
 
   const handleOtpGenerationError = (error) => {
@@ -570,7 +641,8 @@ const OrderDetails = () => {
     if (!isReturn) return true; // Standard orders are handled differently/already assigned to someone
 
     const returnRiderId = order.returnDeliveryBoy?._id || order.returnDeliveryBoy;
-    return String(returnRiderId) === String(user._id);
+    const myId = user._id || user.id;
+    return Boolean(returnRiderId && myId) && String(returnRiderId) === String(myId);
   }, [order, user, isReturn]);
 
   const isReturnWaitAccept = useMemo(() => {
@@ -843,7 +915,7 @@ const OrderDetails = () => {
               }}
               transition={{ duration: 0.5, ease: "easeInOut" }}
             />
-            {PUBLIC_STATUS_STEPS.map(({ id, label }) => (
+            {(isReturn ? RETURN_STATUS_STEPS : PUBLIC_STATUS_STEPS).map(({ id, label }) => (
               <motion.div
                 key={id}
                 initial={false}
@@ -861,7 +933,7 @@ const OrderDetails = () => {
             ))}
           </div>
           <div className="flex justify-between mt-2 text-xs text-slate-500 font-medium px-1">
-            {PUBLIC_STATUS_STEPS.map(({ id, label }) => (
+            {(isReturn ? RETURN_STATUS_STEPS : PUBLIC_STATUS_STEPS).map(({ id, label }) => (
               <span key={id} className="text-center">
                 {label}
               </span>
@@ -1168,14 +1240,15 @@ const OrderDetails = () => {
                   setShowDropOtpInput(true);
                   toast.success("OTP sent to seller!");
                 }}
-                onError={(err) => toast.error(err?.message || "Failed to send seller OTP")}
+                // the slide button already shows the error toast — avoid a duplicate
+                onError={() => {}}
               />
             </Card>
           </motion.div>
         )}
 
         {/* Pickup OTP input */}
-        {showOtpInput && (
+        {showOtpInput && (!isReturn || isAssignedRider) && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
             <Card className="p-6 rounded-3xl shadow-sm border border-slate-100">
               <OtpInput
@@ -1191,7 +1264,7 @@ const OrderDetails = () => {
         )}
 
         {/* Seller drop OTP input */}
-        {isReturn && showDropOtpInput && (
+        {isReturn && showDropOtpInput && isAssignedRider && (
           <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
             <Card className="p-6 rounded-3xl shadow-sm border border-green-100">
               <OtpInput
@@ -1218,52 +1291,24 @@ const OrderDetails = () => {
       {((isReturn && (step === 1 || step === 3) && isAssignedRider) || (!isReturn && step <= 2)) && (
         <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur-md shadow-[0_-4px_20px_-5px_rgba(0,0,0,0.1)]">
           <div className="max-w-2xl mx-auto p-4">
-            <div className="relative h-16 bg-slate-100 rounded-full overflow-hidden select-none">
-              <motion.div
-                className={`absolute inset-0 flex items-center justify-center text-slate-400 font-bold text-lg pointer-events-none transition-opacity duration-300 ${dragX > 50 ? "opacity-0" : "opacity-100"
-                  }`}
-                animate={{ x: [0, 5, 0] }}
-                transition={{ repeat: Infinity, duration: 1.5 }}
-              >
-                Slide to {
-                  isReturn
-                    ? step === 1 ? "ARRIVED AT CUSTOMER"
-                      : step === 3 ? "ARRIVED AT SELLER"
-                        : steps[step - 1]?.action
-                    : steps[step - 1]?.action
-                } <ChevronRight className="ml-1" />
-              </motion.div>
-
-              <motion.div
-                className={`absolute inset-y-0 left-0 ${steps[step - 1].bg} opacity-50`}
-                style={{ width: dragX + 60 }}
-              />
-
-              <motion.div
-                className={`absolute top-1 bottom-1 left-1 w-14 rounded-full flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 ${steps[step - 1].color || "bg-primary"
-                  }`}
-                drag="x"
-                dragConstraints={{ left: 0, right: 280 }}
-                dragElastic={0.05}
-                dragMomentum={false}
-                onDrag={(event, info) => {
-                  setDragX(info.point.x);
-                }}
-                onDragEnd={(event, info) => {
-                  if (info.offset.x > 150) {
-                    setIsSlideComplete(true);
-                    handleNextStep();
-                  } else {
-                    setDragX(0);
-                  }
-                }}
-                animate={{ x: isSlideComplete ? 280 : 0 }}
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-              >
-                <ChevronRight className="text-white" size={24} />
-              </motion.div>
-            </div>
+            {/* Same tested slider as the OTP step. The old inline one stayed locked
+                at the end after any failed step (e.g. "too far from store"), so the
+                rider couldn't retry and the order never reached "out for delivery". */}
+            <DeliverySlideButton
+              key={`${order?.orderId}-${step}`}
+              orderId={order?.orderId}
+              onConfirm={handleNextStep}
+              label={`SLIDE TO ${String(
+                isReturn
+                  ? step === 1 ? "ARRIVED AT CUSTOMER"
+                    : step === 3 ? "ARRIVED AT SELLER"
+                      : steps[step - 1]?.action || ""
+                  : steps[step - 1]?.action || ""
+              ).toUpperCase()}`}
+              loadingLabel="Updating..."
+              bgColor={steps[step - 1]?.color || "bg-primary"}
+              bgColorLight={steps[step - 1]?.bg || "bg-brand-50"}
+            />
           </div>
         </div>
       )}

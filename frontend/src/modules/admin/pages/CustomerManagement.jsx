@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import Badge from '@shared/components/ui/Badge';
 import Button from '@shared/components/ui/Button';
@@ -18,7 +18,6 @@ import {
     ShoppingBag,
     MoreVertical,
     UserPlus,
-    RotateCw,
     Activity,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';

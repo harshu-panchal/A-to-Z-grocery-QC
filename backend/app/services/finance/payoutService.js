@@ -1,8 +1,6 @@
 import mongoose from "mongoose";
 import Order from "../../models/order.js";
-import Wallet from "../../models/wallet.js";
 import Payout from "../../models/payout.js";
-import Transaction from "../../models/transaction.js";
 import FinanceAuditLog from "../../models/financeAuditLog.js";
 import {
   PAYOUT_STATUS,

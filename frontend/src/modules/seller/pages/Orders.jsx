@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import Button from '@shared/components/ui/Button';
 import Badge from '@shared/components/ui/Badge';
 import PageHeader from '@shared/components/ui/PageHeader';
@@ -6,7 +6,7 @@ import StatCard from '@shared/components/ui/StatCard';
 import FilterBar from '@shared/components/ui/FilterBar';
 import DataTable from '@shared/components/ui/DataTable';
 import EmptyState from '@shared/components/ui/EmptyState';
-import { SkeletonStatCard, SkeletonCard } from '@shared/components/ui/Skeleton';
+import { SkeletonStatCard } from '@shared/components/ui/Skeleton';
 import {
     HiOutlineMagnifyingGlass,
     HiOutlineEye,
@@ -37,6 +37,9 @@ import Pagination from '@shared/components/ui/Pagination';
 import { DatePicker } from "@/components/ui/date-picker";
 import { getOrderStatusVariant } from '../components/orders';
 import { useSellerOrders } from '../context/SellerOrdersContext';
+import { onOrderStatusUpdate } from '@/core/services/orderSocket';
+import { createSocketTokenReader } from '@core/utils/authStorage';
+import { STORAGE_KEYS } from '@core/utils/storage';
 import ConfirmDialog from '@shared/components/ui/ConfirmDialog';
 import useConfirmDialog from '@shared/hooks/useConfirmDialog';
 
@@ -101,6 +104,26 @@ const Orders = () => {
         fetchOrders(page, false);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [ordersFromContext?.length, ordersFromContext?.[0]?.orderId]);
+
+    // Live status changes (rider assigned / picked up / delivered / cancelled):
+    // the backend now pushes these to the seller's room; refresh silently,
+    // debounced so a burst of events triggers one reload.
+    const liveRefreshRef = useRef({ timer: null, page });
+    liveRefreshRef.current.page = page;
+    useEffect(() => {
+        const getToken = createSocketTokenReader(STORAGE_KEYS.AUTH_SELLER);
+        const off = onOrderStatusUpdate(getToken, () => {
+            clearTimeout(liveRefreshRef.current.timer);
+            liveRefreshRef.current.timer = setTimeout(() => {
+                if (hasMountedRef.current) fetchOrders(liveRefreshRef.current.page, false);
+            }, 600);
+        });
+        return () => {
+            off();
+            clearTimeout(liveRefreshRef.current.timer);
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const fetchOrders = async (requestedPage = 1, showPageLoader = false) => {
         try {

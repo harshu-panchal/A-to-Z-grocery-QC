@@ -12,7 +12,7 @@ import notificationRoute from "./notificationRoutes.js";
 import pushRoute from "./pushRoutes.js";
 import ticketRoute from "./ticketRoutes.js";
 import reviewRoute from "./reviewRoutes.js";
-import faqRoute from "./faqRoutes.js";
+import faqRoute, { publicFaqRouter } from "./faqRoutes.js";
 import {
   legalPagesAdminRouter,
   legalPagesPublicRouter,
@@ -71,7 +71,7 @@ const setupRoutes = (app) => {
     router.use("/tickets", ticketRoute);
     router.use("/reviews", reviewRoute);
     router.use("/admin/faqs", faqRoute);
-    router.use("/public/faqs", faqRoute); // For public access without admin prefix
+    router.use("/public/faqs", publicFaqRouter); // Read-only public access
     router.use("/admin/legal-pages", legalPagesAdminRouter);
     router.use("/legal-pages", legalPagesPublicRouter);
 

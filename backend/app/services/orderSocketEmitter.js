@@ -4,11 +4,13 @@
 
 import mongoose from "mongoose";
 import Notification from "../models/notification.js";
+import Order from "../models/order.js";
 import { 
   getDeliveryPartnerIdsWithinSellerRadius,
   getDeliveryPartnerIdsWithinCustomerRadius
 } from "./deliveryNearbyService.js";
 import { emitNotificationEvent } from "../modules/notifications/notification.emitter.js";
+import { ignoreRiderRange, initialReturnRadiusM } from "./delivery/riderRange.js";
 import { NOTIFICATION_EVENTS } from "../modules/notifications/notification.constants.js";
 
 let _getIo = null;
@@ -46,7 +48,26 @@ function normalizeDeliveryId(deliveryId) {
  * and optionally to the customer’s personal room so the app updates even before
  * opening order details (e.g. checkout success overlay).
  */
-export function emitOrderStatusUpdate(orderId, payload, customerId) {
+const idString = (value) =>
+  value != null && typeof value === "object"
+    ? String(value._id || value.toString())
+    : value
+      ? String(value)
+      : null;
+
+/**
+ * Emit ONE event to several rooms in a single call. Socket.IO delivers it once
+ * per socket even when a socket is in more than one of the rooms — separate
+ * emits per room made customers receive every update (and OTP toast) twice.
+ */
+export function emitToRooms(rooms, { event, payload }) {
+  const s = getIo();
+  const list = [...new Set((rooms || []).filter(Boolean))];
+  if (!s || !event || list.length === 0) return;
+  s.to(list).emit(event, payload);
+}
+
+export function emitOrderStatusUpdate(orderId, payload, customerId, sellerId) {
   const s = getIo();
   if (!s) return;
   const body = {
@@ -54,16 +75,35 @@ export function emitOrderStatusUpdate(orderId, payload, customerId) {
     ...payload,
     at: new Date().toISOString(),
   };
-  s.to(`order:${orderId}`).emit("order:status:update", body);
-  const cid =
-    customerId != null &&
-    typeof customerId === "object" &&
-    typeof customerId.toString === "function"
-      ? customerId.toString()
-      : customerId;
-  if (cid) {
-    s.to(`customer:${cid}`).emit("order:status:update", body);
+  const cid = idString(customerId);
+  const send = (sid, riderIds = []) =>
+    emitToRooms(
+      [
+        `order:${orderId}`,
+        cid && `customer:${cid}`,
+        sid && `seller:${sid}`,
+        ...riderIds.filter(Boolean).map((rid) => `delivery:${rid}`),
+      ],
+      { event: "order:status:update", payload: body },
+    );
+
+  // The seller panel and the rider home screen ("My orders") never join order
+  // rooms, so they got no live updates. Include the seller's room and the
+  // assigned delivery / return-pickup riders' rooms (one lookup for all).
+  if (!orderId) {
+    send(idString(sellerId));
+    return;
   }
+  Order.findOne({ orderId })
+    .select("seller deliveryBoy returnDeliveryBoy")
+    .lean()
+    .then((o) =>
+      send(idString(sellerId) || idString(o?.seller), [
+        idString(o?.deliveryBoy),
+        idString(o?.returnDeliveryBoy),
+      ]),
+    )
+    .catch(() => send(idString(sellerId)));
 }
 
 export function emitToSeller(sellerId, { event, payload }) {
@@ -115,9 +155,12 @@ export async function emitDeliveryBroadcastForSeller(sellerId, payload) {
   const sid = normalizeSellerId(sellerId);
   if (!sid) return;
 
-  const ids = await getDeliveryPartnerIdsWithinSellerRadius(sid);
+  const ids = await getDeliveryPartnerIdsWithinSellerRadius(
+    sid,
+    payload.radiusMeters,
+  );
   if (!ids.length) {
-    if (process.env.NODE_ENV !== "production" && s) {
+    if (ignoreRiderRange() && s) {
       s.to("delivery:online").emit("delivery:broadcast", {
         ...payload,
         at: new Date().toISOString(),
@@ -265,9 +308,11 @@ export async function emitReturnBroadcastForCustomer(customerLocation, payload) 
   const s = getIo();
   if (!customerLocation) return;
 
-  const ids = await getDeliveryPartnerIdsWithinCustomerRadius(customerLocation);
+  // configured return search radius (grows on re-broadcasts via payload.radiusMeters)
+  const radiusKm = (Number(payload?.radiusMeters) || initialReturnRadiusM()) / 1000;
+  const ids = await getDeliveryPartnerIdsWithinCustomerRadius(customerLocation, radiusKm);
   if (!ids.length) {
-    if (process.env.NODE_ENV !== "production" && s) {
+    if (ignoreRiderRange() && s) {
       s.to("delivery:online").emit("delivery:broadcast", { ...payload, at: new Date().toISOString() });
     }
     return;

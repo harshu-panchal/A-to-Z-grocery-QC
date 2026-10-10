@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Badge from '@shared/components/ui/Badge';
 import Button from '@shared/components/ui/Button';
 import Modal from '@shared/components/ui/Modal';
@@ -14,7 +14,6 @@ import { toast } from 'sonner';
 import {
     Receipt,
     Search,
-    Filter,
     ArrowUpRight,
     Building2,
     Calendar,
@@ -27,7 +26,6 @@ import {
     Undo2,
     Banknote,
     Info,
-    RotateCw,
     Share2,
     ShoppingBag,
     Clock,

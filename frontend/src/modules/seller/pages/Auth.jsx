@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@core/context/AuthContext";
 import { useSettings } from "@core/context/SettingsContext";
-import { UserRole } from "@core/constants/roles";
 import {
   Mail,
   Lock,
@@ -11,16 +10,11 @@ import {
   Phone,
   ArrowRight,
   Store,
-  ShoppingBag,
-  TrendingUp,
   Rocket,
   Globe,
   MapPin,
-  LayoutList,
-  FileText,
   Upload,
   CheckCircle,
-  Navigation,
   Loader2,
   Eye,
   EyeOff,

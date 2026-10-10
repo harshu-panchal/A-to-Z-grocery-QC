@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInViewAnimation } from "@/core/hooks/useInViewAnimation";
-import { Sparkles, Heart, Snowflake, ChevronLeft, ChevronRight } from "lucide-react";
+import { Sparkles } from "lucide-react";
 
 // MUI Icons (shared with admin & icon selector)
 import HomeIcon from "@mui/icons-material/Home";
@@ -12,32 +12,32 @@ import ChildCareIcon from "@mui/icons-material/ChildCare";
 import PetsIcon from "@mui/icons-material/Pets";
 import SportsSoccerIcon from "@mui/icons-material/SportsSoccer";
 import CardGiftcardIcon from "@mui/icons-material/CardGiftcard";
-import VerifiedIcon from "@mui/icons-material/Verified";
 
 import { motion, useScroll, useTransform } from "framer-motion";
 import { isMobileOrWebView } from "@/core/utils/deviceUtils";
 import { customerApi } from "../services/customerApi";
-import { toast } from "sonner";
-import ProductCard from "../components/shared/ProductCard";
 import MainLocationHeader from "../components/shared/MainLocationHeader";
 import { useProductDetail } from "../context/ProductDetailContext";
 import { cn } from "@/lib/utils";
-import CardBanner from "@/assets/CardBanner.jpg";
 import SectionRenderer from "../components/experience/SectionRenderer";
 import ExperienceBannerCarousel from "../components/experience/ExperienceBannerCarousel";
 import { useLocation } from "../context/LocationContext";
 import { useSettings } from "@core/context/SettingsContext";
-import Lottie from "lottie-react";
+// Only needed for the rare no-service state; keep the player off the initial load
+const Lottie = lazy(() => import("lottie-react"));
 import { applyCloudinaryTransform } from "@/core/utils/imageUtils";
 import { getJSON, remove as removeStorage, STORAGE_KEYS } from "@core/utils/storage";
+import { scrollPageToTop } from "@core/utils/scrollTop";
 
 import {
-  MARQUEE_MESSAGES,
   ICON_COMPONENTS,
 } from "../constants/homeConstants";
 import PromoMarquee from "../components/home/PromoMarquee";
 import QuickCategorySlider from "../components/home/QuickCategorySlider";
 import LowestPriceSection from "../components/home/LowestPriceSection";
+import CategoryRails from "../components/home/CategoryRails";
+import CategoryProductRows from "../components/home/CategoryProductRows";
+import { onlyInStock } from "../utils/stock";
 import OfferSections from "../components/home/OfferSections";
 
 const DEFAULT_CATEGORY_THEME = {
@@ -342,6 +342,31 @@ const Home = () => {
     fetchHeaderSections();
   }, [activeCategory]);
 
+  // Products for the selected header tab, so each tab shows its own items
+  // instead of the generic home list.
+  const [headerProducts, setHeaderProducts] = useState(null);
+  const [headerTrending, setHeaderTrending] = useState([]);
+  useEffect(() => {
+    const isHeader = activeCategory && activeCategory._id !== "all";
+    const hasValidLocation = Number.isFinite(currentLocation?.latitude) && Number.isFinite(currentLocation?.longitude);
+    if (!isHeader || !hasValidLocation) { setHeaderProducts(null); setHeaderTrending([]); return; }
+    let cancelled = false;
+    const toCardProducts = (res) => {
+      const rawResult = res.data?.result;
+      const dbProds = Array.isArray(res.data?.results) ? res.data.results : Array.isArray(rawResult?.items) ? rawResult.items : Array.isArray(rawResult) ? rawResult : [];
+      return dbProds.map((p) => ({ ...p, id: p._id, image: p.mainImage || p.image || "https://images.unsplash.com/photo-1550989460-0adf9ea622e2?auto=format&fit=crop&q=80&w=400&h=400", price: p.sellingPrice || p.mrp, originalPrice: p.mrp, weight: p.weight || "1 unit", deliveryTime: "8-15 mins" }));
+    };
+    const params = { headerId: activeCategory._id, lat: currentLocation.latitude, lng: currentLocation.longitude };
+    customerApi.getProducts({ ...params, limit: 100 })
+      .then((res) => { if (!cancelled) setHeaderProducts(toCardProducts(res)); })
+      .catch(() => { if (!cancelled) setHeaderProducts([]); });
+    // Best-sellers in this header (last 30 days of orders)
+    customerApi.getProducts({ ...params, sort: "trending", limit: 12 })
+      .then((res) => { if (!cancelled) setHeaderTrending(toCardProducts(res)); })
+      .catch(() => { if (!cancelled) setHeaderTrending([]); });
+    return () => { cancelled = true; };
+  }, [activeCategory, currentLocation?.latitude, currentLocation?.longitude]);
+
   useEffect(() => {
     const fetchHeroConfig = async () => {
       try {
@@ -350,7 +375,9 @@ const Home = () => {
         if (heroConfigCache.current[cacheKey]) { setHeroConfig(heroConfigCache.current[cacheKey]); return; }
         let payload = null;
         if (isHeader) { const res = await customerApi.getHeroConfig({ pageType: "header", headerId: activeCategory._id }); if (res.data?.success && res.data?.result) payload = res.data.result; }
-        if (!payload || (payload.banners?.items?.length === 0 && !payload.categoryIds?.length)) { const homeRes = await customerApi.getHeroConfig({ pageType: "home" }); if (homeRes.data?.success && homeRes.data?.result) payload = homeRes.data.result; }
+        // Header without its own hero: borrow home banners only, never the home
+        // category picks (the header's own categories are shown instead)
+        if (!payload || (payload.banners?.items?.length === 0 && !payload.categoryIds?.length)) { const homeRes = await customerApi.getHeroConfig({ pageType: "home" }); if (homeRes.data?.success && homeRes.data?.result) payload = isHeader ? { ...homeRes.data.result, categoryIds: [] } : homeRes.data.result; }
         const resolved = payload && (payload.banners?.items?.length > 0 || payload.categoryIds?.length > 0) ? { banners: payload.banners || { items: [] }, categoryIds: payload.categoryIds || [] } : { banners: { items: [] }, categoryIds: [] };
         heroConfigCache.current[cacheKey] = resolved;
         if (cacheKey === "__home__") { const homeCacheKey = getHomePageDataCacheKey(currentLocation); const cachedHomeData = homePageDataCache.get(homeCacheKey); if (cachedHomeData) homePageDataCache.set(homeCacheKey, { ...cachedHomeData, heroConfig: resolved }); }
@@ -378,14 +405,33 @@ const Home = () => {
   const handleBannerTransitionEnd = () => { if (mobileBannerIndex === 2) { setIsInstantBannerJump(true); setMobileBannerIndex(0); } };
   useEffect(() => { if (!isInstantBannerJump) return; const id = requestAnimationFrame(() => setIsInstantBannerJump(false)); return () => cancelAnimationFrame(id); }, [isInstantBannerJump]);
 
-  const productsById = useMemo(() => { const map = {}; products.forEach((p) => { map[p._id || p.id] = p; }); return map; }, [products]);
+  // Experience sections pick products from this map; hide out-of-stock ones (search still shows them)
+  const productsById = useMemo(() => { const map = {}; onlyInStock(products).forEach((p) => { map[p._id || p.id] = p; }); return map; }, [products]);
   const effectiveQuickCategories = useMemo(() => {
     const ids = heroConfig.categoryIds || [];
     if (ids.length > 0) { const resolved = ids.map((id) => categoryMap[id]).filter(Boolean).map((c) => ({ id: c._id, name: c.name, image: c.image || "https://cdn-icons-png.flaticon.com/128/2321/2321831.png" })); if (resolved.length > 0) return resolved; }
+    // Header tab without admin-picked categories: show that header's own categories
+    if (activeCategory && activeCategory._id !== "all") {
+      const headerId = String(activeCategory._id);
+      return Object.values(categoryMap)
+        .filter((c) => String(c.parentId?._id || c.parentId || "") === headerId)
+        .map((c) => ({ id: c._id, name: c.name, image: c.image || "https://cdn-icons-png.flaticon.com/128/2321/2321831.png" }));
+    }
     return quickCategories;
-  }, [heroConfig.categoryIds, categoryMap, quickCategories]);
+  }, [heroConfig.categoryIds, categoryMap, quickCategories, activeCategory]);
 
-  const sectionsForRenderer = headerSections.length ? headerSections : experienceSections;
+  const isHeaderTab = Boolean(activeCategory && activeCategory._id !== "all");
+  // A header tab never falls back to the generic home sections
+  const sectionsForRenderer = isHeaderTab ? headerSections : experienceSections;
+  const tabProducts = isHeaderTab && headerProducts ? headerProducts : products;
+  // All level-2 categories of the selected header, used for per-category product rows
+  const headerLevel2Categories = useMemo(() => {
+    if (!isHeaderTab) return [];
+    const headerId = String(activeCategory._id);
+    return Object.values(categoryMap)
+      .filter((c) => String(c.parentId?._id || c.parentId || "") === headerId)
+      .map((c) => ({ id: c._id, name: c.name, image: c.image }));
+  }, [isHeaderTab, activeCategory, categoryMap]);
   const isMobile = useMemo(() => isMobileOrWebView(), []);
   const opacity = useTransform(scrollY, (heroVisible && !isMobile) ? [0, 300] : [0, 0], [1, 0.6]);
   const y = useTransform(scrollY, (heroVisible && !isMobile) ? [0, 300] : [0, 0], [0, 80]);
@@ -399,20 +445,28 @@ const Home = () => {
     if (allSections.some((s) => s._id === pendingReturn.sectionId)) { const el = document.getElementById(`section-${pendingReturn.sectionId}`); if (el) { el.scrollIntoView({ behavior: "instant", block: "start" }); removeStorage(STORAGE_KEYS.EXPERIENCE_RETURN, { storage: "session" }); setPendingReturn(null); } }
   }, [headerSections, experienceSections, pendingReturn]);
 
+  // Header category tap swaps the page content in place (no route change, so
+  // ScrollToTop doesn't fire): start the new category from the top instead of
+  // leaving the user somewhere in the middle of it.
+  const handleHeaderCategorySelect = (cat) => {
+    setActiveCategory(cat);
+    scrollPageToTop();
+  };
+
   const renderFloatingElements = (type, isVisible = true) => {
     if (isMobile) return null;
     return null; // Particles were already simplified out earlier
   };
 
   return (
-    <div className={`min-h-screen pt-[190px] md:pt-[250px] ${products.length === 0 && !isLoading ? "bg-white" : "bg-[#F5F7F8]"}`}>
+    <div className={`min-h-screen bg-[#f7f8f6] pt-[190px] md:pt-[250px] ${products.length === 0 && !isLoading ? "bg-white" : ""}`}>
       <div className={cn("contents", isProductDetailOpen && "hidden md:contents")}>
-        <MainLocationHeader categories={categories} activeCategory={activeCategory} onCategorySelect={setActiveCategory} />
+        <MainLocationHeader categories={categories} activeCategory={activeCategory} onCategorySelect={handleHeaderCategorySelect} />
       </div>
 
       {products.length === 0 && !isLoading ? (
         <div className="flex flex-col items-center justify-center pt-24 pb-48">
-          <div className="w-64 h-64 md:w-96 md:h-96 mb-8">{noServiceData && <Lottie animationData={noServiceData} loop={true} />}</div>
+          <div className="w-64 h-64 md:w-96 md:h-96 mb-8">{noServiceData && <Suspense fallback={null}><Lottie animationData={noServiceData} loop={true} /></Suspense>}</div>
           <h3 className="text-3xl md:text-5xl font-black text-slate-800 text-center uppercase">Service <span className="text-primary">Unavailable</span></h3>
           <p className="text-slate-500 font-bold max-w-md text-center px-10 text-sm md:text-lg opacity-80">Ah! We haven't reached your neighborhood yet.</p>
           <button onClick={() => window.location.reload()} className="mt-12 px-10 py-4 bg-primary text-white font-black rounded-[24px] uppercase text-[13px] tracking-widest transition-all active:scale-95">Check Again</button>
@@ -424,20 +478,43 @@ const Home = () => {
               {heroConfig.banners?.items?.length ? (
                 <ExperienceBannerCarousel section={{ title: "" }} items={heroConfig.banners.items} fullWidth edgeToEdge />
               ) : (
-                <div className="w-full h-[190px] bg-[#ecfeff] p-6 relative overflow-hidden flex items-center border-y border-primary/10 shadow-sm">
+                <div className="relative flex h-[190px] w-full items-center overflow-hidden border-y border-primary/10 bg-gradient-to-br from-brand-50 via-white to-emerald-50 px-6 shadow-sm">
                   <div className="relative z-10 w-3/5 flex flex-col items-start gap-2">
-                    <h4 className="text-2xl font-black text-[#1A1A1A] tracking-tight">Get <span className="text-primary">Products</span></h4>
-                    <button className="bg-[#FF1E56] text-white px-6 py-2.5 rounded-2xl font-black text-xs tracking-wide">Order now</button>
+                    <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-primary">Fresh finds, delivered</p>
+                    <h4 className="text-2xl font-extrabold tracking-tight text-slate-900">Good things<br /><span className="text-primary">start here.</span></h4>
+                    <button onClick={() => navigate("/offers")} className="mt-1 rounded-full bg-primary px-5 py-2.5 text-xs font-bold text-white shadow-md shadow-primary/20 transition hover:brightness-95 active:scale-95">Explore offers</button>
                   </div>
-                  <div className="absolute top-0 right-0 w-24 h-24 bg-primary/5 rounded-full blur-2xl -mt-12 -mr-12" />
+                  <div aria-hidden="true" className="absolute -right-8 -top-12 h-40 w-40 rounded-full bg-primary/10 blur-2xl" />
+                  <div aria-hidden="true" className="absolute -bottom-16 right-5 h-48 w-48 rounded-full border-[24px] border-emerald-500/5" />
                 </div>
               )}
             </div>
           </motion.div>
 
           <PromoMarquee />
-          <QuickCategorySlider categories={effectiveQuickCategories} onCategoryClick={(id) => navigate(`/category/${id}`)} />
-          <LowestPriceSection products={products} onSeeAll={() => navigate("/category/all")} />
+          {/* Header tabs use the in-page category browser below instead */}
+          {!isHeaderTab && <QuickCategorySlider categories={effectiveQuickCategories} onCategoryClick={(id) => navigate(`/category/${id}`)} />}
+          {isHeaderTab && headerProducts && headerProducts.length === 0 && (
+            <div className="mx-4 my-6 rounded-2xl border border-slate-100 bg-white py-10 text-center">
+              <p className="text-sm font-bold text-slate-700">No products in {activeCategory.name} yet</p>
+              <p className="text-xs text-slate-500 mt-1">Check back soon or explore other categories.</p>
+            </div>
+          )}
+          {isHeaderTab ? (
+            <CategoryProductRows
+              key={activeCategory._id}
+              categories={headerLevel2Categories}
+              products={tabProducts}
+              trendingProducts={headerTrending}
+              onSeeAll={(id) => navigate(`/category/${id}`)}
+              onSeeAllHeader={() => navigate(`/category/${activeCategory._id}`)}
+            />
+          ) : (
+            <div className="pt-1 md:pt-2">
+              <LowestPriceSection products={tabProducts} onSeeAll={() => navigate("/category/all")} />
+              <CategoryRails key={`${currentLocation?.latitude},${currentLocation?.longitude}`} categoryMap={categoryMap} latitude={currentLocation?.latitude} longitude={currentLocation?.longitude} onSeeAll={(id) => navigate(`/category/${id}`)} />
+            </div>
+          )}
           <OfferSections sections={offerSections} noServiceData={noServiceData} />
 
           {sectionsForRenderer.length > 0 && (

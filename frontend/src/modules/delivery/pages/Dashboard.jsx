@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Bell,
   Star,
@@ -19,7 +19,14 @@ import Card from "@/shared/components/ui/Card";
 
 import { useAuth } from "@core/context/AuthContext";
 import { deliveryApi } from "../services/deliveryApi";
+import MyOrdersPanel from "../components/MyOrdersPanel";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+
+const RETURN_TASK_LABEL = {
+  return_pickup_assigned: "Pickup from customer",
+  return_in_transit: "On the way to store",
+  return_drop_pending: "At store (OTP)",
+};
 
 const Dashboard = () => {
   const navigate = useNavigate();
@@ -28,11 +35,24 @@ const Dashboard = () => {
   const [isOnline, setIsOnline] = useState(user?.isOnline || false);
   const [activeTab, setActiveTab] = useState("delivery"); // 'delivery' or 'return'
 
-  // Sync isOnline with user profile from context
+  // One toggle request at a time; remembers the last status the rider chose
+  const toggleBusyRef = useRef(false);
+  const draggedRef = useRef(false);
+  const lastToggleRef = useRef({ status: null, at: 0 });
+
+  // Sync isOnline with user profile from context. A profile refresh that was
+  // already in flight before a toggle can resolve after it with the old value;
+  // ignore that stale value for a few seconds so the switch does not flip back.
   useEffect(() => {
-    if (user) {
-      setIsOnline(user.isOnline);
+    if (!user) return;
+    const last = lastToggleRef.current;
+    if (
+      toggleBusyRef.current ||
+      (last.status !== null && user.isOnline !== last.status && Date.now() - last.at < 5000)
+    ) {
+      return;
     }
+    setIsOnline(user.isOnline);
   }, [user]);
 
   // Keep profile photo / identity fields fresh from the server
@@ -88,34 +108,43 @@ const Dashboard = () => {
     enabled: isOnline,
   });
 
-  const handleOnlineToggle = async () => {
-    const newStatus = !isOnline;
+  // Returns tab: tasks already assigned to me vs open offers (popup handles those)
+  const myId = String(user?._id || user?.id || "");
+  const isMine = (o) => String(o.returnDeliveryBoy?._id || o.returnDeliveryBoy || "") === myId;
+  const myReturnTasks = activeTab === "return" ? availableOrders.filter(isMine) : [];
+  const openReturnOffers = activeTab === "return" ? availableOrders.filter((o) => !isMine(o)) : [];
+
+  // One request at a time; the UI flips immediately and rolls back on error.
+  // Previously a drag also fired the track's click, toggling twice (back to
+  // the old state), and the knob only moved after two network round-trips.
+  const setOnlineStatus = async (newStatus) => {
+    if (toggleBusyRef.current || newStatus === isOnline) return;
+    toggleBusyRef.current = true;
+    lastToggleRef.current = { status: newStatus, at: Date.now() };
+    setIsOnline(newStatus);
     try {
       await deliveryApi.updateProfile({ isOnline: newStatus });
       await refreshUser(); // Refresh global auth state
-      setIsOnline(newStatus);
+      queryClient.invalidateQueries({ queryKey: ["delivery", "availableOrders"] });
       if (newStatus) {
         toast.success("You are now ONLINE. Finding orders...");
       } else {
         toast.info("You are now OFFLINE. No new orders.");
       }
     } catch (error) {
+      lastToggleRef.current = { status: !newStatus, at: Date.now() };
+      setIsOnline(!newStatus);
       toast.error(error.response?.data?.message || "Failed to update status");
+    } finally {
+      toggleBusyRef.current = false;
     }
   };
-
-  const handleAcceptReturn = async (orderId) => {
-    try {
-      const response = await deliveryApi.acceptReturnPickup(orderId);
-      if (response.data.success) {
-        toast.success("Return pickup accepted!");
-        queryClient.invalidateQueries({ queryKey: ["delivery", "availableOrders"] });
-        // Option: navigate to details
-        navigate(`/delivery/order-details/${orderId}`);
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to accept return");
+  const handleOnlineToggle = () => {
+    if (draggedRef.current) {
+      draggedRef.current = false;
+      return;
     }
+    setOnlineStatus(!isOnline);
   };
 
   return (
@@ -209,13 +238,17 @@ const Dashboard = () => {
               drag="x"
               dragConstraints={{ left: 0, right: 0 }} // We will use dragElastic for feel, but onDragEnd for logic
               dragElastic={0.1}
+              onDragStart={() => {
+                draggedRef.current = true;
+              }}
               onDragEnd={(_, info) => {
                 const swipePower = info.offset.x;
-                if (swipePower > 50 && !isOnline) {
-                  handleOnlineToggle();
-                } else if (swipePower < -50 && isOnline) {
-                  handleOnlineToggle();
-                }
+                if (swipePower > 50) setOnlineStatus(true);
+                else if (swipePower < -50) setOnlineStatus(false);
+                // the click that follows a drag must not toggle again
+                setTimeout(() => {
+                  draggedRef.current = false;
+                }, 0);
               }}
               whileTap={{ scale: 0.98 }}
               className={cn(
@@ -239,6 +272,11 @@ const Dashboard = () => {
             </motion.div>
           </div>
         </div>
+      </div>
+
+      {/* Orders this rider accepted: in progress (Continue) + finished today */}
+      <div className="px-6 mb-4">
+        <MyOrdersPanel />
       </div>
 
       {/* Tabs */}
@@ -414,11 +452,24 @@ const Dashboard = () => {
               className="space-y-4"
             >
               <div className="flex justify-between items-center mb-1">
-                <h3 className="text-sm font-bold text-gray-800 tracking-tight">Available Return Pickups</h3>
-                <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-0.5 rounded-full uppercase italic">Open for Acceptance</span>
+                <h3 className="text-sm font-bold text-gray-800 tracking-tight">My Return Pickups</h3>
               </div>
-              {availableOrders.length > 0 ? (
-                availableOrders.map((order) => (
+              {/* New pickup offers are accepted from the fullscreen popup (same
+                  as deliveries); this list only shows returns already yours. */}
+              {openReturnOffers.length > 0 && (
+                <div className="bg-white rounded-2xl p-4 border-2 border-primary/25 text-center">
+                  <p className="text-sm font-bold text-gray-900">
+                    {openReturnOffers.length === 1
+                      ? "1 return pickup nearby"
+                      : `${openReturnOffers.length} return pickups nearby`}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    A popup will open with <strong>Accept</strong> and <strong>Reject</strong>.
+                  </p>
+                </div>
+              )}
+              {myReturnTasks.length > 0 ? (
+                myReturnTasks.map((order) => (
                   <Card key={order._id} className="p-4 border-2 border-primary/5 hover:border-primary/20 transition-all shadow-sm">
                     <div className="flex justify-between items-start mb-4">
                       <div>
@@ -442,22 +493,17 @@ const Dashboard = () => {
                       </div>
                     </div>
 
-                    <div className="flex gap-2">
-                       <Button 
-                        variant="primary" 
-                        size="sm" 
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-1 rounded-full uppercase tracking-wider">
+                        {RETURN_TASK_LABEL[order.returnStatus] || "In progress"}
+                      </span>
+                      <Button
+                        variant="primary"
+                        size="sm"
                         className="flex-1 font-black text-[10px] tracking-widest uppercase h-10 shadow-lg shadow-primary/20"
-                        onClick={() => handleAcceptReturn(order.orderId)}
-                      >
-                        Accept Pickup
-                      </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
-                        className="px-4 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-gray-600 hover:bg-gray-100 h-10"
                         onClick={() => navigate(`/delivery/order-details/${order.orderId}`)}
                       >
-                        View
+                        Continue
                       </Button>
                     </div>
                   </Card>
@@ -467,8 +513,8 @@ const Dashboard = () => {
                   <div className="w-14 h-14 bg-gray-50 rounded-full flex items-center justify-center mb-4 border border-gray-100 opacity-60">
                     <Package size={20} className="text-gray-400" />
                   </div>
-                  <h4 className="text-sm font-bold text-gray-800 mb-1">No returns nearby</h4>
-                  <p className="text-[11px] text-gray-400">Keep checking back for new return tasks.</p>
+                  <h4 className="text-sm font-bold text-gray-800 mb-1">No active return pickups</h4>
+                  <p className="text-[11px] text-gray-400">New return requests will pop up when a seller approves one.</p>
                 </div>
               )}
             </motion.div>

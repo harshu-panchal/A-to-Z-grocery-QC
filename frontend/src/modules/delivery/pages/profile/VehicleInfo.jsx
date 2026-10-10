@@ -1,4 +1,3 @@
-import React from "react";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Truck, ShieldCheck, FileText, AlertCircle } from "lucide-react";
 import Button from "@/shared/components/ui/Button";

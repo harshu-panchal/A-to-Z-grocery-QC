@@ -278,9 +278,30 @@ export const getOrderRoute = async (req, res) => {
 /**
  * Rider is at customer — request OTP. OTP emitted to customer via socket.
  */
+/**
+ * Only the rider who accepted the return pickup (returnDeliveryBoy) may run
+ * the customer-pickup OTP steps. Returns { status, message } or null if OK.
+ */
+async function assertReturnRider(orderId, user) {
+  const orderKey = orderMatchQueryFromRouteParam(orderId);
+  if (!orderKey) return { status: 404, message: "Order not found" };
+  const order = await Order.findOne(orderKey).select("returnDeliveryBoy returnStatus").lean();
+  if (!order) return { status: 404, message: "Order not found" };
+  if (user?.role === "admin") return null;
+  if (!order.returnDeliveryBoy || String(order.returnDeliveryBoy) !== String(user?.id)) {
+    return { status: 403, message: "This return pickup is assigned to another delivery partner." };
+  }
+  if (order.returnStatus !== "return_pickup_assigned") {
+    return { status: 400, message: "Return pickup is not waiting for customer OTP." };
+  }
+  return null;
+}
+
 export const requestReturnPickupOtp = async (req, res) => {
   try {
     const { orderId } = req.params;
+    const ownerError = await assertReturnRider(orderId, req.user);
+    if (ownerError) return handleResponse(res, ownerError.status, ownerError.message);
     const result = await generateReturnPickupOtp(orderId);
     if (!result.success) {
       return handleResponse(res, 400, result.error);
@@ -342,6 +363,11 @@ export const verifyReturnPickupOtp = async (req, res) => {
     if (!enteredCode) {
       return handleResponse(res, 400, "OTP code is required");
     }
+
+    // Check ownership before touching the OTP so another rider can neither
+    // complete the pickup nor burn the customer's OTP attempts.
+    const ownerError = await assertReturnRider(orderId, req.user);
+    if (ownerError) return handleResponse(res, ownerError.status, ownerError.message);
 
     const validation = await validateReturnPickupOtp(orderId, enteredCode);
     if (!validation.valid) {

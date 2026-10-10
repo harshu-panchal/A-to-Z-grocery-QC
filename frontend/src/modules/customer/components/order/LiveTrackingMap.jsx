@@ -1,9 +1,8 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback, memo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { useEffect, useState, useRef, useMemo, useCallback, memo } from "react";
+import { motion } from "framer-motion";
 import { GoogleMap, useJsApiLoader, Marker, Polyline } from "@react-google-maps/api";
 import {
   MapPin,
-  Navigation,
   Phone,
   MessageSquare,
   Shield,
@@ -50,9 +49,10 @@ function hasValidLatLng(location) {
 
 const LiveTrackingMap = memo(({
   status = "out for delivery",
-  eta = "8 mins",
-  riderName = "Ramesh Kumar",
+  eta = "--",
+  riderName = "Delivery Partner",
   riderPhone,
+  riderRating,
   riderLocation,
   sellerLocation,
   destinationLocation,
@@ -460,9 +460,12 @@ const LiveTrackingMap = memo(({
                     className="h-full w-full object-cover"
                   />
                 </div>
-                <div className="absolute -bottom-0.5 -right-0.5 bg-primary text-primary-foreground text-[7px] font-bold px-1 py-0.5 rounded-full flex items-center gap-0.5">
-                  4.8 <Star size={5} fill="white" />
-                </div>
+                {/* real rating only (was a hard-coded 4.8 for every rider) */}
+                {Number(riderRating) > 0 && (
+                  <div className="absolute -bottom-0.5 -right-0.5 bg-primary text-primary-foreground text-[7px] font-bold px-1 py-0.5 rounded-full flex items-center gap-0.5">
+                    {Number(riderRating).toFixed(1)} <Star size={5} fill="white" />
+                  </div>
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <h3 className="font-bold text-gray-900 text-xs truncate">{riderName}</h3>
@@ -506,6 +509,7 @@ const LiveTrackingMap = memo(({
     prevProps.status === nextProps.status &&
     prevProps.eta === nextProps.eta &&
     prevProps.riderName === nextProps.riderName &&
+    prevProps.riderRating === nextProps.riderRating &&
     prevProps.riderLocation?.lat === nextProps.riderLocation?.lat &&
     prevProps.riderLocation?.lng === nextProps.riderLocation?.lng &&
     prevProps.sellerLocation?.lat === nextProps.sellerLocation?.lat &&

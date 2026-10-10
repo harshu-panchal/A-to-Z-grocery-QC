@@ -3,7 +3,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@core/context/AuthContext';
 import { useSettings } from '@core/context/SettingsContext';
-import { UserRole } from '@core/constants/roles';
 import {
     Mail,
     Lock,
@@ -64,14 +63,6 @@ const AdminAuth = () => {
         e.preventDefault();
         setIsLoading(true);
 
-        // Debug logging
-        console.log('=== FRONTEND LOGIN ATTEMPT ===');
-        console.log('Email:', formData.email);
-        console.log('Password:', formData.password);
-        console.log('Password Length:', formData.password?.length);
-        console.log('Is Login:', isLogin);
-        console.log('==============================');
-
         // Only validate password complexity for signup, not login
         if (!isLogin) {
             const pwd = (formData.password || '').trim();
@@ -98,12 +89,9 @@ const AdminAuth = () => {
         }
 
         try {
-            console.log('Sending request to API...');
             const response = isLogin
                 ? await adminApi.login({ email: formData.email, password: formData.password })
                 : await adminApi.signup({ name: formData.name, email: formData.email, password: formData.password });
-
-            console.log('API Response:', response);
 
             const { token, admin } = response.data.result;
 
@@ -112,8 +100,6 @@ const AdminAuth = () => {
                 token,
                 role: 'admin'
             };
-
-            console.log('Login successful! Auth Data:', authData);
 
             login(authData);
 

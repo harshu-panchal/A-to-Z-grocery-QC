@@ -1,4 +1,3 @@
-import React from 'react';
 import { getIconSvg } from '../constants/categoryIcons';
 import { Image } from 'lucide-react';
 

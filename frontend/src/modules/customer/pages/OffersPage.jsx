@@ -1,4 +1,3 @@
-import React from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Tag, Sparkles, Clock, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";

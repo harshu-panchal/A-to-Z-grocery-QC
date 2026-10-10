@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router-dom";
 import Lottie from "lottie-react";
@@ -8,7 +8,6 @@ import { useAuth } from "../../../core/context/AuthContext";
 import { useWishlist } from "../context/WishlistContext";
 import { customerApi } from "../services/customerApi";
 import { useLocation as useAppLocation } from "../context/LocationContext";
-import { applyCloudinaryTransform } from "@/core/utils/imageUtils";
 import {
   MapPin,
   Clock,
@@ -17,25 +16,10 @@ import {
   ChevronRight,
   ChevronLeft,
   Share2,
-  Gift,
-  ShoppingBag,
-  ChevronDown,
-  ChevronUp,
-  Heart,
-  Truck,
-  Tag,
-  Sparkles,
   Plus,
-  Minus,
-  Search,
-  X,
-  Clipboard,
-  Check,
-  Contact2,
-  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { useToast } from "@shared/components/ui/Toast";
 import { useSettings } from "@core/context/SettingsContext";
 import SlideToPay from "../components/shared/SlideToPay";
@@ -935,55 +919,24 @@ const CheckoutPage = () => {
   // ─── Empty cart state ────────────────────────────────────────────────────────
   if (cart.length === 0 && !showSuccess) {
     return (
-      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sans">
-        <div className="absolute top-0 left-0 w-full h-full bg-[radial-gradient(circle_at_top_right,_var(--tw-gradient-stops))] from-brand-50/50 via-transparent to-transparent pointer-events-none" />
-        <div className="absolute -top-20 -right-20 w-80 h-80 bg-brand-100/30 rounded-full blur-3xl pointer-events-none animate-pulse" />
-        <div className="absolute top-40 -left-20 w-60 h-60 bg-yellow-100/40 rounded-full blur-3xl pointer-events-none animate-pulse" />
-        <div className="relative z-10 flex flex-col items-center text-center max-w-sm mx-auto">
-          <div ref={emptyCartAnimRef} className="relative w-56 h-56 md:w-64 md:h-64 mb-8 flex items-center justify-center">
-            <motion.div
-              animate={emptyCartVisible ? { y: [-8, 8, -8] } : { y: 0 }}
-              transition={emptyCartVisible ? { duration: 4, repeat: Infinity, ease: "easeInOut" } : { duration: 0 }}
-              className="relative z-10 rounded-[2rem] bg-white/90 p-6 shadow-[0_20px_50px_rgba(0,0,0,0.1)] border border-brand-100">
-              {emptyBoxData ? (
-                <Lottie animationData={emptyBoxData} loop className="h-36 w-36 md:h-44 md:w-44" />
-              ) : (
-                <div className="w-56 h-56" />
-              )}
-            </motion.div>
-            <motion.div
-              animate={emptyCartVisible ? { rotate: 360 } : { rotate: 0 }}
-              transition={emptyCartVisible ? { duration: 20, repeat: Infinity, ease: "linear" } : { duration: 0 }}
-              className="absolute inset-0 border-2 border-dashed border-slate-200 rounded-full"
-            />
+      <div className="min-h-screen bg-white flex flex-col items-center justify-center p-6 font-sans">
+        <div ref={emptyCartAnimRef} className="flex flex-col items-center text-center max-w-sm mx-auto">
+          <div className="mb-6 h-40 w-40">
+            {emptyBoxData ? (
+              <Lottie animationData={emptyBoxData} loop={emptyCartVisible} className="h-40 w-40" />
+            ) : (
+              <div className="h-40 w-40" />
+            )}
           </div>
-          <h2 className="text-3xl font-black text-slate-800 mb-3 tracking-tight">Your Cart is Empty</h2>
-          <p className="text-slate-500 mb-8 leading-relaxed font-medium">
-            It feels lighter than air! <br />
-            Explore our aisles and fill it with goodies.
+          <h2 className="mb-2 text-xl font-bold text-slate-900">Your cart is empty</h2>
+          <p className="mb-6 text-sm text-slate-500">
+            Add a few items and they&apos;ll show up here, ready to check out.
           </p>
           <Link
             to="/"
-            className="group relative inline-flex items-center justify-center px-8 py-4 bg-gradient-to-r from-primary to-[var(--brand-400)] text-white font-bold rounded-2xl overflow-hidden shadow-xl shadow-brand-600/20 transition-all hover:scale-[1.02] active:scale-95 w-full sm:w-auto">
-            <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300" />
-            <span className="relative flex items-center gap-2 text-lg">
-              Start Shopping <ChevronRight size={20} />
-            </span>
+            className="inline-flex h-12 w-full items-center justify-center gap-1 rounded-xl bg-primary px-8 text-base font-semibold text-primary-foreground active:scale-95 sm:w-auto">
+            Start shopping <ChevronRight size={18} />
           </Link>
-          <div className="mt-8 flex gap-6 text-slate-400">
-            <div className="flex flex-col items-center gap-2">
-              <div className="p-3 bg-slate-50 rounded-2xl"><Clock size={20} /></div>
-              <span className="text-[10px] font-bold uppercase tracking-wider">Fast Delivery</span>
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <div className="p-3 bg-slate-50 rounded-2xl"><Tag size={20} /></div>
-              <span className="text-[10px] font-bold uppercase tracking-wider">Daily Deals</span>
-            </div>
-            <div className="flex flex-col items-center gap-2">
-              <div className="p-3 bg-slate-50 rounded-2xl"><Sparkles size={20} /></div>
-              <span className="text-[10px] font-bold uppercase tracking-wider">Fresh Items</span>
-            </div>
-          </div>
         </div>
       </div>
     );
@@ -991,58 +944,82 @@ const CheckoutPage = () => {
 
   // ─── Main checkout return ────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#f5f1e8] pb-32 font-sans">
+    <div className="min-h-screen bg-slate-50 pb-36 lg:pb-12 font-sans">
       {/* Order Success Overlay */}
       <CheckoutOrderSuccess orderId={orderId} show={showSuccess} />
 
-      {/* Premium Header */}
-      <div className="bg-gradient-to-br from-[var(--brand-700)] via-[var(--brand-600)] to-[var(--brand-400)] pt-6 pb-12 md:pb-24 relative z-10 shadow-lg md:rounded-b-[4rem] rounded-b-[2rem] overflow-hidden">
-        <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-white/5 rounded-full blur-[100px] -mr-32 -mt-64 pointer-events-none" />
-        <div className="absolute bottom-0 left-1/4 w-64 h-64 bg-brand-400/10 rounded-full blur-[80px] pointer-events-none" />
-        <div className="max-w-7xl mx-auto px-4 md:px-8 relative z-10">
-          <div className="flex items-center justify-between">
-            <button
-              onClick={() => navigate(-1)}
-              className="w-12 h-12 flex items-center justify-center bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl transition-all active:scale-95">
-              <ChevronLeft size={28} className="text-white" />
-            </button>
-            <div className="flex flex-col items-center">
-              <h1 className="text-xl md:text-3xl font-[1000] text-white tracking-tight uppercase">Checkout</h1>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="h-1.5 w-1.5 bg-brand-400 rounded-full animate-pulse" />
-                <p className="text-brand-100/90 text-[10px] md:text-xs font-black tracking-[0.2em] uppercase">
-                  {cartCount} {cartCount === 1 ? "Item" : "Items"} in cart
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={handleShare}
-              className="h-12 px-4 flex items-center gap-2 bg-white/10 hover:bg-white/20 backdrop-blur-md rounded-2xl transition-all active:scale-95">
-              <Share2 size={20} className="text-white" />
-              <span className="text-xs font-black text-white uppercase tracking-widest hidden sm:block">Share</span>
-            </button>
+      {/* Header */}
+      <header className="sticky top-0 z-40 border-b border-slate-200 bg-white">
+        <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-2 md:px-8">
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            aria-label="Go back"
+            className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-slate-100 active:scale-95">
+            <ChevronLeft size={24} className="text-slate-900" />
+          </button>
+          <div className="flex-1 leading-tight">
+            <h1 className="text-base font-bold text-slate-900 md:text-lg">Checkout</h1>
+            <p className="text-xs text-slate-500">
+              {cartCount} {cartCount === 1 ? "item" : "items"}
+            </p>
           </div>
+          <button
+            type="button"
+            onClick={handleShare}
+            aria-label="Share cart"
+            className="flex h-10 items-center gap-2 rounded-full px-3 text-slate-700 hover:bg-slate-100 active:scale-95">
+            <Share2 size={18} />
+            <span className="hidden text-sm font-medium sm:block">Share</span>
+          </button>
         </div>
-      </div>
+      </header>
 
-      <div className="max-w-7xl mx-auto px-4 md:px-8 -mt-12 md:-mt-16 lg:-mt-20 relative z-20">
+      <div className="max-w-7xl mx-auto px-3 md:px-8 pt-4 relative">
         <div className="lg:grid lg:grid-cols-12 lg:gap-8 items-start">
 
-          {/* Left Column */}
-          <div className="lg:col-span-7 xl:col-span-8 space-y-6 pb-8">
+          {/* Left Column: what you're buying */}
+          <div className="lg:col-span-7 xl:col-span-8 space-y-4 pb-4">
             {/* Delivery Time Banner */}
-            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 mt-3">
+            <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="h-12 w-12 rounded-full bg-brand-50 flex items-center justify-center flex-shrink-0">
                   <Clock size={24} className="text-primary" />
                 </div>
                 <div>
-                  <h3 className="font-black text-slate-800 text-lg">Delivery in {deliveryEta}</h3>
+                  <h3 className="font-bold text-slate-900 text-base">Delivery in {deliveryEta}</h3>
                   <p className="text-sm text-slate-500">Shipment of {cartCount} items</p>
                 </div>
               </div>
             </div>
 
+            {/* Cart Summary */}
+            <CheckoutCartSummary
+              cart={cart}
+              onUpdateQuantity={updateQuantity}
+              onRemoveFromCart={removeFromCart}
+              onMoveToWishlist={handleMoveToWishlist}
+              showAll={showAllCartItems}
+              onToggleShowAll={() => setShowAllCartItems((v) => !v)}
+            />
+
+            {/* Recommended Products */}
+            <CheckoutRecommendedProducts
+              products={recommendedProducts}
+              cart={cart}
+              onAddToCart={handleAddToCart}
+              onGetCartItem={getCartItem}
+            />
+
+            {/* Wishlist Section */}
+            <CheckoutWishlistSection
+              wishlist={wishlist}
+              sectionRef={wishlistSectionRef}
+            />
+          </div>
+
+          {/* Right Column: where, discounts, bill, payment — the final steps together */}
+          <div className="lg:col-span-5 xl:col-span-4 space-y-4 lg:sticky lg:top-20 pb-8">
             {/* Address Section */}
             <CheckoutAddressSection
               currentAddress={currentAddress}
@@ -1063,33 +1040,6 @@ const CheckoutPage = () => {
               displayAddress={displayAddress}
             />
 
-            {/* Cart Summary */}
-            <CheckoutCartSummary
-              cart={cart}
-              onUpdateQuantity={updateQuantity}
-              onRemoveFromCart={removeFromCart}
-              onMoveToWishlist={handleMoveToWishlist}
-              showAll={showAllCartItems}
-              onToggleShowAll={() => setShowAllCartItems((v) => !v)}
-            />
-
-            {/* Wishlist Section */}
-            <CheckoutWishlistSection
-              wishlist={wishlist}
-              sectionRef={wishlistSectionRef}
-            />
-
-            {/* Recommended Products */}
-            <CheckoutRecommendedProducts
-              products={recommendedProducts}
-              cart={cart}
-              onAddToCart={handleAddToCart}
-              onGetCartItem={getCartItem}
-            />
-          </div>
-
-          {/* Right Column */}
-          <div className="lg:col-span-5 xl:col-span-4 space-y-6 lg:sticky lg:top-8 pb-32 lg:pb-8">
             {/* Coupon Section */}
             <CheckoutCouponSection
               coupons={coupons}
@@ -1136,8 +1086,8 @@ const CheckoutPage = () => {
                 isLoading={isPlacingOrder || isPreviewLoading || !pricingPreview}
                 text={finalAmountToPay === 0 ? "Place Free Order" : "Order Now"}
               />
-              <p className="text-center text-[10px] text-slate-400 font-bold mt-4 uppercase tracking-[0.1em]">
-                🔒 SSL encrypted secure checkout
+              <p className="text-center text-xs text-slate-500 mt-3">
+                🔒 Secure checkout
               </p>
             </div>
           </div>
@@ -1145,8 +1095,14 @@ const CheckoutPage = () => {
       </div>
 
       {/* Sticky Footer — Mobile Only */}
-      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-4 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] z-50 rounded-t-3xl">
+      <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 pt-2.5 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-4px_16px_rgba(0,0,0,0.06)] z-50">
         <div className="max-w-4xl mx-auto">
+          <div className="mb-2 flex items-baseline justify-between">
+            <span className="text-sm text-slate-600">To pay</span>
+            <span className="text-lg font-bold text-slate-900">
+              {isPreviewLoading || !pricingPreview ? "…" : `₹${Number(finalAmountToPay || 0).toLocaleString("en-IN")}`}
+            </span>
+          </div>
           <SlideToPay
             amount={finalAmountToPay}
             onSuccess={handlePlaceOrder}

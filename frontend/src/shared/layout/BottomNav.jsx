@@ -1,15 +1,10 @@
-import React, { useState, useEffect } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
     LayoutDashboard,
     ClipboardList,
     Box,
-    Wallet,
-    MoreHorizontal,
-    ChevronDown,
-    X
+    Wallet
 } from 'lucide-react';
 
 import { useAuth } from '@core/context/AuthContext';

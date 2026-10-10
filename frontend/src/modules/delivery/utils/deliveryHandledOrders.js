@@ -16,10 +16,12 @@ export const HANDLED_INCOMING_ORDER_IDS_KEY = STORAGE_KEYS.DELIVERY_HANDLED_INCO
 const MAX_ENTRIES = 200;
 const ENTRY_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours covers a single rider shift
 
-function readEnvelope() {
-  const raw = rawGet(HANDLED_INCOMING_ORDER_IDS_KEY, { storage: "session" });
+// localStorage so the list survives page refreshes / app restarts (sessionStorage
+// was lost on some mobile reloads, making handled offers pop up again).
+const STORAGE = "local";
+
+function parseEntries(raw, now) {
   const parsed = safeParseJson(raw, null);
-  const now = Date.now();
 
   if (Array.isArray(parsed)) {
     return parsed.map((id) => ({ id: String(id), ts: now }));
@@ -37,9 +39,24 @@ function readEnvelope() {
   return [];
 }
 
+function readEnvelope() {
+  const now = Date.now();
+  const entries = parseEntries(rawGet(HANDLED_INCOMING_ORDER_IDS_KEY, { storage: STORAGE }), now);
+
+  // Merge entries written by older builds to sessionStorage
+  const legacy = parseEntries(rawGet(HANDLED_INCOMING_ORDER_IDS_KEY, { storage: "session" }), now);
+  if (legacy.length) {
+    const known = new Set(entries.map((e) => e.id));
+    legacy.forEach((e) => !known.has(e.id) && entries.push(e));
+    rawRemove(HANDLED_INCOMING_ORDER_IDS_KEY, { storage: "session" });
+  }
+
+  return entries;
+}
+
 function writeEnvelope(entries) {
   if (!entries.length) {
-    rawRemove(HANDLED_INCOMING_ORDER_IDS_KEY, { storage: "session" });
+    rawRemove(HANDLED_INCOMING_ORDER_IDS_KEY, { storage: STORAGE });
     return;
   }
   const trimmed = entries
@@ -49,11 +66,21 @@ function writeEnvelope(entries) {
     rawSet(
       HANDLED_INCOMING_ORDER_IDS_KEY,
       JSON.stringify({ ids: trimmed }),
-      { storage: "session" },
+      { storage: STORAGE },
     );
   } catch {
     /* quota / private mode */
   }
+}
+
+/**
+ * Handled-list key for an offer. A return pickup reuses the orderId of the
+ * original delivery, so it gets its own key; otherwise the rider who
+ * delivered the order (or skipped it) never saw the return pickup popup.
+ */
+export function incomingOfferKey(orderId, isReturnPickup = false) {
+  if (!orderId) return "";
+  return isReturnPickup ? `${orderId}:return` : String(orderId);
 }
 
 export function loadHandledIncomingOrderIds() {

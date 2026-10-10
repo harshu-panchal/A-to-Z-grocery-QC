@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
@@ -13,14 +13,9 @@ import Card from "@/shared/components/ui/Card";
 import { deliveryApi } from "../services/deliveryApi";
 import { toast } from "sonner";
 import { useQuery } from "@tanstack/react-query";
+import { toTaskRows, TASK_KIND_LABEL, TASK_STATE_STYLE, taskEarnings } from "../utils/riderTasks";
 
-const displayOrderStatus = (order) => {
-  if (order?.workflowStatus === "DELIVERED" || order?.status === "delivered")
-    return "delivered";
-  if (order?.workflowStatus === "CANCELLED" || order?.status === "cancelled")
-    return "cancelled";
-  return order?.status || "active";
-};
+const FILTERS = ["All", "Active", "Delivered", "Returns", "Cancelled"];
 
 const OrderHistory = () => {
   const navigate = useNavigate();
@@ -55,7 +50,8 @@ const OrderHistory = () => {
   const initialLoading = isLoading;
   const refreshing = isFetching && !isLoading;
 
-  const filteredOrders = (orders || []).filter((order) => {
+  // one card per job: a delivery and a later return pickup are separate entries
+  const filteredOrders = toTaskRows(orders).filter(({ order }) => {
     const q = searchQuery.toLowerCase();
     const oid = String(order.orderId ?? "");
     return (
@@ -99,7 +95,7 @@ const OrderHistory = () => {
 
         {/* Status Filters */}
         <div className="-mx-4 px-4 flex gap-2 overflow-x-auto pb-2 no-scrollbar snap-x snap-mandatory">
-          {["All", "Delivered", "Cancelled", "Returns"].map((status) => (
+          {FILTERS.map((status) => (
             <button
               key={status}
               onClick={() => setFilter(status.toLowerCase())}
@@ -128,9 +124,9 @@ const OrderHistory = () => {
           </div>
         ) : (
           <AnimatePresence mode="popLayout">
-            {filteredOrders.length > 0 ? filteredOrders.map((order) => (
+            {filteredOrders.length > 0 ? filteredOrders.map(({ key, order, task }) => (
               <motion.div
-                key={order._id}
+                key={key}
                 layout
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -154,14 +150,11 @@ const OrderHistory = () => {
                           <span className="font-bold text-gray-900 text-sm group-hover:text-primary transition-colors break-all">
                             #{order.orderId}
                           </span>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${displayOrderStatus(order) === "delivered"
-                              ? "bg-brand-100 text-brand-700"
-                              : displayOrderStatus(order) === "cancelled"
-                                ? "bg-red-100 text-red-700"
-                                : "bg-brand-100 text-brand-700"
-                              }`}>
-                            {displayOrderStatus(order)}
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${TASK_STATE_STYLE[task.state]}`}>
+                            {task.label}
+                          </span>
+                          <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                            {TASK_KIND_LABEL[task.kind]}
                           </span>
                         </div>
                         <div className="flex items-center text-gray-400 text-xs">
@@ -171,7 +164,7 @@ const OrderHistory = () => {
                       </div>
                       <div className="text-left sm:text-right shrink-0">
                         <span className="block font-bold text-lg text-brand-600 whitespace-nowrap">
-                          ₹{order.paymentBreakdown?.riderPayoutTotal || order.returnDeliveryCommission || 0}
+                          ₹{taskEarnings(order, task)}
                         </span>
                         <span className="ds-caption text-gray-400">Earnings</span>
                       </div>
@@ -212,7 +205,7 @@ const OrderHistory = () => {
                         </span>
                       </div>
                       <div className="flex items-center text-primary font-bold group-hover:underline self-end sm:self-auto">
-                        View Details <ChevronRight size={14} className="ml-0.5" />
+                        {task.state === "active" ? "Continue" : "View Details"} <ChevronRight size={14} className="ml-0.5" />
                       </div>
                     </div>
                   </div>

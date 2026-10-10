@@ -1239,9 +1239,11 @@ const ProductManagement = () => {
                             </div>
                             <div className="space-y-1">
                               <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Stock</label>
-                              <input type="number" min="0" value={v.stock} onChange={e => {
-                                const val = e.target.value;
-                                if (val !== '' && Number(val) < 0) return;
+                              <input type="number" min="0" step="1" inputMode="numeric" value={v.stock}
+                                onKeyDown={e => { if (['-', '+', 'e', 'E', '.', ','].includes(e.key)) e.preventDefault(); }}
+                                onChange={e => {
+                                // whole units only (decimals left values like 0.0099 after orders)
+                                const val = e.target.value.replace(/[^\d]/g, '');
                                 const news = [...formData.variants];
                                 news[i].stock = val;
                                 setFormData({ ...formData, variants: news });

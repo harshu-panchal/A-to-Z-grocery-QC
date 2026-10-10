@@ -42,8 +42,8 @@ describe("checkout pricing snapshot handling fee", () => {
         {
           _id: "p1",
           name: "P1",
-          salePrice: 0,
-          price: 100,
+          sellingPrice: 0,
+          mrp: 100,
           mainImage: "",
           headerId: "h1",
           sellerId: "seller-a",
@@ -53,8 +53,8 @@ describe("checkout pricing snapshot handling fee", () => {
         {
           _id: "p2",
           name: "P2",
-          salePrice: 0,
-          price: 200,
+          sellingPrice: 0,
+          mrp: 200,
           mainImage: "",
           headerId: "h2",
           sellerId: "seller-b",

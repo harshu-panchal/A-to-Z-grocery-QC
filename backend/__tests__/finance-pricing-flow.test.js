@@ -186,8 +186,8 @@ describe("finance pricing flow", () => {
         {
           _id: "prod-1",
           name: "Apple",
-          salePrice: 120,
-          price: 125,
+          sellingPrice: 120,
+          mrp: 125,
           status: "active",
           mainImage: "apple.jpg",
           headerId: "cat-1",

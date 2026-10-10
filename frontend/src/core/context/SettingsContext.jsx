@@ -1,4 +1,4 @@
-import React, {
+import {
   createContext,
   useContext,
   useState,
@@ -6,7 +6,6 @@ import React, {
   useCallback,
   useMemo
 } from "react";
-import axiosInstance from "@core/api/axios";
 import { getWithDedupe } from "@core/api/dedupe";
 import { DEFAULT_SETTINGS, applyThemeVariables } from "./SettingsDefaults";
 

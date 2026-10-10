@@ -114,7 +114,9 @@ export function getOrderStatusLabel(order) {
       case "return_approved": return "Return Approved";
       case "return_pickup_assigned": return "Pickup Assigned";
       case "return_pickup_verified": return "Pickup Verified";
-      case "returned": return "Return Delivered to Seller";
+      case "return_in_transit": return "Return Picked Up – On the Way to Store";
+      case "return_drop_pending": return "Return Reaching Store";
+      case "returned": return "Return Received – Refund Processing";
       case "qc_passed": return "Return QC Passed";
       case "qc_failed": return "Return QC Failed";
       case "refund_completed": return "Returned & Refunded";

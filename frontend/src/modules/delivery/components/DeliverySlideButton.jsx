@@ -1,16 +1,25 @@
-import React, { useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { motion, useMotionValue, useTransform, animate } from "framer-motion";
 import { ChevronRight, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { deliveryApi } from "../services/deliveryApi";
 
+const KNOB = 56; // w-14
+const PAD = 4; // top-1/left-1 inset
+const COMPLETE_RATIO = 0.7; // slide past 70% of the track to trigger
+
 /**
  * DeliverySlideButton - A slide-to-confirm button for delivery actions
- * 
+ *
  * This component handles the slide gesture to trigger OTP generation.
  * It calls the generate-otp endpoint which uses the delivery person's stored location
  * from the database for proximity validation.
- * 
+ *
+ * The track is measured at runtime (it used to assume a 280px slide distance,
+ * so the knob overflowed on narrow phones and never reached the end on wide
+ * ones), and a release before the threshold animates the knob back (it used to
+ * stay stuck wherever it was dropped).
+ *
  * @param {Object} props
  * @param {string} props.orderId - The order ID for OTP generation
  * @param {Function} props.onSuccess - Callback when OTP is successfully generated
@@ -23,34 +32,73 @@ const DeliverySlideButton = ({
   orderId,
   onSuccess,
   onError,
+  onConfirm, // optional: run this instead of an OTP request (rider step actions)
   isReturn = false,
   isReturnDrop = false,
   label = "SLIDE TO GENERATE OTP",
+  loadingLabel,
   bgColor = "bg-black ",
   bgColorLight = "bg-brand-50",
 }) => {
-  const [isSlideComplete, setIsSlideComplete] = useState(false);
-  const [dragX, setDragX] = useState(0);
+  const trackRef = useRef(null);
+  const busyRef = useRef(false);
+  const [maxX, setMaxX] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const x = useMotionValue(0);
+  const fillWidth = useTransform(x, (v) => v + KNOB + PAD * 2);
+  const labelOpacity = useTransform(x, [0, Math.max(1, maxX * 0.4)], [1, 0]);
+
+  // Measure the real slide distance (and keep it right on rotate/resize)
+  useEffect(() => {
+    const el = trackRef.current;
+    if (!el) return undefined;
+    const measure = () => setMaxX(Math.max(0, el.clientWidth - KNOB - PAD * 2));
+    measure();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
+
+  const snapTo = useCallback(
+    (target) => animate(x, target, { type: "spring", stiffness: 500, damping: 40 }),
+    [x],
+  );
+
+  const resetSlide = useCallback(() => {
+    busyRef.current = false;
+    setIsLoading(false);
+    snapTo(0);
+  }, [snapTo]);
 
   // Reset slide state when orderId changes
   useEffect(() => {
-    setIsSlideComplete(false);
-    setDragX(0);
-    setIsLoading(false);
-  }, [orderId]);
-
-  const resetSlide = () => {
-    setIsSlideComplete(false);
-    setDragX(0);
-    setIsLoading(false);
-  };
+    resetSlide();
+  }, [orderId, resetSlide]);
 
   /**
    * Handle slide completion - generate OTP using stored location
    */
   const handleSlideComplete = async () => {
+    if (busyRef.current) return; // never fire twice for one slide
+    busyRef.current = true;
     setIsLoading(true);
+    snapTo(maxX);
+
+    // Generic action (e.g. "arrived at store", "picked up"): the caller handles
+    // its own toasts; the slider always returns to the start afterwards — ready
+    // for the next step on success, or for a retry on failure.
+    if (typeof onConfirm === "function") {
+      try {
+        await onConfirm();
+      } finally {
+        resetSlide();
+      }
+      return;
+    }
 
     try {
       // Call appropriate endpoint based on flow type
@@ -62,6 +110,7 @@ const DeliverySlideButton = ({
 
       // Handle success
       toast.success(response.data?.message || "OTP generated and sent to customer");
+      setIsLoading(false);
 
       if (onSuccess) {
         onSuccess(response.data);
@@ -111,65 +160,76 @@ const DeliverySlideButton = ({
       }
 
       resetSlide();
-    } finally {
-      setIsLoading(false);
+    }
+  };
+
+  const onDragEnd = () => {
+    if (busyRef.current) return;
+    if (maxX > 0 && x.get() >= maxX * COMPLETE_RATIO) {
+      handleSlideComplete();
+    } else {
+      snapTo(0); // released early: slide back instead of staying stuck mid-way
+    }
+  };
+
+  const onKeyDown = (e) => {
+    if ((e.key === "Enter" || e.key === " ") && !busyRef.current) {
+      e.preventDefault();
+      handleSlideComplete();
     }
   };
 
   return (
-    <div className="relative h-16 bg-gray-100 rounded-full overflow-hidden select-none">
-      {/* Label text */}
+    <div
+      ref={trackRef}
+      className="relative h-16 bg-gray-100 rounded-full overflow-hidden select-none touch-pan-y"
+    >
+      {/* Progress background (follows the knob exactly) */}
       <motion.div
-        className={`absolute inset-0 flex items-center justify-center text-gray-400 font-bold text-sm pointer-events-none transition-opacity duration-300 ${dragX > 50 || isLoading ? "opacity-0" : "opacity-100"
-          }`}
-        animate={{ x: [0, 5, 0] }}
-        transition={{ repeat: Infinity, duration: 1.5 }}>
-        {label} <ChevronRight className="ml-1 inline" />
-      </motion.div>
+        className={`absolute inset-y-0 left-0 rounded-full ${bgColorLight} opacity-60`}
+        style={{ width: fillWidth }}
+      />
+
+      {/* Label text */}
+      {!isLoading && (
+        <motion.div
+          className="absolute inset-0 flex items-center justify-center pl-14 text-gray-400 font-bold text-sm pointer-events-none"
+          style={{ opacity: labelOpacity }}
+        >
+          {label} <ChevronRight className="ml-1 inline" aria-hidden="true" />
+        </motion.div>
+      )}
 
       {/* Loading indicator */}
       {isLoading && (
-        <div className="absolute inset-0 flex items-center justify-center">
+        <div className="absolute inset-0 flex items-center justify-center" role="status">
           <Loader2 className="animate-spin text-primary" size={24} />
           <span className="ml-2 text-sm font-medium text-gray-600">
-            {isReturn ? "Requesting OTP..." : "Generating OTP..."}
+            {loadingLabel || (isReturn || isReturnDrop ? "Requesting OTP..." : "Generating OTP...")}
           </span>
         </div>
       )}
 
-      {/* Progress background */}
+      {/* Draggable knob */}
       <motion.div
-        className={`absolute inset-y-0 left-0 ${bgColorLight} opacity-50`}
-        style={{ width: Math.min(dragX + 60, 340) }}
-      />
-
-      {/* Draggable button */}
-      <motion.div
-        className={`absolute top-1 bottom-1 left-1 w-14 rounded-full flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 ${bgColor}`}
-        drag="x"
-        dragConstraints={{ left: 0, right: 280 }}
-        dragElastic={0.05}
+        role="button"
+        tabIndex={0}
+        aria-label={`${label}. Slide right, or press Enter`}
+        aria-busy={isLoading}
+        onKeyDown={onKeyDown}
+        className={`absolute top-1 bottom-1 left-1 w-14 rounded-full flex items-center justify-center shadow-md cursor-grab active:cursor-grabbing z-20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${bgColor}`}
+        style={{ x, pointerEvents: isLoading ? "none" : "auto" }}
+        drag={isLoading ? false : "x"}
+        dragConstraints={{ left: 0, right: maxX }}
+        dragElastic={0}
         dragMomentum={false}
-        onDrag={(_, info) => {
-          if (!isLoading) {
-            setDragX(Math.max(0, info.offset.x));
-          }
-        }}
-        onDragEnd={(_, info) => {
-          if (isLoading) return;
-
-          if (info.offset.x > 150) {
-            setIsSlideComplete(true);
-            handleSlideComplete();
-          } else {
-            setDragX(0);
-          }
-        }}
-        animate={{ x: isSlideComplete ? 280 : 0 }}
-        whileHover={{ scale: isLoading ? 1 : 1.05 }}
-        whileTap={{ scale: isLoading ? 1 : 0.95 }}
-        style={{ pointerEvents: isLoading ? "none" : "auto" }}>
-        <ChevronRight className="text-white" size={24} />
+        onDragEnd={onDragEnd}
+      >
+        {isLoading ? (
+          <Loader2 className="animate-spin text-white" size={22} />
+        ) : (
+          <ChevronRight className="text-white" size={24} />
+        )}
       </motion.div>
     </div>
   );

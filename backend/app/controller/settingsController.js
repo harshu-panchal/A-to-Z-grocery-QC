@@ -2,7 +2,7 @@ import Joi from "joi";
 import Setting from "../models/setting.js";
 import handleResponse from "../utils/helper.js";
 import { buildKey, getOrSet, getTTL, invalidate } from "../services/cacheService.js";
-import { uploadToCloudinary, replaceMedia } from "../services/mediaService.js";
+import { replaceMedia } from "../services/mediaService.js";
 import {
   DEFAULT_PRODUCT_APPROVAL_CONFIG,
   normalizeProductApprovalConfig,

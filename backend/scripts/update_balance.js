@@ -1,7 +1,6 @@
 
 import mongoose from 'mongoose';
 import dotenv from 'dotenv';
-import path from 'path';
 
 console.log("Script starting...");
 

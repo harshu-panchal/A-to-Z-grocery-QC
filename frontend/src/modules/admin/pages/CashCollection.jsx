@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Pagination from '@shared/components/ui/Pagination';
 import { adminApi } from '../services/adminApi';
 import { toast } from 'sonner';
@@ -7,7 +7,6 @@ import Button from '@shared/components/ui/Button';
 import Modal from '@shared/components/ui/Modal';
 import PageHeader from '@shared/components/ui/PageHeader';
 import StatCard from '@shared/components/ui/StatCard';
-import FilterBar from '@shared/components/ui/FilterBar';
 import DataTable from '@shared/components/ui/DataTable';
 import { SkeletonStatCard } from '@shared/components/ui/Skeleton';
 import {

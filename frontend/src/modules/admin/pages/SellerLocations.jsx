@@ -304,6 +304,7 @@ const SellerLocations = () => {
     isLoading: loading,
     isError,
     error: queryError,
+    refetch,
   } = useQuery({
     queryKey: ["admin", "sellerLocations", queryParams],
     queryFn: async () => {
@@ -471,7 +472,7 @@ const SellerLocations = () => {
             )}
 
             <button
-              onClick={() => setRefreshTick((value) => value + 1)}
+              onClick={() => refetch()}
               className="rounded-xl border border-slate-200 bg-white p-2.5 text-slate-500 shadow-sm transition-all hover:text-primary"
               title="Refresh">
               <HiOutlineArrowPath className={cn("h-5 w-5", loading && "animate-spin")} />

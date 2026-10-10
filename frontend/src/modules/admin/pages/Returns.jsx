@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Badge from "@shared/components/ui/Badge";
 import Button from "@shared/components/ui/Button";
@@ -20,7 +20,7 @@ import {
 } from "react-icons/hi2";
 import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { Loader2, X } from "lucide-react";
+import { X } from "lucide-react";
 
 const Returns = () => {
   const { showToast } = useToast();

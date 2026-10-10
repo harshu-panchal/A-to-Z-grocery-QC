@@ -10,13 +10,9 @@ import { WORKFLOW_STATUS } from "../constants/orderWorkflow.js";
 import {
   writeDeliveryLocation,
   appendTrailPoint,
-  clearOrderTracking,
-  clearRiderPresence,
 } from "../services/firebaseService.js";
 import { withLock } from "../utils/distributedLock.js";
-import { applyDeliveredSettlement } from "../services/orderSettlement.js";
 import { roundCurrency } from "../utils/money.js";
-import logger from "../services/logger.js";
 import { shouldThrottle as throttleLocationUpdate } from "../services/delivery/locationThrottleService.js";
 import {
   getDeliveryStats as getDeliveryStatsFromService,
@@ -220,6 +216,69 @@ async function buildAssignedToPartnerFilter(deliveryBoyId) {
     return { $or: clauses };
 }
 
+// ---- Rider task view -------------------------------------------------------
+// One order can hold two separate jobs for riders: the delivery and, later, a
+// return pickup (often done by a different rider). Each job is reported on its
+// own so a rider never sees someone else's delivery as "delivered by me".
+const ACTIVE_DELIVERY_WORKFLOW = [
+    WORKFLOW_STATUS.DELIVERY_ASSIGNED,
+    WORKFLOW_STATUS.PICKUP_READY,
+    WORKFLOW_STATUS.OUT_FOR_DELIVERY,
+];
+const ACTIVE_RETURN_STATUSES = ["return_pickup_assigned", "return_in_transit", "return_drop_pending"];
+const DONE_RETURN_STATUSES = ["returned", "qc_passed", "qc_failed", "refund_completed"];
+
+function deliveryStage(order) {
+    const wf = String(order.workflowStatus || "").toUpperCase();
+    const st = String(order.status || "").toLowerCase();
+    if (wf === WORKFLOW_STATUS.CANCELLED || st === "cancelled") return { state: "cancelled", label: "Cancelled" };
+    if (wf === WORKFLOW_STATUS.DELIVERED || st === "delivered") return { state: "done", label: "Delivered" };
+    if (wf === WORKFLOW_STATUS.OUT_FOR_DELIVERY || st === "out_for_delivery") return { state: "active", label: "Out for delivery" };
+    if (wf === WORKFLOW_STATUS.PICKUP_READY) return { state: "active", label: "At store, pick up order" };
+    return { state: "active", label: "Go to store" };
+}
+
+function returnStage(order) {
+    const rs = String(order.returnStatus || "");
+    if (rs === "return_pickup_assigned") return { state: "active", label: "Pick up from customer" };
+    if (rs === "return_in_transit") return { state: "active", label: "On the way to store" };
+    if (rs === "return_drop_pending") return { state: "active", label: "At store, seller OTP" };
+    if (DONE_RETURN_STATUSES.includes(rs)) return { state: "done", label: "Returned to store" };
+    return { state: "cancelled", label: "Return closed" };
+}
+
+/** The jobs this rider did / is doing on an order. */
+function riderTasksFor(order, riderId, winnerOrderIds) {
+    const me = String(riderId);
+    const tasks = [];
+    const isDeliveryRider =
+        String(order.deliveryBoy?._id || order.deliveryBoy || "") === me ||
+        winnerOrderIds.has(String(order.orderId));
+    if (isDeliveryRider) {
+        const stage = deliveryStage(order);
+        tasks.push({ kind: "delivery", ...stage, at: order.deliveredAt || order.updatedAt || order.createdAt });
+    }
+    if (String(order.returnDeliveryBoy?._id || order.returnDeliveryBoy || "") === me && order.returnStatus && order.returnStatus !== "none") {
+        const stage = returnStage(order);
+        tasks.push({ kind: "return", ...stage, at: order.returnDeliveredBackAt || order.returnPickedAt || order.updatedAt });
+    }
+    return tasks;
+}
+
+const startOfToday = () => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+};
+
+/**
+ * GET /delivery/order-history?status=all|active|today|delivered|cancelled|returns
+ * Every order carries `riderTasks`: [{ kind: "delivery"|"return", state: "active"|"done"|"cancelled", label, at }].
+ * - active:    jobs still in progress (deliveries + return pickups)
+ * - today:     jobs finished today
+ * - delivered: orders this rider delivered (not return pickups of others' deliveries)
+ * - returns:   return pickups this rider handled
+ */
 export const getMyDeliveryOrders = async (req, res) => {
     try {
         const rawId = req.user?.id ?? req.user?._id;
@@ -230,57 +289,80 @@ export const getMyDeliveryOrders = async (req, res) => {
             return handleResponse(res, 401, "Invalid user id");
         }
         const deliveryBoyId = new mongoose.Types.ObjectId(String(rawId));
-        const { status } = req.query;
-        const normalized = (status || "all").toLowerCase();
+        const normalized = String(req.query.status || "all").toLowerCase();
 
-        const assignedToPartner = await buildAssignedToPartnerFilter(deliveryBoyId);
+        let winnerOrderIds = [];
+        try {
+            winnerOrderIds = await DeliveryAssignment.distinct("orderId", { winnerDeliveryId: deliveryBoyId });
+        } catch {
+            /* ignore */
+        }
+        const winnerSet = new Set(winnerOrderIds.map(String));
+        const asDeliveryRider = {
+            $or: [
+                { deliveryBoy: deliveryBoyId },
+                ...(winnerOrderIds.length ? [{ orderId: { $in: winnerOrderIds } }] : []),
+            ],
+        };
+        const asReturnRider = { returnDeliveryBoy: deliveryBoyId, returnStatus: { $nin: [null, "none"] } };
+        const isDelivered = { $or: [{ status: "delivered" }, { workflowStatus: WORKFLOW_STATUS.DELIVERED }] };
+        const isCancelled = { $or: [{ status: "cancelled" }, { workflowStatus: WORKFLOW_STATUS.CANCELLED }] };
+        const isActiveDelivery = {
+            $or: [
+                { workflowStatus: { $in: ACTIVE_DELIVERY_WORKFLOW } },
+                { workflowStatus: { $exists: false }, status: { $in: ["confirmed", "packed", "out_for_delivery"] } },
+            ],
+        };
+        const today = startOfToday();
 
-        /** v2 orders use workflowStatus; legacy uses status — both must be respected. */
         let query;
         if (normalized === "delivered") {
-            query = {
-                $and: [
-                    assignedToPartner,
-                    {
-                        $or: [
-                            { status: "delivered" },
-                            { workflowStatus: WORKFLOW_STATUS.DELIVERED },
-                        ],
-                    },
-                ],
-            };
+            query = { $and: [asDeliveryRider, isDelivered] };
         } else if (normalized === "cancelled") {
+            query = { $and: [asDeliveryRider, isCancelled] };
+        } else if (normalized === "returns") {
+            query = asReturnRider;
+        } else if (normalized === "active") {
             query = {
-                $and: [
-                    assignedToPartner,
-                    {
-                        $or: [
-                            { status: "cancelled" },
-                            { workflowStatus: WORKFLOW_STATUS.CANCELLED },
-                        ],
-                    },
+                $or: [
+                    { $and: [asDeliveryRider, isActiveDelivery] },
+                    { ...asReturnRider, returnStatus: { $in: ACTIVE_RETURN_STATUSES } },
                 ],
             };
-        } else if (normalized === "returns") {
+        } else if (normalized === "today") {
             query = {
-                returnStatus: { $ne: "none" },
                 $or: [
-                    { deliveryBoy: deliveryBoyId },
-                    { returnDeliveryBoy: deliveryBoyId },
+                    { $and: [asDeliveryRider, isDelivered, { deliveredAt: { $gte: today } }] },
+                    { ...asReturnRider, returnStatus: { $in: DONE_RETURN_STATUSES }, returnDeliveredBackAt: { $gte: today } },
                 ],
             };
         } else {
-            query = assignedToPartner;
+            query = { $or: [asDeliveryRider, asReturnRider] };
         }
 
         const orders = await Order.find(query)
-            .sort({ createdAt: -1 })
+            .sort({ updatedAt: -1, createdAt: -1 })
             .limit(100)
             .populate("seller", "shopName address")
             .populate("customer", "name phone")
             .lean();
 
-        return handleResponse(res, 200, "Delivery orders fetched", orders);
+        const keepTask = {
+            active: (t) => t.state === "active",
+            today: (t) => t.state === "done" && t.at && new Date(t.at) >= today,
+            delivered: (t) => t.kind === "delivery" && t.state === "done",
+            cancelled: (t) => t.kind === "delivery" && t.state === "cancelled",
+            returns: (t) => t.kind === "return",
+        }[normalized];
+
+        const result = orders
+            .map((o) => {
+                const all = riderTasksFor(o, deliveryBoyId, winnerSet);
+                return { ...o, riderTasks: keepTask ? all.filter(keepTask) : all };
+            })
+            .filter((o) => o.riderTasks.length > 0);
+
+        return handleResponse(res, 200, "Delivery orders fetched", result);
     } catch (error) {
         return handleResponse(res, 500, error.message);
     }
@@ -448,13 +530,40 @@ export const updateDeliveryLocation = async (req, res) => {
             orderId: activeOrderId,
         };
 
-        // Fan out to Firebase and trail — fire-and-forget, never block the
-        // response. Reaching this line guarantees activeOrderId (if set) is
-        // the canonical id of an order this rider is actually assigned to.
-        writeDeliveryLocation(deliveryId, activeOrderId, snapshot).catch(() => {});
-        if (activeOrderId) {
-            appendTrailPoint(activeOrderId, { lat, lng, t: Date.now() }).catch(() => {});
+        // Heartbeats from the rider app's layout carry no orderId (only the map
+        // screen sends one), so the customer's live map froze whenever the rider
+        // left that screen. Resolve the rider's OWN in-progress deliveries
+        // server-side — still spoof-proof, since we only use orders assigned to
+        // this rider — and fan the ping out to each of them.
+        let fanoutOrderIds = activeOrderId ? [activeOrderId] : [];
+        if (!activeOrderId) {
+            const inProgress = await Order.find({
+                deliveryBoy: deliveryId,
+                workflowStatus: {
+                    $in: [
+                        WORKFLOW_STATUS.DELIVERY_ASSIGNED,
+                        WORKFLOW_STATUS.PICKUP_READY,
+                        WORKFLOW_STATUS.OUT_FOR_DELIVERY,
+                    ],
+                },
+            })
+                .select("orderId")
+                .sort({ updatedAt: -1 })
+                .limit(5)
+                .lean();
+            fanoutOrderIds = inProgress.map((o) => o.orderId).filter(Boolean);
         }
+
+        // Fan out to Firebase and trail — fire-and-forget, never block the
+        // response. Every id here is an order this rider is actually assigned to.
+        if (fanoutOrderIds.length === 0) {
+            writeDeliveryLocation(deliveryId, null, snapshot).catch(() => {});
+        }
+        for (const oid of fanoutOrderIds) {
+            writeDeliveryLocation(deliveryId, oid, { ...snapshot, orderId: oid }).catch(() => {});
+            appendTrailPoint(oid, { lat, lng, t: Date.now() }).catch(() => {});
+        }
+        activeOrderId = activeOrderId || fanoutOrderIds[0] || null;
 
         return handleResponse(res, 200, "Location updated", {
             location: delivery.location,

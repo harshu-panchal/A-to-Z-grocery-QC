@@ -1,6 +1,5 @@
-import React, { useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { cn } from "@/lib/utils";
-import { motion } from "framer-motion";
 
 const MagicCard = ({ children, className, gradientSize = 200, gradientColor = "#262626", ...props }) => {
     const cardRef = useRef(null);

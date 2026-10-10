@@ -176,6 +176,59 @@ function applyMediaFields(productData) {
   }
 }
 
+// Purchasable = same rule stockService enforces at order time: master stock > 0
+// AND (no variants, or at least one variant with stock > 0).
+const IN_STOCK_FILTER = {
+  stock: { $gt: 0 },
+  $or: [
+    { variants: { $exists: false } },
+    { variants: { $size: 0 } },
+    { "variants.stock": { $gt: 0 } },
+  ],
+};
+
+/**
+ * Stock is a whole number >= 0, and for products with variants the master
+ * `stock` is always the SUM of the variant stocks (computed here, never trusted
+ * from the client). Decimals used to be accepted, and after an order decrement
+ * left values like 0.00999…, which kept a product "in stock" forever; the
+ * master was also copied from the first variant only, so it drifted from the
+ * variants that checkout actually checks.
+ * Returns an error message, or null when the payload is valid (mutates it).
+ */
+function normalizeStockFields(productData) {
+  const toWholeStock = (value, label) => {
+    if (value === undefined || value === null || String(value).trim() === "") return { value: 0 };
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+      return { error: `Stock must be a whole number (0 or more)${label ? ` for ${label}` : ""}` };
+    }
+    return { value: n };
+  };
+
+  if (Array.isArray(productData.variants) && productData.variants.length > 0) {
+    let total = 0;
+    for (const [i, variant] of productData.variants.entries()) {
+      const r = toWholeStock(variant?.stock, variant?.name || `variant ${i + 1}`);
+      if (r.error) return r.error;
+      variant.stock = r.value;
+      total += r.value;
+    }
+    productData.stock = total;
+    return null;
+  }
+
+  if (productData.stock !== undefined) {
+    const r = toWholeStock(productData.stock);
+    if (r.error) return r.error;
+    productData.stock = r.value;
+  }
+  return null;
+}
+
+// Look-back window for `sort=trending` on GET /products
+const TRENDING_WINDOW_DAYS = parseInt(process.env.TRENDING_WINDOW_DAYS || "30", 10);
+
 const RESTRICTED_MODERATION_FIELDS = [
   "approvalStatus",
   "approvalRequestedAt",
@@ -286,8 +339,11 @@ export const getProducts = async (req, res) => {
       sort,
       lat,
       lng,
+      includeOutOfStock,
     } = req.query;
     const enforceRadius = isCustomerVisibilityRequest(req);
+    // Customer browsing hides out-of-stock products; search opts back in to show them greyed out
+    const hideOutOfStock = enforceRadius && String(includeOutOfStock || "").toLowerCase() !== "true";
 
     const query = {};
     if (search) {
@@ -382,7 +438,9 @@ export const getProducts = async (req, res) => {
     let finalQuery = { ...query };
     if (enforceRadius) {
       finalQuery.status = "active";
-      finalQuery = { $and: [finalQuery, getApprovedOrLegacyFilter()] };
+      finalQuery = {
+        $and: [finalQuery, getApprovedOrLegacyFilter(), ...(hideOutOfStock ? [IN_STOCK_FILTER] : [])],
+      };
     } else {
       if (status && status !== "all") {
         finalQuery.status = status;
@@ -410,21 +468,47 @@ export const getProducts = async (req, res) => {
       "stock-asc": { stock: 1, createdAt: -1 },
       "stock-desc": { stock: -1, createdAt: -1 },
     };
-    const sortQuery = sortMap[String(sort || "newest").toLowerCase()] || sortMap.newest;
+    const sortKey = String(sort || "newest").toLowerCase();
+    const sortQuery = sortMap[sortKey] || sortMap.newest;
+    const PRODUCT_LIST_FIELDS =
+      "name slug description sku mrp sellingPrice purchaseRate stock brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt";
+
+    // sort=trending: products ranked by units ordered in the last 30 days
+    // (cancelled orders excluded). Only products that actually sold are returned;
+    // all other filters (header/category, nearby sellers, approval) still apply.
+    const fetchTrending = async () => {
+      const since = new Date(Date.now() - TRENDING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+      const ranked = await Order.aggregate([
+        { $match: { createdAt: { $gte: since }, status: { $ne: "cancelled" } } },
+        { $unwind: "$items" },
+        { $group: { _id: "$items.product", units: { $sum: "$items.quantity" } } },
+        { $sort: { units: -1 } },
+        { $limit: 300 },
+      ]);
+      const rank = new Map(ranked.map((r, i) => [String(r._id), i]));
+      if (!rank.size) return { rawProducts: [], total: 0 };
+      const matched = await Product.find({
+        $and: [finalQuery, { _id: { $in: ranked.map((r) => r._id) } }],
+      })
+        .select(PRODUCT_LIST_FIELDS)
+        .lean();
+      matched.sort((a, b) => rank.get(String(a._id)) - rank.get(String(b._id)));
+      return { rawProducts: matched.slice(skip, skip + limit), total: matched.length };
+    };
 
     const fetchFn = async () => {
-      const [rawProducts, total] = await Promise.all([
-        Product.find(finalQuery)
-          .select(
-            "name slug description sku mrp sellingPrice purchaseRate stock brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt",
-          )
-          // No .populate() — names resolved via cache-backed entityNameCache
-          .sort(sortQuery)
-          .skip(skip)
-          .limit(limit)
-          .lean(),
-        Product.countDocuments(finalQuery),
-      ]);
+      const [rawProducts, total] = sortKey === "trending"
+        ? await fetchTrending().then((r) => [r.rawProducts, r.total])
+        : await Promise.all([
+            Product.find(finalQuery)
+              .select(PRODUCT_LIST_FIELDS)
+              // No .populate() — names resolved via cache-backed entityNameCache
+              .sort(sortQuery)
+              .skip(skip)
+              .limit(limit)
+              .lean(),
+            Product.countDocuments(finalQuery),
+          ]);
 
       // Collect unique category IDs (headerId, categoryId, subcategoryId) and seller IDs
       const categoryIdSet = new Set();
@@ -510,7 +594,7 @@ export const getSellerProducts = async (req, res) => {
     if (stockStatus === "in") {
       query.stock = { $gt: 0 };
     } else if (stockStatus === "out") {
-      query.stock = 0;
+      query.stock = { $lte: 0 };
     }
 
     if (approvalStatus && String(approvalStatus).trim().toLowerCase() !== "all") {
@@ -607,7 +691,7 @@ export const getSellerProducts = async (req, res) => {
           ],
         },
       }),
-      Product.countDocuments({ ...baseSellerQuery, stock: 0 }),
+      Product.countDocuments({ ...baseSellerQuery, stock: { $lte: 0 } }),
       Product.countDocuments({
         ...baseSellerQuery,
         approvalStatus: PRODUCT_APPROVAL_STATUS.PENDING,
@@ -759,6 +843,9 @@ export const createProduct = async (req, res) => {
             : makeProductSku(productData.name, idx + 1),
       }));
     }
+
+    const stockError = normalizeStockFields(productData);
+    if (stockError) return handleResponse(res, 400, stockError);
 
     let moderationUpdate = {};
     let successMessage = "Product created successfully";
@@ -958,6 +1045,9 @@ export const updateProduct = async (req, res) => {
             : makeProductSku(skuBaseName, idx + 1),
       }));
     }
+
+    const stockError = normalizeStockFields(productData);
+    if (stockError) return handleResponse(res, 400, stockError);
 
     let moderationUpdate = {};
     let successMessage = "Product updated successfully";

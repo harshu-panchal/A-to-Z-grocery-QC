@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import { useEffect } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import DeliveryLayout from "../layout/DeliveryLayout";
 import { setActiveRole, ROLES } from "@core/auth/activeRoleStore";

@@ -1,9 +1,8 @@
 import React, { useRef } from "react";
-import { motion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { QUICK_CATEGORY_PALETTES } from "../../constants/homeConstants";
 import { applyCloudinaryTransform } from "@/core/utils/imageUtils";
-import QuickCategoriesBg from "@/assets/Catagorysection_bg.png";
+import QuickCategoriesBg from "@/assets/Catagorysection_bg.webp";
 
 const QuickCategorySlider = ({ categories, onCategoryClick }) => {
   const scrollRef = useRef(null);
@@ -18,9 +17,9 @@ const QuickCategorySlider = ({ categories, onCategoryClick }) => {
   if (!categories || categories.length === 0) return null;
 
   return (
-    <div className="w-full mb-5 -mt-[24px] md:mt-3 overflow-hidden relative group z-20">
+    <section aria-labelledby="quick-categories-title" className="relative z-20 mx-auto mb-7 w-full max-w-[1440px] px-3 md:mb-10 md:px-8 lg:px-12">
       <div
-        className="relative overflow-hidden bg-white shadow-[0_14px_28px_rgba(15,23,42,0.09)]"
+        className="group relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_12px_36px_rgba(15,23,42,0.07)] md:rounded-[26px]"
         style={{
           backgroundImage: `linear-gradient(180deg, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.65) 100%), url(${QuickCategoriesBg})`,
           backgroundSize: "cover",
@@ -28,10 +27,11 @@ const QuickCategorySlider = ({ categories, onCategoryClick }) => {
         }}>
         <div className="absolute inset-0 bg-white/10 pointer-events-none" />
 
-        <div className="relative z-10 px-4 pt-2.5 pb-0.5 md:px-8 md:pt-4">
-          <h2 className="text-center text-[17px] md:text-[20px] font-bold tracking-tight text-[#132018] leading-none">
+        <div className="relative z-10 px-4 pb-2 pt-4 md:px-8 md:pb-3 md:pt-6">
+          <h2 id="quick-categories-title" className="text-center text-base font-bold tracking-tight text-slate-900 md:text-lg">
             Quick categories
           </h2>
+          <p className="mt-1 text-center text-[11px] font-medium text-slate-500 md:text-xs">A little something for every aisle</p>
         </div>
 
         {/* Left Scroll Button */}
@@ -45,16 +45,18 @@ const QuickCategorySlider = ({ categories, onCategoryClick }) => {
 
         <div
           ref={scrollRef}
-          className="relative z-10 flex items-start gap-2 md:gap-3 lg:gap-4 overflow-x-auto no-scrollbar px-4 pb-2 pt-1 md:px-8 md:pb-4 snap-x scroll-smooth">
+          className="relative z-10 flex items-start gap-3 overflow-x-auto no-scrollbar px-4 pb-5 pt-2 md:gap-4 md:px-8 md:pb-7 snap-x scroll-smooth">
           {categories.map((cat, idx) => {
             const palette = QUICK_CATEGORY_PALETTES[idx % QUICK_CATEGORY_PALETTES.length];
             return (
-              <div
+              <button
                 key={cat.id}
+                type="button"
                 onClick={() => onCategoryClick(cat.id)}
-                className="flex flex-col items-center gap-0.5 min-w-[74px] md:min-w-[104px] lg:min-w-[120px] cursor-pointer group/item snap-start transition-transform active:scale-95">
+                aria-label={`Browse ${cat.name}`}
+                className="group/item flex min-w-[76px] cursor-pointer flex-col items-center gap-2 snap-start text-center transition-transform active:scale-95 md:min-w-[104px] lg:min-w-[116px]">
                 <div
-                  className="relative w-[74px] h-[84px] md:w-[104px] md:h-[116px] lg:w-[120px] lg:h-[132px] rounded-[18px] md:rounded-[22px] shadow-[0_8px_18px_rgba(15,23,42,0.10)] border flex items-start justify-center p-1.5 md:p-2 transition-all duration-300 group-hover/item:-translate-y-1 group-hover/item:shadow-[0_16px_30px_rgba(15,23,42,0.14)] overflow-hidden smooth-transform"
+                  className="relative flex h-[76px] w-[76px] items-center justify-center overflow-hidden rounded-2xl border p-1.5 shadow-[0_5px_16px_rgba(15,23,42,0.07)] transition-all duration-300 group-hover/item:-translate-y-1 group-hover/item:shadow-[0_12px_24px_rgba(15,23,42,0.12)] smooth-transform md:h-[96px] md:w-[96px] md:rounded-[22px] md:p-2"
                   style={{
                     backgroundImage: `linear-gradient(135deg, rgba(255,255,255,0.96) 0%, rgba(255,255,255,0.6) 24%, rgba(255,255,255,0.15) 100%), linear-gradient(135deg, ${palette.bgFrom}, ${palette.bgVia}, ${palette.bgTo})`,
                     borderColor: palette.frameColor,
@@ -67,15 +69,11 @@ const QuickCategorySlider = ({ categories, onCategoryClick }) => {
                     src={applyCloudinaryTransform(cat.image, "f_auto,q_auto,w_150")}
                     alt={cat.name}
                     loading="lazy"
-                    className="absolute left-1/2 top-2.5 md:top-3 z-10 h-[56px] w-[56px] md:h-[64px] md:w-[64px] -translate-x-1/2 object-contain drop-shadow-[0_5px_12px_rgba(0,0,0,0.10)] mix-blend-multiply group-hover/item:scale-110 transition-transform duration-500"
+                    className="relative z-10 h-[54px] w-[54px] object-contain drop-shadow-[0_5px_12px_rgba(0,0,0,0.10)] mix-blend-multiply transition-transform duration-500 group-hover/item:scale-110 md:h-[68px] md:w-[68px]"
                   />
-                  <div className="absolute inset-x-1.5 md:inset-x-2 bottom-1.5 z-20 text-center">
-                    <span className="block text-[9px] md:text-[10px] lg:text-[11px] font-semibold text-[#1f2b20] leading-tight whitespace-nowrap overflow-hidden text-ellipsis drop-shadow-[0_1px_0_rgba(255,255,255,0.65)] group-hover/item:text-primary transition-colors">
-                      {cat.name}
-                    </span>
-                  </div>
                 </div>
-              </div>
+                <span className="block max-w-full truncate text-[10px] font-semibold leading-tight text-slate-700 transition-colors group-hover/item:text-primary md:text-xs">{cat.name}</span>
+              </button>
             );
           })}
         </div>
@@ -89,7 +87,7 @@ const QuickCategorySlider = ({ categories, onCategoryClick }) => {
           </button>
         </div>
       </div>
-    </div>
+    </section>
   );
 };
 

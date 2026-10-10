@@ -41,3 +41,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Personal screenshots/images must never ship: everything in public/ is served publicly
+public/Screenshot*
+public/WhatsApp*

@@ -12,8 +12,6 @@ import { isMobileOrWebView } from "@/core/utils/deviceUtils";
 const BANNER_CHUNK_SIZE = 20;
 
 const ExperienceBannerCarousel = ({ section, items, fullWidth = false, slideGap = 0, edgeToEdge = false }) => {
-  if (!items.length) return null;
-
   const [activeIndex, setActiveIndex] = React.useState(0);
   const [visibleCount, setVisibleCount] = React.useState(() =>
     Math.min(items.length, BANNER_CHUNK_SIZE)
@@ -67,6 +65,8 @@ const ExperienceBannerCarousel = ({ section, items, fullWidth = false, slideGap 
     if (!isCloudinaryUrl(url)) return url;
     return applyCloudinaryTransform(url, "f_auto,q_auto,c_scale,w_824");
   }, []);
+
+  if (!items.length) return null;
 
   return (
     <div className={cn("overflow-hidden touch-pan-y", fullWidth && "w-screen relative left-1/2 right-1/2 -ml-[50vw] -mr-[50vw]")}>

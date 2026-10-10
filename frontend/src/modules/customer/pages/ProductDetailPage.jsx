@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { Heart, Plus, Minus, Star, ShieldCheck, Clock, ArrowLeft, MessageSquare } from 'lucide-react';
@@ -210,7 +210,7 @@ const ProductDetailPage = () => {
     const isWishlisted = isInWishlist(product.id);
 
     return (
-        <div className="relative z-10 py-8 w-full max-w-[1920px] mx-auto px-4 md:px-[50px] animate-in fade-in duration-700 mt-24">
+        <div className="relative z-10 pt-8 pb-40 md:pb-8 w-full max-w-[1920px] mx-auto px-4 md:px-[50px] animate-in fade-in duration-700 mt-24">
             <Link to={-1} className="inline-flex items-center gap-2 text-slate-500 hover:text-primary font-bold mb-6 transition-colors group">
                 <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" /> Back
             </Link>
@@ -482,6 +482,41 @@ const ProductDetailPage = () => {
                         )}
                     </div>
                 </div>
+            </div>
+
+            {/* Mobile sticky add-to-cart bar (keeps the main action reachable while scrolling) */}
+            <div className="fixed inset-x-0 bottom-16 z-[450] flex items-center gap-3 border-t border-slate-200 bg-white px-4 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:hidden">
+                <div className="flex min-w-0 flex-1 flex-col leading-tight">
+                    <span className="truncate text-xs text-slate-500">{product.name}</span>
+                    <span className="text-lg font-bold text-slate-900">
+                        ₹{(product.sellingPrice && product.sellingPrice < product.mrp) ? product.sellingPrice : product.mrp}
+                        {product.sellingPrice && product.sellingPrice < product.mrp && (
+                            <span className="ml-1.5 text-xs font-normal text-slate-400 line-through">₹{product.mrp}</span>
+                        )}
+                    </span>
+                </div>
+                {quantity > 0 ? (
+                    <div className="flex h-11 w-32 items-center justify-between rounded-xl bg-primary text-primary-foreground" role="group" aria-label="Quantity">
+                        <button type="button" onClick={() => updateQuantity(product.id, -1, "")} aria-label="Decrease quantity" className="flex h-full w-11 items-center justify-center">
+                            <Minus size={18} strokeWidth={3} />
+                        </button>
+                        <span className="text-base font-bold tabular-nums" aria-live="polite">{quantity}</span>
+                        <button type="button" onClick={() => updateQuantity(product.id, 1, "")} aria-label="Increase quantity" className="flex h-full w-11 items-center justify-center">
+                            <Plus size={18} strokeWidth={3} />
+                        </button>
+                    </div>
+                ) : (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            addToCart(product);
+                            showToast(`${product.name} added to cart`, 'success');
+                        }}
+                        className="h-11 w-32 rounded-xl bg-primary text-sm font-bold text-primary-foreground active:scale-95"
+                    >
+                        Add to cart
+                    </button>
+                )}
             </div>
         </div>
     );

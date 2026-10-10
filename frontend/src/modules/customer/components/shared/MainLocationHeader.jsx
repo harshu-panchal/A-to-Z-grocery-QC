@@ -1,7 +1,15 @@
-import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { useState, useEffect, useRef, useLayoutEffect, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, useScroll, useTransform } from "framer-motion";
-import Lottie from "lottie-react";
+
+// Lottie player is ~80 KB gzip; load it lazily with the decorative animation
+const Lottie = lazy(() => import("lottie-react"));
+
+const CartIconPlaceholder = () => (
+  <span className="flex h-full w-full items-center justify-center rounded-full bg-white/90 shadow-md">
+    <ShoppingCartOutlinedIcon className="text-slate-800" />
+  </span>
+);
 import LocationDrawer from "./LocationDrawer";
 import { useLocation } from "../../context/LocationContext";
 import { useProductDetail } from "../../context/ProductDetailContext";
@@ -12,7 +20,6 @@ import {
   buildHeaderGradient,
   buildMiniCartColor,
   buildSearchBarBackgroundColor,
-  shiftHex,
 } from "../../utils/headerTheme";
 import LogoImage from "../../../../assets/Logo.png";
 
@@ -154,11 +161,19 @@ const MainLocationHeader = ({
   const [isLocationOpen, setIsLocationOpen] = useState(false);
   const [cartAnimData, setCartAnimData] = useState(null);
 
-  // Dynamically load shopping-cart Lottie on mount
+  // Decorative cart animation: load the Lottie player + JSON only after the page
+  // is idle so they stay off the critical path (a static cart icon shows meanwhile).
   useEffect(() => {
-    import("../../../../assets/lottie/shopping-cart.json")
-      .then((m) => setCartAnimData(m.default))
-      .catch(() => {});
+    const load = () =>
+      import("../../../../assets/lottie/shopping-cart.json")
+        .then((m) => setCartAnimData(m.default))
+        .catch(() => {});
+    if (typeof window.requestIdleCallback === "function") {
+      const id = window.requestIdleCallback(load, { timeout: 3000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const t = setTimeout(load, 1500);
+    return () => clearTimeout(t);
   }, []);
   const { currentLocation, refreshLocation, isFetchingLocation } =
     useLocation();
@@ -333,13 +348,15 @@ const MainLocationHeader = ({
             onClick={() => navigate("/checkout")}
             className="absolute top-3 right-5 sm:top-4 sm:right-6 md:top-5 md:right-8 z-20 w-12 h-12 sm:w-14 sm:h-14 md:w-20 md:h-20 cursor-pointer">
             {cartAnimData ? (
-              <Lottie
-                animationData={cartAnimData}
-                loop
-                className="w-full h-full pointer-events-none drop-shadow-[0_8px_18px_rgba(0,0,0,0.14)]"
-              />
+              <Suspense fallback={<CartIconPlaceholder />}>
+                <Lottie
+                  animationData={cartAnimData}
+                  loop
+                  className="w-full h-full pointer-events-none drop-shadow-[0_8px_18px_rgba(0,0,0,0.14)]"
+                />
+              </Suspense>
             ) : (
-              <div className="w-full h-full" />
+              <CartIconPlaceholder />
             )}
           </motion.button>
 

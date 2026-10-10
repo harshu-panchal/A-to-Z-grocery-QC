@@ -6,8 +6,6 @@ import {
 } from 'lucide-react';
 import { useAuth } from '@core/context/AuthContext';
 import { useSettings } from '@core/context/SettingsContext';
-import { customerApi } from '../services/customerApi';
-import { toast } from 'sonner';
 
 const ProfilePage = () => {
     const navigate = useNavigate();
@@ -128,6 +126,12 @@ const ProfilePage = () => {
                         </div>
                         <div className="divide-y divide-slate-100">
                             <MenuItem
+                                icon={Bell}
+                                label="Notifications"
+                                sub="Order updates & offers"
+                                path="/notifications"
+                            />
+                            <MenuItem
                                 icon={HelpCircle}
                                 label="Help & Support"
                                 path="/support"
@@ -170,28 +174,40 @@ const ProfilePage = () => {
 
         {/* Logout Confirmation Modal */}
         {showLogoutModal && (
-            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-                <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl relative">
-                    <div className="w-12 h-12 bg-red-50 text-red-500 rounded-2xl flex items-center justify-center mb-4 mx-auto">
+            <div
+                className="fixed inset-0 z-[1000] flex items-center justify-center bg-slate-900/40 p-4"
+                onClick={() => setShowLogoutModal(false)}
+            >
+                <div
+                    role="alertdialog"
+                    aria-modal="true"
+                    aria-labelledby="logout-title"
+                    className="bg-white w-full max-w-sm rounded-2xl p-6 shadow-xl relative"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="w-12 h-12 bg-red-50 text-red-500 rounded-xl flex items-center justify-center mb-4 mx-auto" aria-hidden="true">
                         <LogOut size={24} />
                     </div>
-                    <h3 className="text-xl font-black text-slate-900 text-center mb-2">Sign out?</h3>
-                    <p className="text-sm font-medium text-slate-500 text-center mb-6">
-                        Are you sure you want to sign out from your account? You will need to login again to access your orders.
+                    <h3 id="logout-title" className="text-lg font-bold text-slate-900 text-center mb-2">Sign out?</h3>
+                    <p className="text-sm text-slate-500 text-center mb-6">
+                        You&apos;ll need to log in again to see your orders and place new ones.
                     </p>
                     <div className="flex gap-3">
                         <button
+                            type="button"
+                            autoFocus
                             onClick={() => setShowLogoutModal(false)}
-                            className="flex-1 py-3.5 rounded-2xl bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 transition-colors"
+                            className="h-12 flex-1 rounded-xl bg-slate-100 text-slate-700 font-semibold hover:bg-slate-200 transition-colors"
                         >
                             Cancel
                         </button>
                         <button
+                            type="button"
                             onClick={() => {
                                 setShowLogoutModal(false);
                                 logout();
                             }}
-                            className="flex-1 py-3.5 rounded-2xl bg-red-500 text-white font-bold hover:bg-red-600 transition-colors shadow-lg shadow-red-500/30"
+                            className="h-12 flex-1 rounded-xl bg-red-500 text-white font-semibold hover:bg-red-600 transition-colors"
                         >
                             Yes, Sign out
                         </button>
@@ -203,18 +219,13 @@ const ProfilePage = () => {
     );
 };
 
-const MenuItem = ({ icon: Icon, label, sub, path, color = '#334155', bg = 'rgba(148,163,184,0.12)' }) => (
-    <Link to={path || '#'} className="px-4 py-3.5 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition-colors group">
+// One neutral icon style for every row (color/bg props kept for compatibility, intentionally unused)
+// eslint-disable-next-line no-unused-vars
+const MenuItem = ({ icon: Icon, label, sub, path, color, bg }) => (
+    <Link to={path || '#'} className="min-h-14 px-4 py-3 flex items-center justify-between hover:bg-slate-50 cursor-pointer transition-colors group">
         <div className="flex items-center gap-3">
-            <div
-                className="h-10 w-10 rounded-lg flex items-center justify-center"
-                style={{ backgroundColor: bg }}
-            >
-                <Icon
-                    size={20}
-                    className="transition-colors"
-                    style={{ color }}
-                />
+            <div className="h-10 w-10 rounded-lg flex items-center justify-center bg-slate-100" aria-hidden="true">
+                <Icon size={20} className="text-slate-700" />
             </div>
             <div>
                 <h3 className="text-sm font-semibold text-slate-800">{label}</h3>

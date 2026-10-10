@@ -1,4 +1,3 @@
-import React from "react";
 import { motion } from "framer-motion";
 import {
   CheckCircle2,
@@ -13,31 +12,60 @@ import {
 const RETURN_STEPS = [
   { id: "return_requested", label: "Return Requested", icon: ClipboardCheck },
   { id: "return_approved", label: "Return Approved", icon: CheckCircle2 },
-  { id: "return_pickup_assigned", label: "Pickup Assigned", icon: Truck },
-  { id: "return_in_transit", label: "In Transit", icon: Truck },
-  { id: "returned", label: "Picked Up", icon: PackageCheck },
+  { id: "return_pickup_assigned", label: "Rider Assigned for Pickup", icon: Truck },
+  { id: "return_in_transit", label: "Picked Up – On the Way to Store", icon: Truck },
+  { id: "returned", label: "Received at Store", icon: PackageCheck },
   { id: "refund_completed", label: "Refund Completed", icon: Wallet },
 ];
 
-const STATUS_INDEX = RETURN_STEPS.reduce((acc, step, idx) => {
-  acc[step.id] = idx;
-  return acc;
-}, {});
+// Every backend returnStatus maps to a step. Unknown statuses used to fall back
+// to index 0, so "return_drop_pending" / "qc_passed" made the tracker jump
+// back to "Return Requested"; "returned" was also mislabelled "Picked Up".
+const STATUS_INDEX = {
+  return_requested: 0,
+  return_approved: 1,
+  return_pickup_assigned: 2,
+  return_in_transit: 3,
+  return_drop_pending: 3, // rider at the store, waiting for the seller's OTP
+  // Seller confirmed receipt (drop OTP) -> "Received at Store" is done and
+  // the refund step becomes the active one right away.
+  returned: 5,
+  qc_passed: 5,
+  refund_completed: 5,
+};
 
-const ReturnProgressTracker = ({ returnStatus }) => {
+const ReturnProgressTracker = ({ returnStatus, refundAmount }) => {
   const status = String(returnStatus || "").trim();
   if (!status || status === "none") return null;
 
-  const isRejected = status === "return_rejected";
+  const isRejected = status === "return_rejected" || status === "qc_failed";
   const currentIndex =
     typeof STATUS_INDEX[status] === "number" ? STATUS_INDEX[status] : 0;
 
   const rejectedSteps = [
     { id: "return_requested", label: "Return Requested", icon: ClipboardCheck },
-    { id: "return_rejected", label: "Return Rejected", icon: XCircle },
+    {
+      id: "return_rejected",
+      label: status === "qc_failed" ? "Return Failed Quality Check" : "Return Rejected",
+      icon: XCircle,
+    },
   ];
 
-  const steps = isRejected ? rejectedSteps : RETURN_STEPS;
+  const refundPending = status === "returned" || status === "qc_passed";
+  const amountLabel = Number(refundAmount) > 0 ? ` of ₹${refundAmount}` : "";
+  const steps = isRejected
+    ? rejectedSteps
+    : RETURN_STEPS.map((step) =>
+        step.id === "refund_completed"
+          ? {
+              ...step,
+              label: refundPending ? `Refund${amountLabel} in Process` : `Refund${amountLabel} Completed`,
+              hint: refundPending
+                ? "Item received by the seller. Your refund is being processed after a quick quality check."
+                : null,
+            }
+          : step,
+      );
 
   return (
     <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
@@ -96,6 +124,9 @@ const ReturnProgressTracker = ({ returnStatus }) => {
                   >
                     {step.label}
                   </p>
+                  {isActive && step.hint && (
+                    <p className="text-xs text-slate-500 mt-0.5">{step.hint}</p>
+                  )}
                 </div>
               </div>
 

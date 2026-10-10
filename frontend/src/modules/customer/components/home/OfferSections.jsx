@@ -3,6 +3,7 @@ import { motion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 import Lottie from "lottie-react";
 import ProductCard from "../shared/ProductCard";
+import { isProductOutOfStock } from "../../utils/stock";
 import {
   getBackgroundColorByValue,
   getBackgroundGradientByValue,
@@ -19,7 +20,8 @@ const OfferSections = ({ sections, noServiceData }) => {
         .map((section) => {
           const bgColor = getBackgroundColorByValue(section.backgroundColor);
           const sectionProducts = (section.productIds || [])
-            .filter((p) => typeof p === "object" && p !== null)
+            // browsing surface: out-of-stock products are hidden (they show only in search)
+            .filter((p) => typeof p === "object" && p !== null && !isProductOutOfStock(p))
             .map((p) => ({
               id: p._id,
               _id: p._id,

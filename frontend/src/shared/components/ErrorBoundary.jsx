@@ -1,4 +1,4 @@
-import React, { Component } from 'react';
+import { Component } from 'react';
 import { AlertCircle, RefreshCw, Home, ShoppingBag } from 'lucide-react';
 import { isChunkLoadError, reloadOnceForChunkError } from '@core/utils/chunkReload';
 
