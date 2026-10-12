@@ -53,6 +53,12 @@ const STATUS_SELECT_STYLES = {
     error: 'bg-danger/10 text-danger focus:ring-danger/30',
 };
 
+// Today's date (yyyy-MM-dd) in the seller's local time, not UTC
+const localToday = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
 const Orders = () => {
     const { orders: ordersFromContext } = useSellerOrders();
     const [orders, setOrders] = useState([]);
@@ -217,7 +223,7 @@ const Orders = () => {
     };
 
     const tabs = ['All', 'Pending', 'Confirmed', 'Packed', 'Out for Delivery', 'Delivered', 'Cancelled'];
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = localToday();
 
     const safeOrders = useMemo(
         () => (Array.isArray(orders) ? orders : []),
@@ -509,7 +515,7 @@ const Orders = () => {
                                                 setPage(1);
                                                 return;
                                             }
-                                            const today = new Date().toISOString().split("T")[0];
+                                            const today = localToday();
                                             if (value > today) {
                                                 showToast("Start date cannot be in the future", "error");
                                                 return;
@@ -539,7 +545,7 @@ const Orders = () => {
                                                 setPage(1);
                                                 return;
                                             }
-                                            const today = new Date().toISOString().split("T")[0];
+                                            const today = localToday();
                                             if (value > today) {
                                                 showToast("End date cannot be in the future", "error");
                                                 return;

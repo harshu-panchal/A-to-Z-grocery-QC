@@ -1,4 +1,5 @@
 import { Suspense, useEffect } from 'react';
+import Loader from '@shared/components/ui/Loader';
 import { Outlet } from 'react-router-dom';
 import { setActiveRole, ROLES } from '../auth/activeRoleStore';
 
@@ -32,7 +33,7 @@ const CustomerLayoutWrapper = () => {
                             <ScrollToTop />
                             <LocationSetupGate />
                             <CustomerLayout>
-                                <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                                <Suspense fallback={<Loader fullScreen />}>
                                     <Outlet />
                                 </Suspense>
                             </CustomerLayout>

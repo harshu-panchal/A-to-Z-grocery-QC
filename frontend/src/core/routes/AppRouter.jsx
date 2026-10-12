@@ -1,4 +1,5 @@
 import { lazy, useMemo, Suspense } from 'react';
+import Loader from '@shared/components/ui/Loader';
 import { createBrowserRouter, RouterProvider, Outlet, Navigate } from 'react-router-dom';
 import ProtectedRoute from '../guards/ProtectedRoute';
 import RoleGuard from '../guards/RoleGuard';
@@ -72,7 +73,7 @@ const AppRouter = () => {
                 {
                     path: 'login',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <CustomerAuth />
                         </Suspense>
                     ),
@@ -80,7 +81,7 @@ const AppRouter = () => {
                 {
                     path: 'signup',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <CustomerAuth />
                         </Suspense>
                     ),
@@ -88,7 +89,7 @@ const AppRouter = () => {
                 {
                     path: 'seller/auth',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <Auth />
                         </Suspense>
                     ),
@@ -96,7 +97,7 @@ const AppRouter = () => {
                 {
                     path: 'seller/terms',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <SellerTermsPage />
                         </Suspense>
                     ),
@@ -104,7 +105,7 @@ const AppRouter = () => {
                 {
                     path: 'seller/privacy',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <SellerPrivacyPage />
                         </Suspense>
                     ),
@@ -112,7 +113,7 @@ const AppRouter = () => {
                 {
                     path: 'seller/about',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <SellerAboutPage />
                         </Suspense>
                     ),
@@ -120,7 +121,7 @@ const AppRouter = () => {
                 {
                     path: 'seller/support',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <SellerSupportPage />
                         </Suspense>
                     ),
@@ -128,7 +129,7 @@ const AppRouter = () => {
                 {
                     path: 'seller/pending-approval',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <ApplicationPending />
                         </Suspense>
                     ),
@@ -136,7 +137,7 @@ const AppRouter = () => {
                 {
                     path: 'delivery/terms',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <DeliveryTermsPage />
                         </Suspense>
                     ),
@@ -144,7 +145,7 @@ const AppRouter = () => {
                 {
                     path: 'delivery/privacy',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <DeliveryPrivacyPage />
                         </Suspense>
                     ),
@@ -152,7 +153,7 @@ const AppRouter = () => {
                 {
                     path: 'delivery/about',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <DeliveryAboutPage />
                         </Suspense>
                     ),
@@ -160,7 +161,7 @@ const AppRouter = () => {
                 {
                     path: 'admin/auth',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <AdminAuth />
                         </Suspense>
                     ),
@@ -168,7 +169,7 @@ const AppRouter = () => {
                 {
                     path: 'delivery/auth',
                     element: (
-                        <Suspense fallback={<div className="flex h-screen items-center justify-center font-outfit">Loading...</div>}>
+                        <Suspense fallback={<Loader fullScreen />}>
                             <DeliveryAuth />
                         </Suspense>
                     ),

@@ -169,13 +169,28 @@ const ProductManagement = () => {
   // calls — the rendered result is identical either way, since
   // `filteredProducts` re-filters the same fetched page client-side
   // regardless of when it last actually re-fetched.
+  // Search and category go to the server too, so they cover every page of
+  // the catalogue (debounced so typing doesn't fire a request per key)
+  const [debouncedSearch, setDebouncedSearch] = useState(searchTerm.trim());
+  useEffect(() => {
+    const id = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 350);
+    return () => clearTimeout(id);
+  }, [searchTerm]);
+
   useEffect(() => {
     setPage(1);
-  }, [filterApproval, sortBy, pageSize]);
+  }, [filterApproval, sortBy, pageSize, debouncedSearch, filterCategory]);
 
   const productsQueryParams = useMemo(
-    () => ({ page, limit: pageSize, sort: sortBy, approvalStatus: filterApproval }),
-    [page, pageSize, sortBy, filterApproval],
+    () => ({
+      page,
+      limit: pageSize,
+      sort: sortBy,
+      approvalStatus: filterApproval,
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      ...(filterCategory !== "all" ? { categoryId: filterCategory } : {}),
+    }),
+    [page, pageSize, sortBy, filterApproval, debouncedSearch, filterCategory],
   );
 
   const {

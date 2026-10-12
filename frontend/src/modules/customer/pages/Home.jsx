@@ -251,7 +251,9 @@ const Home = () => {
     if (persist && cacheKey) homePageDataCache.set(cacheKey, data);
   };
 
-  const fetchData = async ({ forceRefresh = false } = {}) => {
+  const fetchSeqRef = useRef(0);
+  const fetchData = async ({ forceRefresh = false, attempt = 0 } = {}) => {
+    const seq = ++fetchSeqRef.current;
     const cacheKey = getHomePageDataCacheKey(currentLocation);
     // Show the cached copy instantly, but always refetch in the background so
     // newly created offer sections / products appear without a page reload
@@ -312,7 +314,19 @@ const Home = () => {
       const sectionsList = sectionsRes?.data?.results || sectionsRes?.data?.result || sectionsRes?.data;
       nextHomeData.offerSections = Array.isArray(sectionsList) ? sectionsList : [];
       applyHomePageData(nextHomeData, { cacheKey });
-    } catch (error) { console.error("Error:", error); } finally { setLoadedForKey(cacheKey); setIsLoading(false); }
+      setLoadedForKey(cacheKey);
+      setIsLoading(false);
+    } catch (error) {
+      console.error("Error:", error);
+      // A failed/slow request is not "no service here": keep loading and retry
+      // (twice, 3 s apart) instead of showing the service-unavailable screen
+      if (attempt < 2) {
+        setTimeout(() => { if (seq === fetchSeqRef.current) fetchData({ forceRefresh: true, attempt: attempt + 1 }); }, 3000);
+      } else {
+        setLoadedForKey(cacheKey);
+        setIsLoading(false);
+      }
+    }
   };
 
   const hydrateSelectedSectionProducts = async (sections = []) => {
@@ -487,9 +501,12 @@ const Home = () => {
       onSeeAllHeader={() => navigate(`/category/${activeCategory._id}`)}
     />
   );
+  // Offer sections ("Trending" etc.) show on the All tab only
+  const visibleOfferSections = isHeaderTab ? [] : offerSections;
+
   const adminSections = (
     <>
-      <OfferSections sections={offerSections} noServiceData={noServiceData} />
+      <OfferSections sections={visibleOfferSections} noServiceData={noServiceData} />
       {sectionsForRenderer.length > 0 && (
         <div className="container mx-auto px-4 md:px-8 lg:px-[50px] py-10 md:py-16">
           <SectionRenderer sections={sectionsForRenderer} productsById={productsById} categoriesById={categoryMap} subcategoriesById={subcategoryMap} />
@@ -511,7 +528,7 @@ const Home = () => {
         products={tabProducts}
         quickCategories={effectiveQuickCategories}
         categoryMap={categoryMap}
-        offerSections={<OfferSections sections={offerSections} noServiceData={noServiceData} design="atz" />}>
+        offerSections={<OfferSections sections={visibleOfferSections} noServiceData={noServiceData} design="atz" />}>
         {headerTabEmpty}
         {isHeaderTab && (
           <CategoryProductRows

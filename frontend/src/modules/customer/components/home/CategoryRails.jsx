@@ -137,7 +137,8 @@ const CategoryRails = ({ categoryMap, latitude, longitude, onSeeAll, design }) =
   }, []);
 
 
-  if (!candidates.length) return null;
+  // products need a location; wait for it instead of firing requests that fail
+  if (!location || !candidates.length) return null;
 
   // Check several categories at once; a shelf shows only once every earlier
   // category has settled. Only the first shelf of each keyword group gets the

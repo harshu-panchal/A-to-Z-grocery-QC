@@ -14,6 +14,7 @@ import LocationDrawer from "./LocationDrawer";
 import { useLocation } from "../../context/LocationContext";
 import { useProductDetail } from "../../context/ProductDetailContext";
 import { useSettings } from "@core/context/SettingsContext";
+import { useCart } from "../../context/CartContext";
 import { cn } from "@/lib/utils";
 import { applyCloudinaryTransform } from "@/core/utils/imageUtils";
 import {
@@ -21,7 +22,7 @@ import {
   buildMiniCartColor,
   buildSearchBarBackgroundColor,
 } from "../../utils/headerTheme";
-import LogoImage from "../../../../assets/Logo.png";
+import LogoImage from "../../../../assets/atoz-logo.webp";
 
 // MUI Icons
 import AccessTimeIcon from "@mui/icons-material/AccessTime";
@@ -160,6 +161,7 @@ const MainLocationHeader = ({
   const { scrollY } = useScroll();
   const [isLocationOpen, setIsLocationOpen] = useState(false);
   const [cartAnimData, setCartAnimData] = useState(null);
+  const { cartCount } = useCart();
 
   // Decorative cart animation: load the Lottie player + JSON only after the page
   // is idle so they stay off the critical path (a static cart icon shows meanwhile).
@@ -292,7 +294,6 @@ const MainLocationHeader = ({
   // Helper to hide elements completely when collapsed to prevent clicks
   const displayContent = useTransform(scrollY, (value) => "block");
   const displayNav = useTransform(scrollY, (value) => "flex");
-  const displayCart = useTransform(scrollY, (value) => "block");
 
   const baseHeaderColor = activeCategory?.headerColor || "var(--primary)";
   const headerFontColor = activeCategory?.headerFontColor || "#111827";
@@ -341,12 +342,11 @@ const MainLocationHeader = ({
             style={{
               opacity: cartOpacity,
               scale: cartScale,
-              display: displayCart,
             }}
             type="button"
             aria-label="Open cart"
             onClick={() => navigate("/checkout")}
-            className="absolute top-3 right-5 sm:top-4 sm:right-6 md:top-5 md:right-8 z-20 w-12 h-12 sm:w-14 sm:h-14 md:w-20 md:h-20 cursor-pointer">
+            className="md:hidden absolute top-3 right-5 sm:top-4 sm:right-6 z-20 w-12 h-12 sm:w-14 sm:h-14 cursor-pointer">
             {cartAnimData ? (
               <Suspense fallback={<CartIconPlaceholder />}>
                 <Lottie
@@ -357,6 +357,11 @@ const MainLocationHeader = ({
               </Suspense>
             ) : (
               <CartIconPlaceholder />
+            )}
+            {cartCount > 0 && (
+              <span className="absolute -top-1 -right-1 grid min-w-[22px] h-[22px] place-items-center rounded-full bg-red-500 px-1.5 text-[11px] font-bold text-white shadow ring-2 ring-white">
+                {cartCount > 99 ? "99+" : cartCount}
+              </span>
             )}
           </motion.button>
 
@@ -474,9 +479,11 @@ const MainLocationHeader = ({
                 style={{ color: headerFontColor }}
               >
                 <ShoppingCartOutlinedIcon sx={{ fontSize: 24 }} />
-                <span className="absolute -top-1.5 -right-1.5 bg-yellow-400 text-brand-900 text-[9px] font-black w-4.5 h-4.5 rounded-full flex items-center justify-center border-2 border-brand-800 shadow-sm transition-transform group-hover:-translate-y-0.5">
-                  0
-                </span>
+                {cartCount > 0 && (
+                  <span className="absolute -top-1.5 -right-2 bg-yellow-400 text-brand-900 text-[9px] font-black min-w-[18px] h-[18px] px-1 rounded-full flex items-center justify-center border-2 border-brand-800 shadow-sm transition-transform group-hover:-translate-y-0.5">
+                    {cartCount > 99 ? "99+" : cartCount}
+                  </span>
+                )}
               </motion.button>
 
               <motion.button

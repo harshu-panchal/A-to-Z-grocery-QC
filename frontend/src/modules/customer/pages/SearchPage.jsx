@@ -17,6 +17,29 @@ import Lottie from 'lottie-react';
 // Shared empty array: a fresh [] each render made results -> setResults loop forever
 const EMPTY_LIST = [];
 
+const PLACEHOLDER_IMAGE = "https://images.unsplash.com/photo-1550989460-0adf9ea622e2?auto=format&fit=crop&q=80&w=400&h=400";
+
+const toSearchProducts = (response) => {
+    if (!response?.data?.success) return [];
+    const rawResult = response.data.result;
+    const dbProds = Array.isArray(response.data.results)
+        ? response.data.results
+        : Array.isArray(rawResult?.items)
+        ? rawResult.items
+        : Array.isArray(rawResult)
+        ? rawResult
+        : [];
+    return dbProds.map(p => ({
+        ...p,
+        id: p._id,
+        image: p.mainImage || p.image || PLACEHOLDER_IMAGE,
+        price: p.sellingPrice || p.mrp,
+        originalPrice: p.mrp,
+        weight: p.weight || '1 unit',
+        deliveryTime: '8-15 mins'
+    }));
+};
+
 const SearchPage = () => {
     const navigate = useNavigate();
     const location = useRouterLocation();
@@ -129,31 +152,25 @@ const SearchPage = () => {
                 // Search is the one place out-of-stock products appear (shown greyed out)
                 includeOutOfStock: true,
             });
-            if (response.data.success) {
-                const rawResult = response.data.result;
-                const dbProds = Array.isArray(response.data.results)
-                    ? response.data.results
-                    : Array.isArray(rawResult?.items)
-                    ? rawResult.items
-                    : Array.isArray(rawResult)
-                    ? rawResult
-                    : [];
-                return dbProds.map(p => ({
-                    ...p,
-                    id: p._id,
-                    image:
-                      p.mainImage ||
-                      p.image ||
-                      "https://images.unsplash.com/photo-1550989460-0adf9ea622e2?auto=format&fit=crop&q=80&w=400&h=400",
-                    price: p.sellingPrice || p.mrp,
-                    originalPrice: p.mrp,
-                    weight: p.weight || '1 unit',
-                    deliveryTime: '8-15 mins'
-                }));
-            }
-            return [];
+            return toSearchProducts(response);
         },
         enabled: hasValidLocation,
+        placeholderData: keepPreviousData,
+    });
+
+    // The list above is only the first 100 products, so a typed term is also
+    // searched on the server (out-of-stock included, shown greyed out)
+    const searchTerm = debouncedQuery.trim();
+    const { data: serverResults = EMPTY_LIST, isFetching: isSearching } = useQuery({
+        queryKey: ['customer', 'searchProducts', searchTerm, hasValidLocation ? currentLocation.latitude : null, hasValidLocation ? currentLocation.longitude : null],
+        queryFn: async () => toSearchProducts(await customerApi.getProducts({
+            search: searchTerm,
+            limit: 100,
+            lat: currentLocation.latitude,
+            lng: currentLocation.longitude,
+            includeOutOfStock: true,
+        })),
+        enabled: hasValidLocation && searchTerm.length > 0,
         placeholderData: keepPreviousData,
     });
 
@@ -181,13 +198,21 @@ const SearchPage = () => {
     };
 
     // Real-time filtering logic
+    // Server matches first, then local partial matches (e.g. "spr" while typing)
     const filteredResults = useMemo(() => {
-        if (!debouncedQuery.trim()) return EMPTY_LIST;
-        return allProducts.filter(p =>
-            p.name.toLowerCase().includes(debouncedQuery.toLowerCase()) ||
-            p.categoryId?.name?.toLowerCase().includes(debouncedQuery.toLowerCase())
+        const term = debouncedQuery.trim().toLowerCase();
+        if (!term) return EMPTY_LIST;
+        const local = allProducts.filter(p =>
+            p.name.toLowerCase().includes(term) ||
+            p.categoryId?.name?.toLowerCase().includes(term)
         );
-    }, [debouncedQuery, allProducts]);
+        const seen = new Set();
+        return [...serverResults, ...local].filter((p) => {
+            if (seen.has(p.id)) return false;
+            seen.add(p.id);
+            return true;
+        });
+    }, [debouncedQuery, allProducts, serverResults]);
 
     useEffect(() => {
         setResults(filteredResults);
@@ -202,7 +227,7 @@ const SearchPage = () => {
         const seen = new Set();
         const starts = [];
         const contains = [];
-        for (const p of allProducts) {
+        for (const p of [...serverResults, ...allProducts]) {
             const name = String(p.name || '').trim();
             const key = name.toLowerCase();
             if (!name || seen.has(key) || key === term) continue;
@@ -213,7 +238,7 @@ const SearchPage = () => {
             if (starts.length >= 5) break;
         }
         return [...starts, ...contains].slice(0, 5);
-    }, [query, allProducts]);
+    }, [query, allProducts, serverResults]);
 
     const handleSuggestionClick = (name) => {
         setQuery(name);
@@ -395,7 +420,7 @@ const SearchPage = () => {
                             {!isLoading && <span className="text-xs text-slate-500">{results.length} found</span>}
                         </div>
 
-                        {isLoading && allProducts.length === 0 ? (
+                        {(isLoading && allProducts.length === 0) || (results.length === 0 && (isSearching || query.trim() !== debouncedQuery.trim())) ? (
                             <ProductGridSkeleton count={6} className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 md:gap-4 lg:grid-cols-5" />
                         ) : results.length > 0 ? (
                             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 md:gap-4 lg:grid-cols-5">

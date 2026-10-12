@@ -17,7 +17,7 @@ import {
 import { toast } from 'sonner';
 import { customerApi } from '../services/customerApi';
 import BgImage from '@/assets/image.png';
-import LogoImage from '@/assets/Logo.png';
+import LogoImage from '@/assets/atoz-logo.webp';
 
 
 const CATEGORIES = [

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Product from "../models/product.js";
 import Order from "../models/order.js";
 import Review from "../models/review.js";
@@ -583,7 +584,7 @@ export const getProducts = async (req, res) => {
 export const getSellerProducts = async (req, res) => {
   try {
     const sellerId = req.user.id;
-    const { stockStatus, sort, approvalStatus } = req.query;
+    const { stockStatus, sort, approvalStatus, search, categoryId } = req.query;
     const { page, limit, skip } = getPagination(req, {
       defaultLimit: 20,
       maxLimit: 100,
@@ -591,6 +592,15 @@ export const getSellerProducts = async (req, res) => {
 
     const baseSellerQuery = { sellerId };
     const query = { ...baseSellerQuery };
+    // Search / category apply to the whole catalogue, not just the current page
+    const term = String(search || "").trim();
+    if (term) {
+      const regex = buildSearchRegex(term, { anchored: false });
+      query.$or = [{ name: regex }, { sku: regex }, { "variants.sku": regex }];
+    }
+    if (categoryId && categoryId !== "all" && mongoose.isValidObjectId(categoryId)) {
+      query.$and = [{ $or: [{ categoryId }, { headerId: categoryId }] }];
+    }
     if (stockStatus === "in") {
       query.stock = { $gt: 0 };
     } else if (stockStatus === "out") {

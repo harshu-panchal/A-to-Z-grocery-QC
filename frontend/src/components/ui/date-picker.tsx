@@ -30,7 +30,11 @@ export const DatePicker: React.FC<DatePickerProps> = ({
   const wrapperRef = React.useRef<HTMLDivElement | null>(null);
   // Stable id per DatePicker instance so we can close others when one opens
   const idRef = React.useRef<string>(Math.random().toString(36).slice(2));
-  const selectedDate = value ? new Date(value) : undefined;
+  // "yyyy-MM-dd" must be read and written in local time: new Date("2026-10-12")
+  // is UTC midnight and toISOString() converts back to UTC, which in India
+  // shifts the picked day by one.
+  const parseLocal = (d: string) => new Date(`${d}T00:00:00`);
+  const selectedDate = value ? parseLocal(value) : undefined;
 
   // Close when another DatePicker opens
   React.useEffect(() => {
@@ -72,12 +76,12 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     const d = new Date(date);
     d.setHours(0, 0, 0, 0);
     if (min) {
-      const minDate = new Date(min);
+      const minDate = parseLocal(min);
       minDate.setHours(0, 0, 0, 0);
       if (d < minDate) return true;
     }
     if (max) {
-      const maxDate = new Date(max);
+      const maxDate = parseLocal(max);
       maxDate.setHours(23, 59, 59, 999);
       if (d > maxDate) return true;
     }
@@ -93,8 +97,7 @@ export const DatePicker: React.FC<DatePickerProps> = ({
     if (isDisabled(date)) {
       return;
     }
-    const iso = date.toISOString().split("T")[0];
-    onChange(iso);
+    onChange(format(date, "yyyy-MM-dd"));
     setOpen(false);
   };
 

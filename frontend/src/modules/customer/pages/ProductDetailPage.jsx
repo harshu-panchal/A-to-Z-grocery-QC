@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
-import { useParams, useNavigate, Link } from 'react-router-dom';
-import { Heart, Plus, Minus, Star, ShieldCheck, Clock, ArrowLeft, MessageSquare } from 'lucide-react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { Heart, Plus, Minus, Star, ShieldCheck, Clock, X, MessageSquare } from 'lucide-react';
 import { useCart } from '../context/CartContext';
 import { useWishlist } from '../context/WishlistContext';
 import { useToast } from '@shared/components/ui/Toast';
@@ -211,9 +211,16 @@ const ProductDetailPage = () => {
 
     return (
         <div className="relative z-10 pt-8 pb-40 md:pb-8 w-full max-w-[1920px] mx-auto px-4 md:px-[50px] animate-in fade-in duration-700 mt-24">
-            <Link to={-1} className="inline-flex items-center gap-2 text-slate-500 hover:text-primary font-bold mb-6 transition-colors group">
-                <ArrowLeft size={20} className="group-hover:-translate-x-1 transition-transform" /> Back
-            </Link>
+            <div className="flex justify-end mb-6">
+                <button
+                    type="button"
+                    onClick={() => (window.history.length > 1 ? navigate(-1) : navigate('/'))}
+                    aria-label="Close"
+                    className="grid h-10 w-10 place-items-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-sm transition-colors hover:text-red-500"
+                >
+                    <X size={20} strokeWidth={2.5} />
+                </button>
+            </div>
 
             <div className="flex flex-col lg:flex-row gap-10 xl:gap-16">
                 <div className="lg:w-[45%] xl:w-[40%] space-y-4">

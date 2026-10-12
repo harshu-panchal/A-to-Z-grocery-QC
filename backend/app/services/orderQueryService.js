@@ -52,6 +52,21 @@ function normalizeSellerStatusFilter(statusParam) {
   return {};
 }
 
+// Filter dates arrive as "yyyy-MM-dd" picked in India. A bare new Date(d) is
+// UTC midnight (05:30 IST) and setHours() uses the server's timezone, so
+// build the day's start/end explicitly in IST.
+const IST_OFFSET = "+05:30";
+const isPlainDate = (d) => /^\d{4}-\d{2}-\d{2}$/.test(String(d || ""));
+export function dayStartIST(d) {
+  return isPlainDate(d) ? new Date(`${d}T00:00:00.000${IST_OFFSET}`) : new Date(d);
+}
+export function dayEndIST(d) {
+  if (isPlainDate(d)) return new Date(`${d}T23:59:59.999${IST_OFFSET}`);
+  const end = new Date(d);
+  end.setHours(23, 59, 59, 999);
+  return end;
+}
+
 function appendDateRange(query, { startDate, endDate }) {
   if (!startDate && !endDate) {
     return query;
@@ -59,12 +74,10 @@ function appendDateRange(query, { startDate, endDate }) {
 
   const range = {};
   if (startDate) {
-    range.$gte = new Date(startDate);
+    range.$gte = dayStartIST(startDate);
   }
   if (endDate) {
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
-    range.$lte = end;
+    range.$lte = dayEndIST(endDate);
   }
 
   return {
@@ -672,12 +685,10 @@ export async function getSellerReturns({
   if (startDate || endDate) {
     query.returnRequestedAt = {};
     if (startDate) {
-      query.returnRequestedAt.$gte = new Date(startDate);
+      query.returnRequestedAt.$gte = dayStartIST(startDate);
     }
     if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      query.returnRequestedAt.$lte = end;
+      query.returnRequestedAt.$lte = dayEndIST(endDate);
     }
   }
 

@@ -12,7 +12,7 @@ export default function SeoHead() {
     useEffect(() => {
         if (!settings) return;
 
-        const title = settings.metaTitle || settings.appName || 'App';
+        const title = settings.metaTitle || settings.appName || 'A to Z Grocery';
         document.title = title;
 
         const desc = settings.metaDescription || '';

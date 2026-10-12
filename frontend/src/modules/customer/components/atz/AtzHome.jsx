@@ -6,6 +6,7 @@ import LocationDrawer from "../shared/LocationDrawer";
 import CategoryRails from "../home/CategoryRails";
 import Shelf from "./Shelf";
 import { useLocation } from "../../context/LocationContext";
+import { useCart } from "../../context/CartContext";
 import { useSettings } from "@core/context/SettingsContext";
 import { applyCloudinaryTransform } from "@/core/utils/imageUtils";
 import { onlyInStock } from "../../utils/stock";
@@ -30,6 +31,7 @@ const AtzHome = ({ categories, activeCategory, onCategorySelect, banners, produc
   const navigate = useNavigate();
   const { currentLocation, isFetchingLocation } = useLocation();
   const { settings } = useSettings();
+  const { cartCount } = useCart();
   const [isLocationOpen, setIsLocationOpen] = useState(false);
   const isHeaderTab = Boolean(activeCategory && activeCategory._id !== "all");
   const eta = settings?.estimatedDeliveryTime?.trim() || currentLocation?.time || "15–20 mins";
@@ -64,9 +66,15 @@ const AtzHome = ({ categories, activeCategory, onCategorySelect, banners, produc
               <AtzIcon name="arrow" size={14} />
             </button>
           </div>
-          <button type="button" className="icon-button" aria-label="Notifications" onClick={() => navigate("/notifications")}>
-            <AtzIcon name="bell" />
-          </button>
+          <div className="header-actions">
+            <button type="button" className="icon-button" aria-label="Notifications" onClick={() => navigate("/notifications")}>
+              <AtzIcon name="bell" />
+            </button>
+            <button type="button" className="icon-button cart-button" aria-label={`Cart, ${cartCount} items`} onClick={() => navigate("/checkout")}>
+              <AtzIcon name="bag" />
+              {cartCount > 0 && <span className="cart-badge">{cartCount > 99 ? "99+" : cartCount}</span>}
+            </button>
+          </div>
         </div>
         <div className="search-box" onClick={() => navigate("/search")}>
           <AtzIcon name="search" />

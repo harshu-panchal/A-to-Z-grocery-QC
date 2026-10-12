@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, useMemo } from 'react';
 import { motion, AnimatePresence, useAnimation } from 'framer-motion';
 import { Link, useLocation } from 'react-router-dom';
-import { ChevronDown, Heart, Search, Clock, Minus, Plus, Trash2, ShoppingBag, Star, MessageSquare, ArrowLeft, ChevronRight } from 'lucide-react';
+import { ChevronDown, Heart, Search, Clock, Minus, Plus, Trash2, ShoppingBag, Star, MessageSquare, ChevronRight, X } from 'lucide-react';
 import { useProductDetail } from '../../context/ProductDetailContext';
 import { useCart } from '../../context/CartContext';
 import { useWishlist } from '../../context/WishlistContext';
@@ -361,22 +361,24 @@ const ProductDetailSheet = () => {
                         transition={{ type: 'spring', damping: 28, stiffness: 380 }}
                         className="hidden md:flex fixed z-[230] top-[72px] bottom-[16px] left-[3%] right-[3%] lg:left-[6%] lg:right-[6%] xl:left-[12%] xl:right-[12%] bg-white rounded-3xl shadow-[0_40px_100px_rgba(0,0,0,0.25)] overflow-hidden"
                     >
+                        {/* Close (✕) in the modal's top-right corner */}
+                        <motion.button
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.9 }}
+                            onClick={closeProduct}
+                            aria-label="Close"
+                            className="absolute top-4 right-4 z-30 w-10 h-10 bg-white rounded-full shadow-md shadow-black/10 flex items-center justify-center hover:shadow-lg transition-all border border-gray-100"
+                        >
+                            <X size={18} className="text-gray-700" strokeWidth={2.5} />
+                        </motion.button>
+
                         {/* Parent flex container that holds both sides together so the whole modal scrolls */}
                         <div className="flex w-full min-h-full">
                                 {/* Left: Image Gallery — sticky to window so it doesn't scroll out of view if you want */}
                                 <div className="relative w-[42%] lg:w-[44%] flex-shrink-0 flex flex-col min-h-full sticky top-0" style={{ background: 'linear-gradient(145deg, #f9fafb 0%, #f1f8f2 50%, #fafbfc 100%)' }}>
-                                    {/* Top bar with back + wishlist */}
+                                    {/* Top bar: discount badge, then wishlist + close on the right */}
                                     <div className="absolute top-0 left-0 right-0 flex items-center justify-between p-5 z-20">
-                                        <motion.button
-                                            whileHover={{ scale: 1.05 }}
-                                            whileTap={{ scale: 0.9 }}
-                                            onClick={closeProduct}
-                                            className="w-10 h-10 bg-white/95 backdrop-blur-md rounded-xl shadow-md shadow-black/5 flex items-center justify-center hover:shadow-lg transition-all border border-gray-100/80"
-                                        >
-                                            <ArrowLeft size={18} className="text-gray-700" strokeWidth={2.5} />
-                                        </motion.button>
-
-                                        {/* Discount Badge (center) */}
+                                        {/* Discount Badge */}
                                         {(selectedProduct.originalPrice > selectedProduct.price) && (
                                             <motion.div
                                                 initial={{ scale: 0, rotate: -10 }}
@@ -388,6 +390,7 @@ const ProductDetailSheet = () => {
                                             </motion.div>
                                         )}
 
+                                        <div className="ml-auto flex items-center gap-2">
                                         <motion.button
                                             whileHover={{ scale: 1.05 }}
                                             whileTap={{ scale: 0.9 }}
@@ -402,6 +405,7 @@ const ProductDetailSheet = () => {
                                                 isWishlisted ? 'text-red-500 fill-red-500' : 'text-gray-400 hover:text-red-400'
                                             )} />
                                         </motion.button>
+                                        </div>
                                     </div>
 
                                     {/* Main content area: vertical thumbnails + main image */}
@@ -835,17 +839,15 @@ const ProductDetailSheet = () => {
                         )}
 
                         {/* Header Actions (Absolute & Sticky) */}
-                        <div className="absolute top-0 left-0 right-0 p-4 flex justify-between items-center z-40 pointer-events-none">
+                        <div className="absolute top-0 left-0 right-0 p-4 flex justify-end items-center z-40 pointer-events-none">
                             <motion.button
                                 onClick={closeProduct}
                                 whileTap={{ scale: 0.9 }}
+                                aria-label="Close"
                                 className="w-10 h-10 bg-white shadow-lg rounded-full flex items-center justify-center border border-gray-100 pointer-events-auto"
                             >
-                                <ArrowLeft size={24} className="text-primary" strokeWidth={3} />
+                                <X size={22} className="text-gray-700" strokeWidth={2.5} />
                             </motion.button>
-                            <div className="flex gap-3 pointer-events-auto invisible">
-                                {/* Hidden as per request to simplify the view */}
-                            </div>
                         </div>
 
                         {/* Scrollable Content */}
