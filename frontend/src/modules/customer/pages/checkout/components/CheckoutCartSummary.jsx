@@ -2,6 +2,7 @@ import React from "react";
 import { Plus, Minus, Trash2, X } from "lucide-react";
 import { applyCloudinaryTransform } from "@/core/utils/imageUtils";
 import { getAvailableStock } from "../../../context/CartContext";
+import QuantityInput from "../../../components/shared/QuantityInput";
 
 /**
  * CheckoutCartSummary
@@ -79,9 +80,13 @@ const CheckoutCartSummary = React.memo(function CheckoutCartSummary({
                   className="text-white p-1 hover:bg-white/20 rounded transition-colors">
                   {item.quantity > 1 ? <Minus size={14} strokeWidth={3} /> : <Trash2 size={14} strokeWidth={2.5} />}
                 </button>
-                <span className="text-white font-bold min-w-[20px] text-center">
-                  {item.quantity}
-                </span>
+                <QuantityInput
+                  productId={item.id || item._id}
+                  variantSku={item.variantSku}
+                  quantity={item.quantity}
+                  label={`${item.name} quantity`}
+                  className="w-8 bg-transparent text-center font-bold text-white outline-none rounded focus:bg-white/20"
+                />
                 <button
                   onClick={() => onUpdateQuantity(item.id || item._id, 1, item.variantSku)}
                   disabled={atMax}

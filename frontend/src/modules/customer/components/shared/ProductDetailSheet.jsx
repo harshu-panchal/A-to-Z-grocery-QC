@@ -8,6 +8,7 @@ import { useWishlist } from '../../context/WishlistContext';
 import { useToast } from '@shared/components/ui/Toast';
 import { useSettings } from '@core/context/SettingsContext';
 import { useLocation as useAppLocation } from '../../context/LocationContext';
+import QuantityInput from './QuantityInput';
 import { cn } from '@/lib/utils';
 import { applyCloudinaryTransform } from '@/core/utils/imageUtils';
 import { customerApi } from '../../services/customerApi';
@@ -557,7 +558,7 @@ const ProductDetailSheet = () => {
                                                             <motion.button whileTap={{ scale: 0.85 }} onClick={handleDecrement} className="w-9 h-9 bg-brand-50 rounded-lg flex items-center justify-center text-brand-700 hover:bg-brand-100 transition-colors">
                                                                 <Minus size={16} strokeWidth={2.5} />
                                                             </motion.button>
-                                                            <span className="font-[800] text-base text-gray-800 w-8 text-center">{quantity}</span>
+                                                            <QuantityInput productId={selectedProduct.id} variantSku={variantKey} quantity={quantity} label={`${selectedProduct.name} quantity`} className="font-[800] text-base text-gray-800 w-10 h-9 text-center bg-transparent rounded-md outline-none focus:ring-2 focus:ring-primary/30" />
                                                             <motion.button whileTap={{ scale: 0.85 }} onClick={handleIncrement} disabled={selectedOutOfStock} aria-label="Increase quantity" className="w-9 h-9 bg-primary rounded-lg flex items-center justify-center text-white hover:bg-[var(--brand-400)] transition-colors shadow-sm disabled:opacity-40">
                                                                 <Plus size={16} strokeWidth={2.5} />
                                                             </motion.button>
@@ -1118,7 +1119,7 @@ const ProductDetailSheet = () => {
                                             >
                                                 {quantity === 1 ? <Trash2 size={17} strokeWidth={2.5} /> : <Minus size={18} strokeWidth={3.5} />}
                                             </motion.button>
-                                            <span className="font-black text-xl text-slate-800 w-8 text-center tabular-nums">{quantity}</span>
+                                            <QuantityInput productId={selectedProduct.id} variantSku={variantKey} quantity={quantity} label={`${selectedProduct.name} quantity`} className="font-black text-xl text-slate-800 w-12 h-10 text-center tabular-nums bg-transparent rounded-lg outline-none focus:ring-2 focus:ring-primary/30" />
                                             <motion.button
                                                 whileTap={{ scale: 0.9 }}
                                                 onClick={handleIncrement}

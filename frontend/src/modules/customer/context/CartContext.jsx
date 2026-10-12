@@ -290,6 +290,24 @@ export const CartProvider = ({ children }) => {
     }
   };
 
+  // Typed quantity: clamp to 0..available stock, then apply as a delta
+  const setQuantity = (productId, qty, variantSku = "") => {
+    const normalizedVariantSku = String(variantSku || "").trim();
+    const key = `${productId}::${normalizedVariantSku || ""}`;
+    const currentItem = cart.find(
+      (item) => `${item.id || item._id}::${String(item.variantSku || "").trim()}` === key,
+    );
+    if (!currentItem) return;
+    let target = Math.max(0, Math.floor(Number(qty) || 0));
+    const max = getAvailableStock(currentItem, normalizedVariantSku);
+    if (target > max) {
+      warnStockLimit(max);
+      target = max;
+    }
+    const delta = target - currentItem.quantity;
+    if (delta !== 0) updateQuantity(productId, delta, normalizedVariantSku);
+  };
+
   const clearCart = async () => {
     if (isAuthenticated) {
       try {
@@ -317,6 +335,7 @@ export const CartProvider = ({ children }) => {
     addToCart,
     removeFromCart,
     updateQuantity,
+    setQuantity,
     clearCart,
     cartTotal,
     cartCount,

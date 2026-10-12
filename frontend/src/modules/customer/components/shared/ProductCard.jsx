@@ -12,6 +12,7 @@ import { applyCloudinaryTransform } from "@/core/utils/imageUtils";
 import { useProductDetail } from "../../context/ProductDetailContext";
 import { isProductOutOfStock, isVariantOutOfStock } from "../../utils/stock";
 import AtzIcon from "../atz/AtzIcon";
+import QuantityInput from "./QuantityInput";
 import "../atz/atz.css";
 
 const ProductCard = React.memo(
@@ -247,7 +248,7 @@ const ProductCard = React.memo(
           {quantity > 0 ? (
             <div className="quantity" role="group" aria-label={`${product.name} quantity`}>
               <button type="button" aria-label={`Remove one ${product.name}`} onClick={handleDecrement}>−</button>
-              <span aria-live="polite">{quantity}</span>
+              <QuantityInput productId={productId} variantSku={variantKey} quantity={quantity} label={`${product.name} quantity`} className="qty-input" />
               <button type="button" aria-label={`Add one ${product.name}`} onClick={handleIncrement} disabled={outOfStock || quantity >= maxQuantity} title={quantity >= maxQuantity ? `Only ${maxQuantity} available` : undefined}>+</button>
             </div>
           ) : (

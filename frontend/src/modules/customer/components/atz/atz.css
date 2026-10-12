@@ -139,3 +139,5 @@
 .atz .header-actions { display: flex; gap: 8px; flex-shrink: 0; align-self: flex-start; }
 .atz .cart-button { position: relative; }
 .atz .cart-badge { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #e5484d; color: #fff; font-size: 11px; font-weight: 700; line-height: 20px; text-align: center; box-shadow: 0 0 0 2px #1a7a45; }
+.atz .product-bottom .quantity .qty-input { width: 22px; border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-align: center; outline: none; border-radius: 4px; }
+.atz .product-bottom .quantity .qty-input:focus { background: #fff; box-shadow: 0 0 0 1px #9bbb8b; }
