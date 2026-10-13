@@ -9,7 +9,7 @@ import { invalidate, buildKey } from "./cacheService.js";
 // to the 5-minute cache TTL. Both call sites below invalidate every
 // touched product's detail cache plus the shared listing cache once per
 // call rather than per line-item.
-async function invalidateProductStockCache(productIds) {
+export async function invalidateProductStockCache(productIds) {
   const uniqueIds = [...new Set(productIds.map((id) => String(id)).filter(Boolean))];
   if (uniqueIds.length === 0) return;
   await Promise.all(

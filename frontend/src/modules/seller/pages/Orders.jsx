@@ -42,6 +42,8 @@ import { createSocketTokenReader } from '@core/utils/authStorage';
 import { STORAGE_KEYS } from '@core/utils/storage';
 import ConfirmDialog from '@shared/components/ui/ConfirmDialog';
 import useConfirmDialog from '@shared/hooks/useConfirmDialog';
+import PackScanModal from '../../pos/PackScanModal';
+import { ScanLine } from 'lucide-react';
 
 /** Semantic variant (from getOrderStatusVariant) -> select-control tint classes. Shared across the mobile list, desktop table, and details modal so all three read the same colors for the same status. */
 const STATUS_SELECT_STYLES = {
@@ -82,6 +84,9 @@ const Orders = () => {
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
     const [isQuickViewModalOpen, setIsQuickViewModalOpen] = useState(false);
     const [selectedOrder, setSelectedOrder] = useState(null);
+    // order being packed with the barcode scanner
+    const [packingOrder, setPackingOrder] = useState(null);
+    const canPack = (o) => ['Pending', 'Confirmed', 'Packed'].includes(o.status);
     const { showToast } = useToast();
     const statusConfirm = useConfirmDialog();
     const [page, setPage] = useState(1);
@@ -422,18 +427,37 @@ const Orders = () => {
             key: 'actions',
             align: 'right',
             cell: (order) => (
-                <button
-                    onClick={() => handleViewDetails(order)}
-                    className="p-1.5 hover:bg-primary/10 hover:text-primary rounded-lg transition-all text-slate-500"
-                >
-                    <HiOutlineEye className="h-4 w-4" />
-                </button>
+                <div className="flex justify-end gap-1">
+                    {canPack(order) && (
+                        <button
+                            onClick={() => setPackingOrder(order)}
+                            title="Scan & pack"
+                            className="p-1.5 hover:bg-violet-50 hover:text-violet-700 rounded-lg transition-all text-slate-500"
+                        >
+                            <ScanLine className="h-4 w-4" />
+                        </button>
+                    )}
+                    <button
+                        onClick={() => handleViewDetails(order)}
+                        className="p-1.5 hover:bg-primary/10 hover:text-primary rounded-lg transition-all text-slate-500"
+                    >
+                        <HiOutlineEye className="h-4 w-4" />
+                    </button>
+                </div>
             ),
         },
     ];
 
     return (
         <div className="space-y-5">
+            {packingOrder && (
+                <PackScanModal
+                    portal="seller"
+                    orderId={packingOrder._id || packingOrder.id}
+                    onClose={() => setPackingOrder(null)}
+                    onPacked={packingOrder.status === 'Confirmed' ? () => { handleStatusUpdate(packingOrder.id, 'Packed'); setPackingOrder(null); } : undefined}
+                />
+            )}
             <PageHeader
                 title={
                     <span className="flex items-center gap-2">
@@ -608,9 +632,16 @@ const Orders = () => {
                                             <div className="flex flex-col items-end gap-2 shrink-0">
                                                 <Badge variant={getStatusColor(order.status)}>{order.status}</Badge>
                                                 <StatusSelect order={order} className="min-w-[110px]" />
-                                                <button onClick={() => handleViewDetails(order)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500">
-                                                    <HiOutlineEye className="h-4 w-4" />
-                                                </button>
+                                                <div className="flex gap-1">
+                                                    {canPack(order) && (
+                                                        <button onClick={() => setPackingOrder(order)} title="Scan & pack" className="p-2 hover:bg-violet-50 rounded-lg text-violet-700">
+                                                            <ScanLine className="h-4 w-4" />
+                                                        </button>
+                                                    )}
+                                                    <button onClick={() => handleViewDetails(order)} className="p-2 hover:bg-slate-100 rounded-lg text-slate-500">
+                                                        <HiOutlineEye className="h-4 w-4" />
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
                                     </motion.div>

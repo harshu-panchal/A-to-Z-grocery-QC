@@ -4,6 +4,7 @@ import DashboardLayout from "@shared/layout/DashboardLayout";
 import { setActiveRole, ROLES } from "@core/auth/activeRoleStore";
 import { useSidebarBadges } from "@core/context/SidebarBadgesContext";
 import Orders from "../pages/Orders";
+import PosRoutes, { posNavItem } from "../../pos/PosRoutes";
 import {
   HiOutlineSquares2X2,
   HiOutlineCube,
@@ -15,6 +16,7 @@ import {
   HiOutlineCreditCard,
   HiOutlineMapPin,
   HiOutlineQuestionMarkCircle,
+  HiOutlineCalculator,
 } from "react-icons/hi2";
 
 const Dashboard = React.lazy(() => import("../pages/Dashboard"));
@@ -40,6 +42,7 @@ const navItems = [
   { label: "Dashboard", path: "/seller", icon: HiOutlineSquares2X2, group: "Overview", end: true },
   { label: "Products", path: "/seller/products", icon: HiOutlineCube, group: "Catalog" },
   { label: "Stock", path: "/seller/inventory", icon: HiOutlineArchiveBox, group: "Catalog" },
+  posNavItem("seller", HiOutlineCalculator),
   { label: "Orders", path: "/seller/orders", icon: HiOutlineTruck, group: "Orders" },
   { label: "Returns", path: "/seller/returns", icon: HiOutlineArchiveBox, group: "Orders" },
   { label: "Track Orders", path: "/seller/tracking", icon: HiOutlineMapPin, group: "Orders" },
@@ -104,6 +107,7 @@ const SellerRoutes = () => {
         <Route path="/products" element={<ProductManagement />} />
         <Route path="/products/add" element={<AddProduct />} />
         <Route path="/inventory" element={<StockManagement />} />
+        <Route path="/pos/*" element={<PosRoutes portal="seller" />} />
         <Route path="/orders" element={<Orders />} />
         <Route path="/returns" element={<Returns />} />
         <Route path="/tracking" element={<DeliveryTracking />} />

@@ -71,6 +71,7 @@ import "../models/notification.js";
 import "../models/searchIndexFailure.js";
 import "../models/sellerMetrics.js";
 import "../models/stockHistory.js";
+import "../models/pos.js"; // PosOrder, PosCustomer, PosSupplier, ... (in-store billing)
 
 // Module-scoped models
 import "../modules/notifications/preference.model.js"; // NotificationPreference
@@ -139,6 +140,20 @@ export const REQUIRED_MODELS = Object.freeze([
   "SellerMetrics",
   "FinanceReports",
   "SearchIndexFailure",
+
+  // POS (in-store billing)
+  "PosCounter",
+  "PosCustomer",
+  "PosOrder",
+  "PosCreditTransaction",
+  "PosSupplier",
+  "PosSupplierTransaction",
+  "PosPurchaseEntry",
+  "PosGstRegisterEntry",
+  "PosState",
+  "PosSettings",
+  "PosPaymentIntent",
+  "PosBatch",
 ]);
 
 // ---- 3. Boot-time assertion ----

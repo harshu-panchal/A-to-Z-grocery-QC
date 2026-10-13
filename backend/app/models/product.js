@@ -130,8 +130,18 @@ const productSchema = new mongoose.Schema(
                 purchaseRate: Number,
                 stock: Number,
                 sku: String,
+                // POS: scannable code and wholesale price for this pack/size
+                barcode: { type: String, trim: true },
+                wholesalePrice: Number,
+                // Shelf/rack where this pack size is kept
+                rackCode: { type: String, trim: true },
             }
         ],
+        // POS billing fields
+        barcode: { type: String, trim: true },
+        wholesalePrice: { type: Number, min: 0 },
+        hsnCode: { type: String, trim: true },
+        gstRate: { type: Number, min: 0, max: 100, default: 0 },
         isFeatured: {
             type: Boolean,
             default: false,
@@ -166,6 +176,8 @@ productSchema.index({ subcategoryId: 1, status: 1 });
 productSchema.index({ sellerId: 1, status: 1 });
 productSchema.index({ sellerId: 1, approvalStatus: 1, createdAt: -1 });
 productSchema.index({ sellerId: 1, createdAt: -1, _id: -1 });
-productSchema.index({ name: "text", tags: "text" }); // For better search if regex is too slow
+productSchema.index({ name: "text", tags: "text" });
+productSchema.index({ barcode: 1 }, { sparse: true });
+productSchema.index({ "variants.barcode": 1 }, { sparse: true }); // For better search if regex is too slow
 
 export default mongoose.model("Product", productSchema);

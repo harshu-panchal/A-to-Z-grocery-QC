@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { sellerApi } from "../services/sellerApi";
+import VariantBarcodeField, { variantBarcodeError } from "../../pos/VariantBarcodeField";
 import { toast } from "sonner";
 import Pagination from "@shared/components/ui/Pagination";
 import { useQuery, useQueryClient, keepPreviousData } from "@tanstack/react-query";
@@ -353,6 +354,12 @@ const ProductManagement = () => {
 
   const handleSave = async () => {
     try {
+      const barcodeError = variantBarcodeError(formData.variants || []);
+      if (barcodeError) {
+        setModalTab("variants");
+        toast.error(barcodeError);
+        return;
+      }
       if (
         !formData.name ||
         formData.mrp === "" || formData.mrp === undefined ||
@@ -520,10 +527,13 @@ const ProductManagement = () => {
         expiryDate: item.expiryDate ? new Date(item.expiryDate).toISOString().split("T")[0] : "",
         showManufacturingDate: item.showManufacturingDate || false,
         showExpiryDate: item.showExpiryDate || false,
-        variants: (item.variants && item.variants.length > 0) ? item.variants.map(v => ({ ...v, id: v._id || Date.now() })) : [
+        variants: (item.variants && item.variants.length > 0) ? item.variants.map(v => ({ ...v, wholesalePrice: v.wholesalePrice ?? item.wholesalePrice ?? "", id: v._id || Date.now() })) : [
           {
             id: Date.now(),
             name: "",
+            wholesalePrice: item.wholesalePrice ?? "",
+            barcode: item.barcode || "",
+            rackCode: item.rackCode || "",
             mrp: item.mrp ?? "",
             sellingPrice: item.sellingPrice ?? "",
             purchaseRate: item.purchaseRate ?? "",
@@ -1320,6 +1330,24 @@ const ProductManagement = () => {
                               }} className="mb-0.5 shrink-0 rounded-lg p-2 text-danger hover:bg-danger/10">
                                 <HiOutlineTrash className="h-4 w-4" />
                               </button>
+                            </div>
+                            <div className="md:col-span-7">
+                              <VariantBarcodeField
+                                portal="seller"
+                                value={v.barcode}
+                                onChange={(code) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((x, idx) => (idx === i ? { ...x, barcode: code } : x)) }))}
+                                rack={v.rackCode}
+                                wholesale={v.wholesalePrice}
+                                onWholesaleChange={(val) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((x, idx) => (idx === i ? { ...x, wholesalePrice: val } : x)) }))}
+                                onRackChange={(rack) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((x, idx) => (idx === i ? { ...x, rackCode: rack } : x)) }))}
+                                productId={editingItem?._id || editingItem?.id}
+                                otherCodes={formData.variants.filter((_, idx) => idx !== i).map((x) => x.barcode)}
+                                printName={`${formData.name || ""}${v.name ? ` ${v.name}` : ""}`}
+                                mrp={v.mrp}
+                                price={v.sellingPrice || v.mrp}
+                                copies={v.stock}
+                                showErrors
+                              />
                             </div>
                           </div>
                         ))}

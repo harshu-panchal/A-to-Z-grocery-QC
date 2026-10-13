@@ -17,6 +17,7 @@ import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { sellerApi } from "../services/sellerApi";
+import VariantBarcodeField, { variantBarcodeError } from "../../pos/VariantBarcodeField";
 
 
 const AddProduct = () => {
@@ -162,6 +163,13 @@ const AddProduct = () => {
       toast.error(
         `Selling price must be lower than the MRP (variant ${invalidVariantIndex + 1})`,
       );
+      return;
+    }
+
+    const barcodeError = variantBarcodeError(formData.variants);
+    if (barcodeError) {
+      setModalTab("variants");
+      toast.error(barcodeError);
       return;
     }
 
@@ -682,6 +690,23 @@ const AddProduct = () => {
                         }}
                         placeholder={makeSku(formData.name, index + 1)}
                         className="w-full px-3 py-2 bg-white ring-1 ring-slate-200 border-none rounded-xl text-xs font-mono font-bold outline-none focus:ring-2 focus:ring-primary/10"
+                      />
+                    </div>
+                    <div className="col-span-12 md:order-last">
+                      <VariantBarcodeField
+                        portal="seller"
+                        value={variant.barcode}
+                        onChange={(code) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((v, idx) => (idx === index ? { ...v, barcode: code } : v)) }))}
+                        rack={variant.rackCode}
+                        wholesale={variant.wholesalePrice}
+                        onWholesaleChange={(val) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((v, idx) => (idx === index ? { ...v, wholesalePrice: val } : v)) }))}
+                        onRackChange={(rack) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((v, idx) => (idx === index ? { ...v, rackCode: rack } : v)) }))}
+                        otherCodes={formData.variants.filter((_, idx) => idx !== index).map((v) => v.barcode)}
+                        printName={`${formData.name || ""}${variant.name ? ` ${variant.name}` : ""}`}
+                        mrp={variant.mrp}
+                        price={variant.sellingPrice || variant.mrp}
+                        copies={variant.stock}
+                        showErrors
                       />
                     </div>
                     <div className="col-span-1 flex justify-end pb-1">

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { validateProductBarcodes } from "../services/inventory/barcodeService.js";
 import Product from "../models/product.js";
 import Order from "../models/order.js";
 import Review from "../models/review.js";
@@ -70,15 +71,29 @@ function isCustomerVisibilityRequest(req) {
 // role-agnostic — see getProducts/getProductById.
 function stripInternalPricingFields(product) {
   if (!product || typeof product !== "object") return product;
-  const { purchaseRate, rackCode, ...rest } = product;
+  const { purchaseRate, rackCode, wholesalePrice, ...rest } = product;
   if (Array.isArray(rest.variants)) {
     rest.variants = rest.variants.map((variant) => {
       if (!variant || typeof variant !== "object") return variant;
-      const { purchaseRate: _vpr, ...variantRest } = variant;
+      const { purchaseRate: _vpr, wholesalePrice: _vwp, ...variantRest } = variant;
       return variantRest;
     });
   }
   return rest;
+}
+
+/**
+ * POS wholesale price lives on each variant; the product-level value is the
+ * fallback the counter uses, so keep it equal to the first variant's.
+ * Empty / 0 means "no wholesale price" (the counter bills the selling price).
+ */
+function normalizeWholesalePrices(productData) {
+  if (!Array.isArray(productData.variants) || productData.variants.length === 0) return;
+  productData.variants = productData.variants.map((variant) => {
+    const value = Number(variant?.wholesalePrice);
+    return { ...variant, wholesalePrice: value > 0 ? Math.round(value * 100) / 100 : null };
+  });
+  productData.wholesalePrice = productData.variants[0].wholesalePrice;
 }
 
 // Manufacturing/expiry dates are shown to customers only when the seller opts
@@ -472,7 +487,7 @@ export const getProducts = async (req, res) => {
     const sortKey = String(sort || "newest").toLowerCase();
     const sortQuery = sortMap[sortKey] || sortMap.newest;
     const PRODUCT_LIST_FIELDS =
-      "name slug description sku mrp sellingPrice purchaseRate stock brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt";
+      "name slug description sku mrp sellingPrice purchaseRate stock brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants barcode rackCode wholesalePrice manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt";
 
     // sort=trending: products ranked by units ordered in the last 30 days
     // (cancelled orders excluded). Only products that actually sold are returned;
@@ -639,7 +654,7 @@ export const getSellerProducts = async (req, res) => {
     ] = await Promise.all([
       Product.find(query)
         .select(
-          "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt",
+          "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants barcode rackCode wholesalePrice manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt",
         )
         .populate("headerId", "name")
         .populate("categoryId", "name")
@@ -854,6 +869,10 @@ export const createProduct = async (req, res) => {
       }));
     }
 
+    normalizeWholesalePrices(productData);
+    const barcodeError = await validateProductBarcodes(productData, productData.sellerId);
+    if (barcodeError) return handleResponse(res, 409, barcodeError);
+
     const stockError = normalizeStockFields(productData);
     if (stockError) return handleResponse(res, 400, stockError);
 
@@ -1056,6 +1075,10 @@ export const updateProduct = async (req, res) => {
       }));
     }
 
+    normalizeWholesalePrices(productData);
+    const barcodeError = await validateProductBarcodes(productData, product.sellerId, product._id);
+    if (barcodeError) return handleResponse(res, 409, barcodeError);
+
     const stockError = normalizeStockFields(productData);
     if (stockError) return handleResponse(res, 400, stockError);
 
@@ -1206,7 +1229,7 @@ export const getProductById = async (req, res) => {
       async () =>
         Product.findById(id)
           .select(
-            "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt",
+            "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants barcode rackCode wholesalePrice manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt",
           )
           .populate("headerId", "name")
           .populate("categoryId", "name")
@@ -1393,7 +1416,7 @@ export const getModerationProducts = async (req, res) => {
       await Promise.all([
         Product.find(moderatedQuery)
           .select(
-            "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants rackCode manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt",
+            "name slug description sku mrp sellingPrice purchaseRate stock lowStockAlert brand weight mainImage galleryImages headerId categoryId subcategoryId sellerId status approvalStatus approvalRequestedAt approvalReviewedAt approvalReviewedBy approvalNote lastSubmittedByRole isFeatured variants barcode rackCode wholesalePrice manufacturingDate expiryDate showManufacturingDate showExpiryDate createdAt",
           )
           .populate("headerId", "name")
           .populate("categoryId", "name")

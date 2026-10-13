@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import "./atz.css";
 import AtzIcon from "./AtzIcon";
+import brandLogo from "@/assets/atoz-logo.webp";
 import LocationDrawer from "../shared/LocationDrawer";
 import CategoryRails from "../home/CategoryRails";
 import Shelf from "./Shelf";
@@ -54,7 +55,7 @@ const AtzHome = ({ categories, activeCategory, onCategorySelect, banners, produc
         <div className="header-top">
           <div>
             <div className="brand" aria-label="A to Z Grocery">
-              <img className="brand-logo" src="/c7ubbuzngz0h3fc6sseo.jpg" alt="" width="36" height="36" />
+              <img className="brand-logo" src={brandLogo} alt="" width="36" height="36" />
               <span className="brand-name">A<span className="brand-to">to</span>Z <span className="brand-grocery">Grocery</span></span>
             </div>
             <button type="button" className="location" onClick={() => setIsLocationOpen(true)}>

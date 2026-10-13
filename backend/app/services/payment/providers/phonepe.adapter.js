@@ -51,13 +51,16 @@ export class PhonePeAdapter extends PaymentProviderPort {
     return PAYMENT_GATEWAY.PHONEPE;
   }
 
+  // `callbackUrl` is accepted for the port contract but not sent: the v2 SDK's
+  // builder has no callbackUrl() (calling it threw on every payment). The
+  // server-to-server callback is configured in the PhonePe dashboard instead.
+  // eslint-disable-next-line no-unused-vars
   async initiatePayment({ merchantOrderId, amountPaise, redirectUrl, callbackUrl }) {
     const client = getPhonePeClient();
     const request = StandardCheckoutPayRequest.builder()
       .merchantOrderId(merchantOrderId)
       .amount(amountPaise)
       .redirectUrl(redirectUrl)
-      .callbackUrl(callbackUrl || redirectUrl)
       .build();
     const response = await client.pay(request);
     return {

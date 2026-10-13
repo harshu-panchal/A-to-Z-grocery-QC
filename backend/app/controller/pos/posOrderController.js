@@ -1,0 +1,480 @@
+import mongoose from "mongoose";
+import handleResponse from "../../utils/helper.js";
+import { getPagination } from "../../utils/pagination.js";
+import { buildSearchRegex } from "../../utils/regex.js";
+import { dayStartIST, dayEndIST } from "../../services/orderQueryService.js";
+import {
+  PosOrder,
+  PosCustomer,
+  PosCreditTransaction,
+  PosPurchaseEntry,
+  PosPaymentIntent,
+  nextPosNumber,
+} from "../../models/pos.js";
+import {
+  WALK_IN,
+  round2,
+  isObjectId,
+  httpError,
+  ownerFilter,
+  resolveLines,
+  computeTotals,
+  moveStock,
+  withTransaction,
+} from "../../services/pos/posService.js";
+import { newPosMerchantOrderId, startPosPhonePe, checkPosPhonePe } from "../../services/pos/posPhonePe.js";
+
+const OFFLINE_METHODS = ["Cash", "Credit", "UPI", "Card"];
+
+const fail = (res, err) => handleResponse(res, err.statusCode || 500, err.message || "Something went wrong");
+
+async function nextInvoiceNumber(pos, session) {
+  const seq = await nextPosNumber(`invoice:${pos.ownerKey}`, session);
+  return `${pos.isAdmin ? "A" : "S"}-${String(seq).padStart(6, "0")}`;
+}
+
+async function loadCustomer(pos, customerId, session) {
+  if (!customerId || customerId === WALK_IN) return null;
+  if (!isObjectId(customerId)) throw httpError(400, "Invalid customer");
+  const customer = await PosCustomer.findOne(ownerFilter(pos, { _id: customerId })).session(session);
+  if (!customer) throw httpError(404, "Customer not found");
+  return customer;
+}
+
+const snapshotOf = (customer) =>
+  customer
+    ? { name: customer.name, phone: customer.phone, gstin: customer.gstin, address: customer.address }
+    : { name: "Walk-in Customer" };
+
+/** Apply a signed change to a customer's credit balance and log it. */
+async function changeCredit({ pos, customer, amount, type, order = null, method, note, session }) {
+  if (!amount) return;
+  customer.creditBalance = round2((customer.creditBalance || 0) + amount);
+  await customer.save({ session });
+  await PosCreditTransaction.create(
+    [{
+      owner: pos.owner,
+      customer: customer._id,
+      type,
+      amount: round2(amount),
+      balanceAfter: customer.creditBalance,
+      method,
+      order,
+      note,
+      createdBy: pos.actor,
+    }],
+    { session },
+  );
+}
+
+// ------------------------------------------------------------- create sale
+export const createPosOrder = async (req, res) => {
+  try {
+    const pos = req.pos;
+    const { customerId, paymentMethod = "Cash", items, billDiscount = 0, amountReceived, notes, quotationId } = req.body;
+    const clientRef = req.body.clientRef ? String(req.body.clientRef).slice(0, 80) : undefined;
+    const offline = Boolean(req.body.offline);
+    if (clientRef) {
+      // offline bill re-sent after a dropped connection: return the saved one
+      const existing = await PosOrder.findOne(ownerFilter(pos, { clientRef })).lean();
+      if (existing) return handleResponse(res, 200, "Bill already saved", existing);
+    }
+    if (!OFFLINE_METHODS.includes(paymentMethod)) throw httpError(400, "Use Cash, UPI, Card or Credit (Online has its own checkout)");
+    if (paymentMethod === "Credit" && (!customerId || customerId === WALK_IN)) {
+      throw httpError(400, "Credit (udhaar) needs a saved customer");
+    }
+
+    const order = await withTransaction(async (session) => {
+      const customer = await loadCustomer(pos, customerId, session);
+      const lines = await resolveLines(pos, items);
+      const totals = computeTotals(lines, { billDiscount });
+      const received = paymentMethod === "Credit" ? 0 : round2(amountReceived ?? totals.total);
+      if (paymentMethod === "Cash" && received < totals.total && !offline) throw httpError(400, "Cash received is less than the bill total");
+
+      const [doc] = await PosOrder.create(
+        [{
+          owner: pos.owner,
+          channel: pos.role,
+          invoiceNumber: await nextInvoiceNumber(pos, session),
+          createdBy: pos.actor,
+          customer: customer?._id || null,
+          customerSnapshot: snapshotOf(customer),
+          items: lines,
+          ...totals,
+          paymentMethod,
+          paymentStatus: paymentMethod === "Credit" ? "Pending" : "Paid",
+          amountReceived: received,
+          changeReturned: paymentMethod === "Cash" ? round2(received - totals.total) : 0,
+          status: "completed",
+          notes,
+          quotation: isObjectId(quotationId) ? quotationId : null,
+          clientRef,
+          billedOffline: offline,
+          billedAt: offline && req.body.billedAt ? new Date(req.body.billedAt) : undefined,
+        }],
+        { session },
+      );
+
+      // Offline bills were already handed over at the counter: record them even if stock went short
+      await moveStock(doc.items, { direction: -1, type: "POS Sale", pos, posOrder: doc._id, note: `POS bill ${doc.invoiceNumber}${offline ? " (offline)" : ""}`, strict: !offline, session });
+      doc.markModified("items");
+      await doc.save({ session });
+
+      if (paymentMethod === "Credit") {
+        await changeCredit({ pos, customer, amount: doc.total, type: "sale", order: doc._id, note: `Bill ${doc.invoiceNumber}`, session });
+      }
+      if (doc.quotation) {
+        await PosPurchaseEntry.updateOne(
+          ownerFilter(pos, { _id: doc.quotation, type: "quotation" }),
+          { $set: { status: "converted", convertedOrder: doc._id } },
+          { session },
+        );
+      }
+      return doc;
+    });
+
+    return handleResponse(res, 201, "Bill saved", order);
+  } catch (err) {
+    return fail(res, err);
+  }
+};
+
+// ------------------------------------------------------ online (PhonePe)
+export const initiateOnlinePosOrder = async (req, res) => {
+  try {
+    const pos = req.pos;
+    const { customerId, items, billDiscount = 0, notes, quotationId } = req.body;
+    const customer = await loadCustomer(pos, customerId, null);
+    const lines = await resolveLines(pos, items);
+    const totals = computeTotals(lines, { billDiscount });
+    if (totals.total < 1) throw httpError(400, "Online payment needs a total of at least ₹1");
+
+    const merchantOrderId = newPosMerchantOrderId("sale");
+    const order = await PosOrder.create({
+      owner: pos.owner,
+      channel: pos.role,
+      invoiceNumber: await nextInvoiceNumber(pos, null),
+      createdBy: pos.actor,
+      customer: customer?._id || null,
+      customerSnapshot: snapshotOf(customer),
+      items: lines,
+      ...totals,
+      paymentMethod: "Online",
+      paymentStatus: "Pending",
+      status: "pending_payment",
+      notes,
+      quotation: isObjectId(quotationId) ? quotationId : null,
+      phonepe: { merchantOrderId },
+    });
+    await PosPaymentIntent.create({
+      owner: pos.owner,
+      kind: "sale",
+      merchantOrderId,
+      amount: order.total,
+      posOrder: order._id,
+      customer: order.customer,
+      createdBy: pos.actor,
+    });
+
+    try {
+      const { redirectUrl } = await startPosPhonePe({ merchantOrderId, amountRupees: order.total, portal: pos.role });
+      return handleResponse(res, 201, "Payment started", { order, merchantOrderId, redirectUrl });
+    } catch (gatewayErr) {
+      order.status = "cancelled";
+      order.paymentStatus = "Failed";
+      order.cancelReason = "PhonePe could not start the payment";
+      await order.save();
+      await PosPaymentIntent.updateOne({ merchantOrderId }, { $set: { status: "failed" } });
+      throw httpError(502, `PhonePe error: ${gatewayErr.message || "could not start payment"}`);
+    }
+  } catch (err) {
+    return fail(res, err);
+  }
+};
+
+/**
+ * Confirm a PhonePe payment (sale or credit repayment) by asking PhonePe.
+ * Idempotent: a completed intent is never applied twice.
+ */
+export const verifyPosPayment = async (req, res) => {
+  try {
+    const pos = req.pos;
+    const merchantOrderId = String(req.body.merchantOrderId || req.query.mo || "");
+    const intent = await PosPaymentIntent.findOne({ merchantOrderId, owner: pos.owner });
+    if (!intent) throw httpError(404, "Payment not found");
+
+    if (intent.status === "pending") {
+      const result = await checkPosPhonePe(merchantOrderId);
+      if (result.status === "completed") {
+        await withTransaction(async (session) => {
+          // Claim the intent atomically so concurrent verifies apply it once
+          const claimed = await PosPaymentIntent.findOneAndUpdate(
+            { _id: intent._id, status: "pending" },
+            { $set: { status: "completed", transactionId: result.transactionId } },
+            { new: true, session },
+          );
+          if (!claimed) return;
+          if (intent.kind === "sale") {
+            const order = await PosOrder.findById(intent.posOrder).session(session);
+            order.paymentStatus = "Paid";
+            order.status = "completed";
+            order.amountReceived = order.total;
+            order.phonepe = { merchantOrderId, transactionId: result.transactionId, state: result.state };
+            // Already paid: never block on stock here, just record it
+            await moveStock(order.items, { direction: -1, type: "POS Sale", pos, posOrder: order._id, note: `POS bill ${order.invoiceNumber} (PhonePe)`, strict: false, session });
+            order.markModified("items");
+            await order.save({ session });
+            if (order.quotation) {
+              await PosPurchaseEntry.updateOne({ _id: order.quotation }, { $set: { status: "converted", convertedOrder: order._id } }, { session });
+            }
+          } else {
+            const customer = await PosCustomer.findById(intent.customer).session(session);
+            await changeCredit({ pos, customer, amount: -intent.amount, type: "payment", method: "Online", note: `PhonePe ${result.transactionId || merchantOrderId}`, session });
+          }
+        });
+      } else if (result.status === "failed") {
+        intent.status = "failed";
+        await intent.save();
+        if (intent.kind === "sale") {
+          await PosOrder.updateOne({ _id: intent.posOrder }, { $set: { status: "cancelled", paymentStatus: "Failed", cancelReason: "PhonePe payment failed" } });
+        }
+      }
+    }
+
+    const fresh = await PosPaymentIntent.findById(intent._id).lean();
+    const order = fresh.posOrder ? await PosOrder.findById(fresh.posOrder).lean() : null;
+    return handleResponse(res, 200, `Payment ${fresh.status}`, { status: fresh.status, kind: fresh.kind, amount: fresh.amount, order });
+  } catch (err) {
+    return fail(res, err);
+  }
+};
+
+// ------------------------------------------------------------ list/report
+function buildOrderFilter(pos, q) {
+  const filter = ownerFilter(pos, { channel: pos.role });
+  if (q.from || q.to) {
+    filter.createdAt = {};
+    if (q.from) filter.createdAt.$gte = dayStartIST(q.from);
+    if (q.to) filter.createdAt.$lte = dayEndIST(q.to);
+  }
+  if (q.paymentMethod && q.paymentMethod !== "all") filter.paymentMethod = q.paymentMethod;
+  if (q.paymentStatus && q.paymentStatus !== "all") filter.paymentStatus = q.paymentStatus;
+  if (q.status && q.status !== "all") filter.status = q.status;
+  else filter.status = { $ne: "pending_payment" };
+  if (isObjectId(q.customerId)) filter.customer = new mongoose.Types.ObjectId(String(q.customerId));
+  const term = String(q.search || "").trim();
+  if (term) {
+    const rx = buildSearchRegex(term, { anchored: false });
+    filter.$or = [{ invoiceNumber: rx }, { "customerSnapshot.name": rx }, { "customerSnapshot.phone": rx }];
+  }
+  return filter;
+}
+
+export const listPosOrders = async (req, res) => {
+  try {
+    const { page, limit, skip } = getPagination(req, { defaultLimit: 25, maxLimit: 200 });
+    const filter = buildOrderFilter(req.pos, req.query);
+    const [items, total, summaryRows] = await Promise.all([
+      PosOrder.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      PosOrder.countDocuments(filter),
+      PosOrder.aggregate([
+        { $match: { ...filter, status: "completed" } },
+        { $group: { _id: "$paymentMethod", count: { $sum: 1 }, total: { $sum: "$total" }, gst: { $sum: "$gstTotal" } } },
+      ]),
+    ]);
+    const byMethod = Object.fromEntries(summaryRows.map((r) => [r._id, { count: r.count, total: round2(r.total) }]));
+    const summary = {
+      bills: summaryRows.reduce((s, r) => s + r.count, 0),
+      sales: round2(summaryRows.reduce((s, r) => s + r.total, 0)),
+      gst: round2(summaryRows.reduce((s, r) => s + r.gst, 0)),
+      byMethod,
+    };
+    return handleResponse(res, 200, "POS bills", { items, page, limit, total, totalPages: Math.ceil(total / limit) || 1, summary });
+  } catch (err) {
+    return fail(res, err);
+  }
+};
+
+export const getPosOrder = async (req, res) => {
+  try {
+    if (!isObjectId(req.params.id)) throw httpError(400, "Invalid bill id");
+    const order = await PosOrder.findOne(ownerFilter(req.pos, { _id: req.params.id })).populate("customer").lean();
+    if (!order) throw httpError(404, "Bill not found");
+    return handleResponse(res, 200, "POS bill", order);
+  } catch (err) {
+    return fail(res, err);
+  }
+};
+
+// --------------------------------------------------------------- edit bill
+export const updatePosOrderItems = async (req, res) => {
+  try {
+    const pos = req.pos;
+    if (!isObjectId(req.params.id)) throw httpError(400, "Invalid bill id");
+    const { items, billDiscount = 0, customerId, notes } = req.body;
+
+    const order = await withTransaction(async (session) => {
+      const doc = await PosOrder.findOne(ownerFilter(pos, { _id: req.params.id })).session(session);
+      if (!doc) throw httpError(404, "Bill not found");
+      if (doc.status !== "completed") throw httpError(400, "Only completed bills can be edited");
+      if (doc.paymentMethod === "Online") throw httpError(400, "PhonePe bills can't be edited; cancel and re-bill instead");
+
+      // 1. put back what the old bill took
+      const oldLines = doc.items.filter((l) => l.stockDeducted).map((l) => l.toObject());
+      await moveStock(oldLines, { direction: 1, type: "POS Edit Restore", pos, posOrder: doc._id, note: `Edit of ${doc.invoiceNumber}`, strict: false, session });
+
+      // 2. take the new lines
+      const lines = await resolveLines(pos, items);
+      await moveStock(lines, { direction: -1, type: "POS Edit Deduct", pos, posOrder: doc._id, note: `Edit of ${doc.invoiceNumber}`, session });
+
+      const oldTotal = doc.total;
+      const totals = computeTotals(lines, { billDiscount });
+      if (customerId !== undefined && doc.paymentMethod !== "Credit") {
+        const customer = await loadCustomer(pos, customerId, session);
+        doc.customer = customer?._id || null;
+        doc.customerSnapshot = snapshotOf(customer);
+      }
+      doc.items = lines;
+      Object.assign(doc, totals);
+      if (notes !== undefined) doc.notes = notes;
+      if (doc.paymentMethod !== "Credit") {
+        doc.amountReceived = Math.max(doc.amountReceived, totals.total);
+        doc.changeReturned = doc.paymentMethod === "Cash" ? round2(doc.amountReceived - totals.total) : 0;
+      }
+      doc.editCount += 1;
+      await doc.save({ session });
+
+      // 3. credit bills: the customer's due follows the new total
+      if (doc.paymentMethod === "Credit" && doc.customer) {
+        const customer = await PosCustomer.findById(doc.customer).session(session);
+        await changeCredit({ pos, customer, amount: round2(doc.total - oldTotal), type: "adjust", order: doc._id, note: `Bill ${doc.invoiceNumber} edited`, session });
+      }
+      return doc;
+    });
+    return handleResponse(res, 200, "Bill updated", order);
+  } catch (err) {
+    return fail(res, err);
+  }
+};
+
+// ------------------------------------------------------------- cancel bill
+/**
+ * Cancel a bill. Stock is put back (unless ?restoreStock=false) and a credit
+ * bill's due is reversed. The bill stays in the report as "cancelled".
+ */
+async function cancelOne(pos, id, { restore, reason }) {
+  return withTransaction(async (session) => {
+    const doc = await PosOrder.findOne(ownerFilter(pos, { _id: id })).session(session);
+    if (!doc) throw httpError(404, "Bill not found");
+    if (doc.status === "cancelled") throw httpError(400, "Bill is already cancelled");
+    if (restore && doc.status === "completed") {
+      const lines = doc.items.filter((l) => l.stockDeducted).map((l) => l.toObject());
+      await moveStock(lines, { direction: 1, type: "POS Cancel Restore", pos, posOrder: doc._id, note: `Cancelled ${doc.invoiceNumber}`, strict: false, session });
+    }
+    if (doc.paymentMethod === "Credit" && doc.customer && doc.status === "completed") {
+      const customer = await PosCustomer.findById(doc.customer).session(session);
+      if (customer) await changeCredit({ pos, customer, amount: -doc.total, type: "reversal", order: doc._id, note: `Bill ${doc.invoiceNumber} cancelled`, session });
+    }
+    doc.status = "cancelled";
+    doc.cancelledAt = new Date();
+    doc.cancelReason = String(reason || "").slice(0, 200) || undefined;
+    if (doc.paymentStatus === "Paid") doc.paymentStatus = "Refunded";
+    await doc.save({ session });
+    return doc;
+  });
+}
+
+const cancelOptions = (req) => ({
+  restore: String(req.query.restoreStock ?? req.body?.restoreStock ?? "true") !== "false",
+  reason: req.body?.reason || req.query.reason,
+});
+
+export const cancelPosOrder = async (req, res) => {
+  try {
+    if (!isObjectId(req.params.id)) throw httpError(400, "Invalid bill id");
+    const order = await cancelOne(req.pos, req.params.id, cancelOptions(req));
+    return handleResponse(res, 200, "Bill cancelled", order);
+  } catch (err) {
+    return fail(res, err);
+  }
+};
+
+/** Bulk cancel (report page). */
+export const bulkCancelPosOrders = async (req, res) => {
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.filter(isObjectId) : [];
+  const results = [];
+  for (const id of ids) {
+    try {
+      await cancelOne(req.pos, id, cancelOptions(req));
+      results.push({ id, ok: true });
+    } catch (err) {
+      results.push({ id, ok: false, message: err.message });
+    }
+  }
+  return handleResponse(res, 200, "Bulk cancel finished", { results });
+};
+
+// ---------------------------------------------------------------- exchange
+/** Items returned (stock in) and new items given (stock out), no new bill. */
+export const posExchange = async (req, res) => {
+  try {
+    const pos = req.pos;
+    const { returnItems = [], newItems = [], note = "" } = req.body;
+    if (!returnItems.length && !newItems.length) throw httpError(400, "Nothing to exchange");
+    const result = await withTransaction(async (session) => {
+      const ins = returnItems.length ? await resolveLines(pos, returnItems) : [];
+      const outs = newItems.length ? await resolveLines(pos, newItems) : [];
+      await moveStock(ins, { direction: 1, type: "Exchange In", pos, note: note || "POS exchange", strict: false, session });
+      await moveStock(outs, { direction: -1, type: "Exchange Out", pos, note: note || "POS exchange", session });
+      const returnedValue = round2(ins.reduce((s, l) => s + l.total, 0));
+      const newValue = round2(outs.reduce((s, l) => s + l.total, 0));
+      return { returnedValue, newValue, difference: round2(newValue - returnedValue) };
+    });
+    return handleResponse(res, 200, "Exchange recorded", result);
+  } catch (err) {
+    return fail(res, err);
+  }
+};
+
+// ----------------------------------------------------------------- summary
+export const posSummary = async (req, res) => {
+  try {
+    const pos = req.pos;
+    const now = new Date();
+    const today = new Date(now.getTime() + 5.5 * 3600e3).toISOString().slice(0, 10);
+    const monthStart = `${today.slice(0, 7)}-01`;
+    const base = ownerFilter(pos, { channel: pos.role, status: "completed" });
+    const sumOf = async (from) => {
+      const [row] = await PosOrder.aggregate([
+        { $match: { ...base, createdAt: { $gte: dayStartIST(from), $lte: dayEndIST(today) } } },
+        { $group: { _id: null, bills: { $sum: 1 }, sales: { $sum: "$total" }, gst: { $sum: "$gstTotal" } } },
+      ]);
+      return { bills: row?.bills || 0, sales: round2(row?.sales || 0), gst: round2(row?.gst || 0) };
+    };
+    const [todaySum, monthSum, topProducts, recent, dues] = await Promise.all([
+      sumOf(today),
+      sumOf(monthStart),
+      PosOrder.aggregate([
+        { $match: { ...base, createdAt: { $gte: dayStartIST(monthStart) } } },
+        { $unwind: "$items" },
+        { $group: { _id: { name: "$items.name", variant: "$items.variantName" }, qty: { $sum: "$items.quantity" }, sales: { $sum: "$items.total" } } },
+        { $sort: { sales: -1 } },
+        { $limit: 8 },
+      ]),
+      PosOrder.find(ownerFilter(pos, { channel: pos.role, status: { $ne: "pending_payment" } })).sort({ createdAt: -1 }).limit(10).lean(),
+      PosCustomer.aggregate([
+        { $match: ownerFilter(pos, { creditBalance: { $gt: 0 } }) },
+        { $group: { _id: null, total: { $sum: "$creditBalance" }, customers: { $sum: 1 } } },
+      ]),
+    ]);
+    return handleResponse(res, 200, "POS summary", {
+      today: todaySum,
+      month: monthSum,
+      topProducts: topProducts.map((t) => ({ name: t._id.name, variant: t._id.variant, qty: t.qty, sales: round2(t.sales) })),
+      recent,
+      creditDue: { total: round2(dues[0]?.total || 0), customers: dues[0]?.customers || 0 },
+    });
+  } catch (err) {
+    return fail(res, err);
+  }
+};

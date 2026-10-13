@@ -23,7 +23,9 @@ import {
   Sparkles,
   User,
   Store,
+  Calculator,
 } from "lucide-react";
+import PosRoutes, { posNavItem } from "../../pos/PosRoutes";
 
 const Dashboard = React.lazy(() => import("../pages/Dashboard"));
 const CategoryManagement = React.lazy(
@@ -125,6 +127,7 @@ const navItems = [
     ],
   },
   { label: "Products", path: "/admin/products", icon: Box, color: "amber", group: "Catalog & Growth" },
+  posNavItem("admin", Calculator, { color: "emerald" }),
   {
     label: "Marketing Tools",
     icon: Sparkles,
@@ -345,6 +348,7 @@ const AdminRoutes = () => {
         <Route path="/categories/sub" element={<SubCategories />} />
         <Route path="/categories/hierarchy" element={<CategoryHierarchy />} />
         <Route path="/products" element={<ProductManagement />} />
+        <Route path="/pos/*" element={<PosRoutes portal="admin" />} />
         <Route path="/sellers/active" element={<ActiveSellers />} />
         <Route path="/sellers/active/:id" element={<SellerDetail />} />
         <Route path="/support-tickets" element={<SupportTickets />} />

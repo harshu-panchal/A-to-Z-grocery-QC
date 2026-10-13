@@ -8,6 +8,7 @@ import DataTable from '@shared/components/ui/DataTable';
 import EmptyState from '@shared/components/ui/EmptyState';
 import { SkeletonStatCard, SkeletonCard } from '@shared/components/ui/Skeleton';
 import { adminApi } from '../services/adminApi';
+import VariantBarcodeField, { variantBarcodeError } from '../../pos/VariantBarcodeField';
 import { toast } from 'sonner';
 import {
     HiOutlineCube,
@@ -211,6 +212,12 @@ const ProductManagement = () => {
             return toast.error('Please fill all required fields, including categories');
         }
 
+        const barcodeError = variantBarcodeError(formData.variants || []);
+        if (barcodeError) {
+            setModalTab('variants');
+            return toast.error(barcodeError);
+        }
+
         setIsSaving(true);
         try {
             const data = new FormData();
@@ -405,10 +412,13 @@ const ProductManagement = () => {
                 expiryDate: item.expiryDate ? new Date(item.expiryDate).toISOString().split('T')[0] : '',
                 showManufacturingDate: item.showManufacturingDate || false,
                 showExpiryDate: item.showExpiryDate || false,
-                variants: (item.variants && item.variants.length > 0) ? item.variants.map(v => ({ ...v, id: v._id || Date.now() })) : [
+                variants: (item.variants && item.variants.length > 0) ? item.variants.map(v => ({ ...v, wholesalePrice: v.wholesalePrice ?? item.wholesalePrice ?? '', id: v._id || Date.now() })) : [
                     {
                         id: Date.now(),
                         name: 'Default',
+                        wholesalePrice: item.wholesalePrice ?? '',
+                        barcode: item.barcode || '',
+                        rackCode: item.rackCode || '',
                         mrp: item.mrp || '',
                         sellingPrice: item.sellingPrice || '',
                         purchaseRate: item.purchaseRate || '',
@@ -1112,6 +1122,25 @@ const ProductManagement = () => {
                                                                     </button>
                                                                 </div>
                                                             </div>
+                                                        </div>
+                                                        <div className="mt-4">
+                                                            <VariantBarcodeField
+                                                                portal="admin"
+                                                                value={v.barcode}
+                                                                onChange={(code) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((x, idx) => (idx === i ? { ...x, barcode: code } : x)) }))}
+                                                                rack={v.rackCode}
+                                                                wholesale={v.wholesalePrice}
+                                                                onWholesaleChange={(val) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((x, idx) => (idx === i ? { ...x, wholesalePrice: val } : x)) }))}
+                                                                onRackChange={(rack) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((x, idx) => (idx === i ? { ...x, rackCode: rack } : x)) }))}
+                                                                productId={editingItem?._id}
+                                                                sellerId={editingItem?.sellerId?._id || editingItem?.sellerId}
+                                                                otherCodes={formData.variants.filter((_, idx) => idx !== i).map((x) => x.barcode)}
+                                                                printName={`${formData.name || ''}${v.name ? ` ${v.name}` : ''}`}
+                                                                mrp={v.mrp}
+                                                                price={v.sellingPrice || v.mrp}
+                                                                copies={v.stock}
+                                                                showErrors
+                                                            />
                                                         </div>
                                                     </div>
                                                 ))}
