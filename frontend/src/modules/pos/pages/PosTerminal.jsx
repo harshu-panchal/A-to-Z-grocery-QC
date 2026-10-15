@@ -127,13 +127,16 @@ export default function PosTerminal({ portal }) {
   }, [syncNow]);
 
   useEffect(() => {
+    // items appear only after the cashier types or scans something
+    if (!query.trim()) { setResults([]); setSearching(false); return undefined; }
     setSearching(true);
+    const inStock = (rows) => (rows || []).filter((r) => r.stock == null || r.stock > 0);
     const t = setTimeout(() => {
       api.searchProducts({ search: query, sellerId: sellerFilter || undefined, limit: 48 })
-        .then((rows) => { setResults(rows || []); cacheRows(portal, rows); setOnline(true); })
+        .then((rows) => { setResults(inStock(rows)); cacheRows(portal, rows); setOnline(true); })
         .catch((err) => {
           // no internet: search the products saved on this device
-          if (isNetworkError(err)) { setOnline(false); setResults(searchCache(portal, { search: query })); }
+          if (isNetworkError(err)) { setOnline(false); setResults(inStock(searchCache(portal, { search: query }))); }
           else setResults([]);
         })
         .finally(() => setSearching(false));
@@ -321,9 +324,14 @@ export default function PosTerminal({ portal }) {
               </div>
             </button>
           ))}
-          {!results.length && !searching && (
+          {!results.length && !searching && !query.trim() && (
             <div className="col-span-full py-16 text-center text-sm text-slate-500">
-              No items found. <button type="button" className="font-semibold text-primary underline" onClick={() => setQuickAdd({ open: true, barcode: "" })}>Quick add one</button>
+              Search by name or SKU, or scan a barcode to find items.
+            </div>
+          )}
+          {!results.length && !searching && query.trim() && (
+            <div className="col-span-full py-16 text-center text-sm text-slate-500">
+              No in-stock items found. <button type="button" className="font-semibold text-primary underline" onClick={() => setQuickAdd({ open: true, barcode: "" })}>Quick add one</button>
             </div>
           )}
         </div>
