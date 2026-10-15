@@ -15,7 +15,6 @@ import {
     HiOutlineBuildingStorefront
 } from 'react-icons/hi2';
 import { useToast } from '@shared/components/ui/Toast';
-import Modal from '@shared/components/ui/Modal';
 import { cn } from '@/lib/utils';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 
@@ -24,11 +23,9 @@ const REVIEWS_QUERY_ROOT = ['admin', 'pendingReviews'];
 const ReviewModeration = () => {
     const { showToast } = useToast();
     const queryClient = useQueryClient();
-    const [isReplyModalOpen, setIsReplyModalOpen] = useState(false);
-    const [selectedReview, setSelectedReview] = useState(null);
-    const [replyText, setReplyText] = useState('');
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
+    const [view, setView] = useState('all');
 
     useEffect(() => {
         setPage(1);
@@ -71,7 +68,8 @@ const ReviewModeration = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isError]);
 
-    const reviews = queryData?.items ?? [];
+    const allReviews = queryData?.items ?? [];
+    const reviews = view === 'flagged' ? allReviews.filter((r) => r.status === 'flagged') : allReviews;
     const total = queryData?.total ?? 0;
 
     // Audit fix: approving publishes the review publicly — delete already
@@ -108,20 +106,6 @@ const ReviewModeration = () => {
         }
     };
 
-    const handleReplyClick = (review) => {
-        setSelectedReview(review);
-        setIsReplyModalOpen(true);
-    };
-
-    const submitReply = () => {
-        if (!replyText.trim()) return;
-        // Reply logic for reviews is usually public or private.
-        // For now we'll just show toast since we don't have review-reply model yet
-        showToast(`Reply noted for ${selectedReview.user}`, 'success');
-        setIsReplyModalOpen(false);
-        setReplyText('');
-    };
-
     return (
         <div className="space-y-5">
             <PageHeader
@@ -129,8 +113,19 @@ const ReviewModeration = () => {
                 description="Protect community integrity and store reputations."
                 actions={
                     <div className="flex rounded-xl bg-slate-100 p-1">
-                        <button className="rounded-lg bg-white px-4 py-2 text-[10px] font-black uppercase text-slate-900 shadow-sm">All Reviews</button>
-                        <button className="rounded-lg px-4 py-2 text-[10px] font-black uppercase text-slate-400 hover:text-slate-600">Flagged Only</button>
+                        {[['all', 'All Reviews'], ['flagged', 'Flagged Only']].map(([key, label]) => (
+                            <button
+                                key={key}
+                                type="button"
+                                onClick={() => setView(key)}
+                                className={cn(
+                                    "rounded-lg px-4 py-2 text-[10px] font-black uppercase",
+                                    view === key ? "bg-white text-slate-900 shadow-sm" : "text-slate-400 hover:text-slate-600"
+                                )}
+                            >
+                                {label}
+                            </button>
+                        ))}
                     </div>
                 }
             />
@@ -206,9 +201,6 @@ const ReviewModeration = () => {
                                         <HiOutlineTrash className="h-4 w-4" />
                                         Remove
                                     </Button>
-                                    <Button variant="outline" className="w-full" onClick={() => handleReplyClick(r)}>
-                                        Reply
-                                    </Button>
                                 </div>
                             </div>
                         </Card>
@@ -230,35 +222,6 @@ const ReviewModeration = () => {
                     loading={loading}
                 />
             </div>
-
-            <Modal
-                isOpen={isReplyModalOpen}
-                onClose={() => setIsReplyModalOpen(false)}
-                title="Send Public Response"
-            >
-                <div className="space-y-4">
-                    {selectedReview && (
-                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
-                            <p className="mb-2 text-[10px] font-bold uppercase tracking-widest text-slate-400">Review from {selectedReview.user}</p>
-                            <p className="text-xs font-medium italic text-slate-600">"{selectedReview.comment}"</p>
-                        </div>
-                    )}
-                    <textarea
-                        value={replyText}
-                        onChange={(e) => setReplyText(e.target.value)}
-                        placeholder="Write your official response..."
-                        className="min-h-[120px] w-full rounded-xl border border-slate-200 bg-white p-4 text-sm font-semibold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-                    />
-                    <div className="flex gap-3">
-                        <Button variant="outline" className="flex-1" onClick={() => setIsReplyModalOpen(false)}>
-                            Cancel
-                        </Button>
-                        <Button className="flex-1" onClick={submitReply}>
-                            Publish Reply
-                        </Button>
-                    </div>
-                </div>
-            </Modal>
         </div>
     );
 };

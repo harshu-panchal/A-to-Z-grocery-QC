@@ -1,5 +1,4 @@
 import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import Badge from '@shared/components/ui/Badge';
 import Button from '@shared/components/ui/Button';
 import PageHeader from '@shared/components/ui/PageHeader';
@@ -11,7 +10,6 @@ import { SkeletonStatCard, SkeletonCard } from '@shared/components/ui/Skeleton';
 import {
     HiOutlineBuildingOffice2,
     HiOutlineMagnifyingGlass,
-    HiOutlineFunnel,
     HiOutlineCheckCircle,
     HiOutlineXCircle,
     HiOutlineEye,
@@ -39,7 +37,6 @@ const DEFAULT_PENDING_SELLERS_STATS = {
 };
 
 const PendingSellers = () => {
-    const navigate = useNavigate();
     const queryClient = useQueryClient();
     const [searchTerm, setSearchTerm] = useState('');
     const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
@@ -205,7 +202,7 @@ const PendingSellers = () => {
             header: 'Applicant Store',
             key: 'store',
             cell: (s) => (
-                <div className="flex cursor-pointer items-center gap-3" onClick={() => navigate(`/admin/sellers/active/${s.id}`)}>
+                <div className="flex cursor-pointer items-center gap-3" onClick={() => { setViewingSeller(s); setIsReviewModalOpen(true); }}>
                     <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-400">
                         <HiOutlineBuildingOffice2 className="h-5 w-5" />
                     </div>
@@ -321,12 +318,6 @@ const PendingSellers = () => {
                                     className="h-9 w-full rounded-md border border-slate-200 bg-white pl-10 pr-4 text-sm text-slate-700 placeholder:text-slate-400 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
                                 />
                             </div>
-                        }
-                        right={
-                            <button className="flex h-9 items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-                                <HiOutlineFunnel className="h-4 w-4" />
-                                Filter by Date
-                            </button>
                         }
                     />
 

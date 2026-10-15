@@ -20,7 +20,6 @@ import {
     Wallet,
     Download,
     Search,
-    ChevronRight,
     ArrowRight,
     History,
     PieChart,
@@ -310,6 +309,11 @@ const AdminWallet = () => {
     };
 
     const handleProcessPayouts = async () => {
+        const sellerDue = walletData.stats?.sellerPendingPayouts || 0;
+        const riderDue = walletData.stats?.deliveryPendingPayouts || 0;
+        if (!window.confirm(
+            `Process all pending payouts now?\n\nSellers: ₹${sellerDue.toLocaleString()}\nRiders: ₹${riderDue.toLocaleString()}\n\nThis marks them as paid and cannot be undone from the panel.`
+        )) return;
         try {
             setIsProcessing(true);
             const res = await adminApi.processFinancePayouts({
@@ -431,17 +435,6 @@ const AdminWallet = () => {
                 <Badge variant={txn.status === 'COMPLETED' || txn.status === 'Settled' ? 'success' : 'warning'}>
                     {txn.status.toUpperCase()}
                 </Badge>
-            ),
-        },
-        {
-            key: 'actions',
-            header: '',
-            hideOnMobile: true,
-            align: 'right',
-            cell: () => (
-                <button className="rounded-lg p-2 text-slate-400 transition-all hover:bg-primary/10 hover:text-primary">
-                    <ChevronRight className="h-4 w-4" />
-                </button>
             ),
         },
     ];

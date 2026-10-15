@@ -1,112 +1,163 @@
-import { Link } from 'react-router-dom';
-import { Facebook, Twitter, Instagram, Youtube, Mail, MapPin, Phone } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { MapPin, Truck } from 'lucide-react';
 import Logo from '@/assets/atoz-logo.webp';
 import { useSettings } from '@core/context/SettingsContext';
+import { customerApi } from '../../services/customerApi';
+import { useLocation as useDeliveryLocation } from '../../context/LocationContext';
+
+const QUICK_LINKS = [
+    { label: 'Home', to: '/' },
+    { label: 'Explore categories', to: '/categories' },
+    { label: 'My bag', to: '/checkout' },
+    { label: 'Orders', to: '/orders' },
+];
+
+// Shown names; each opens the matching category from the live catalogue
+const FOOTER_CATEGORIES = ['Fruits & Vegetables', 'Masala & Spices', 'Cookware', 'Flowers'];
+
+const norm = (s) => String(s || '').trim().toLowerCase();
+
+/** Find a category (level 2) or sub-category by name: exact match first, then "starts with". */
+function findCategory(tree, label) {
+    const cats = [];
+    const subs = [];
+    for (const header of tree) {
+        for (const cat of header.children || []) {
+            cats.push(cat);
+            for (const sub of cat.children || []) subs.push({ ...sub, openUnder: cat._id });
+        }
+    }
+    const want = norm(label);
+    return (
+        cats.find((c) => norm(c.name) === want) ||
+        subs.find((c) => norm(c.name) === want) ||
+        cats.find((c) => norm(c.name).startsWith(want)) ||
+        subs.find((c) => norm(c.name).startsWith(want)) ||
+        null
+    );
+}
 
 const Footer = () => {
+    const navigate = useNavigate();
     const { settings } = useSettings();
+    const { currentLocation } = useDeliveryLocation();
     const logoUrl = settings?.logoUrl || Logo;
-    const primaryColor = settings?.primaryColor || 'var(--primary)';
+
+    const { data: tree = [] } = useQuery({
+        queryKey: ['customer', 'categoriesTree', 'footer'],
+        queryFn: async () => {
+            const res = await customerApi.getCategories({ tree: true });
+            return res.data.results || res.data.result || [];
+        },
+        staleTime: 5 * 60 * 1000,
+    });
+
+    const openCategory = (label) => {
+        const match = findCategory(Array.isArray(tree) ? tree : [], label);
+        if (!match) return navigate('/categories');
+        if (match.openUnder) {
+            // sub-category: open its category with that tab selected
+            return navigate(`/category/${match.openUnder}`, { state: { activeSubcategoryId: match._id } });
+        }
+        return navigate(`/category/${match._id}`);
+    };
+
+    const address = currentLocation?.name || currentLocation?.address || '';
+    const [area, ...rest] = address.split(',').map((s) => s.trim()).filter(Boolean);
+    const city = currentLocation?.city || rest[0] || '';
+    const eta = String(currentLocation?.time || '15-20 mins').replace(/\s*mins?$/i, '').replace('-', '–');
 
     return (
-        <footer className="relative bg-[#051108] pt-20 pb-10 mt-20 text-slate-300 md:bg-gradient-to-br md:from-brand-700 md:via-brand-800 md:to-brand-900 md:pt-32 md:pb-16 md:mt-32 overflow-hidden">
-            {/* Subtle Texture/Glow Overlay */}
-            <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-20">
-                <div className="absolute -top-24 -right-24 w-96 h-96 rounded-full opacity-30 blur-[150px]" style={{ backgroundColor: primaryColor }} />
-                <div className="absolute -bottom-24 -left-24 w-96 h-96 rounded-full opacity-20 blur-[150px]" style={{ backgroundColor: primaryColor }} />
-            </div>
+        <footer className="relative mt-16 w-full bg-[radial-gradient(120%_140%_at_100%_0%,#2a5a40_0%,#1b4231_38%,#14382a_70%,#12352a_100%)] text-[#e9f1e4] lg:mt-24">
+            <div className="mx-auto max-w-[1350px] px-8 py-14 lg:px-14">
+                {/* Brand + tagline */}
+                <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+                    <Link to="/" className="flex items-center gap-4" aria-label="A to Z Grocery home">
+                        <img
+                            src={logoUrl}
+                            alt=""
+                            loading="lazy"
+                            className="h-14 w-14 shrink-0 rounded-full border border-white/20 bg-[#fbfaf6] object-cover shadow-[0_2px_8px_rgba(11,58,34,0.25)]"
+                        />
+                        <span className="font-['Manrope'] font-extrabold leading-none tracking-[-1.5px] text-[#d9f2a6]">
+                            <span className="text-[44px]">A</span>
+                            <span className="mx-1 text-[22px] font-semibold tracking-normal">to</span>
+                            <span className="text-[44px]">Z</span>
+                            <span className="ml-2 text-[30px] font-semibold tracking-[-1px]">Grocery</span>
+                        </span>
+                    </Link>
+                    <p className="font-['Manrope'] text-[26px] font-medium leading-snug tracking-[-0.8px] md:text-right">
+                        <span className="text-white">Your everyday essentials,</span>
+                        <br />
+                        <span className="text-[#a9c4a3]">delivered to your door.</span>
+                    </p>
+                </div>
 
-            {/* Top Curved Divider */}
-            <div className="absolute top-[-1px] left-0 w-full overflow-hidden leading-[0]">
-                <svg className="relative block w-[calc(100%+1.3px)] h-[25px] md:h-[60px]" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 120" preserveAspectRatio="none">
-                    <path d="M0,0 Q600,120 1200,0 V0 H0 Z" className="fill-white"></path>
-                </svg>
-            </div>
+                <div className="my-10 h-px bg-white/10" />
 
-            <div className="container mx-auto px-4 z-10 relative">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 md:gap-16">
+                {/* Links + delivery card */}
+                <div className="grid grid-cols-1 gap-10 md:grid-cols-[1fr_1fr_1.3fr]">
+                    <nav aria-label="Quick links">
+                        <p className="mb-5 text-[11px] font-bold uppercase tracking-[2px] text-[#8fae8c]">Quick links</p>
+                        <ul className="space-y-4">
+                            {QUICK_LINKS.map((l) => (
+                                <li key={l.label}>
+                                    <Link to={l.to} className="text-[15px] text-[#e9f1e4] transition-colors hover:text-[#d9f2a6]">{l.label}</Link>
+                                </li>
+                            ))}
+                        </ul>
+                    </nav>
 
-                    {/* Brand Info */}
-                    <div className="space-y-4 md:space-y-8">
-                        <div className="flex items-center">
-                            <img src={logoUrl} alt={`${settings?.appName || 'A to Z Grocery'} Logo`} loading="lazy" className="h-12 md:h-16 w-auto object-contain" />
+                    <nav aria-label="Categories">
+                        <p className="mb-5 text-[11px] font-bold uppercase tracking-[2px] text-[#8fae8c]">Categories</p>
+                        <ul className="space-y-4">
+                            {FOOTER_CATEGORIES.map((label) => (
+                                <li key={label}>
+                                    <button
+                                        type="button"
+                                        onClick={() => openCategory(label)}
+                                        className="text-left text-[15px] text-[#e9f1e4] transition-colors hover:text-[#d9f2a6]"
+                                    >
+                                        {label}
+                                    </button>
+                                </li>
+                            ))}
+                        </ul>
+                    </nav>
+
+                    <div className="self-start rounded-2xl border border-white/10 bg-white/[0.04] p-6">
+                        <p className="mb-4 text-[11px] font-bold uppercase tracking-[2px] text-[#8fae8c]">Delivery information</p>
+                        <div className="flex items-start gap-3">
+                            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-white/[0.06] text-[#d9f2a6]">
+                                <MapPin size={18} />
+                            </span>
+                            <p className="pt-0.5 text-[15px] font-semibold leading-relaxed text-white">
+                                {area ? (
+                                    <>
+                                        {area},
+                                        {city && <><br />{city}</>}
+                                    </>
+                                ) : (
+                                    'Set your delivery location'
+                                )}
+                            </p>
                         </div>
-                        <p className="text-sm leading-relaxed md:text-base md:leading-loose text-white/90 md:max-w-xs transition-opacity hover:opacity-100 font-medium">
-                            Your daily dose of fresh, organic, and healthy products delivered straight to your door. Freshness guaranteed.
-                        </p>
-                        <div className="flex gap-4">
-                            {settings?.facebook && <a href={settings.facebook} target="_blank" rel="noopener noreferrer" className="p-2 bg-white/10 text-white rounded-full transition-all group active:scale-95 hover:opacity-90"><Facebook size={18} /></a>}
-                            {settings?.twitter && <a href={settings.twitter} target="_blank" rel="noopener noreferrer" className="p-2 bg-white/10 text-white rounded-full transition-all group active:scale-95 hover:opacity-90"><Twitter size={18} /></a>}
-                            {settings?.instagram && <a href={settings.instagram} target="_blank" rel="noopener noreferrer" className="p-2 bg-white/10 text-white rounded-full transition-all group active:scale-95 hover:opacity-90"><Instagram size={18} /></a>}
-                            {settings?.youtube && <a href={settings.youtube} target="_blank" rel="noopener noreferrer" className="p-2 bg-white/10 text-white rounded-full transition-all group active:scale-95 hover:opacity-90"><Youtube size={18} /></a>}
-                        </div>
-                    </div>
-
-                    {/* Quick Links */}
-                    <div className="md:pt-4">
-                        <h3 className="text-white font-bold text-lg mb-4 md:text-xl md:font-black md:uppercase md:tracking-widest md:mb-8 flex items-center gap-2">
-                            <span className="h-1 w-4 hidden md:block" style={{ backgroundColor: primaryColor }}></span> Quick Links
-                        </h3>
-                        <ul className="space-y-2 md:space-y-4">
-                            <li><a href="#" className="hover:text-brand-300 transition-colors md:text-base md:font-semibold flex items-center group text-white"><span className="hidden md:block w-0 h-px bg-white group-hover:w-4 group-hover:mr-2 transition-all"></span>Home</a></li>
-                            <li><Link to="/about" className="hover:text-brand-300 transition-colors md:text-base md:font-semibold flex items-center group text-white"><span className="hidden md:block w-0 h-px bg-white group-hover:w-4 group-hover:mr-2 transition-all"></span>About Us</Link></li>
-                            <li><a href="#" className="hover:text-brand-300 transition-colors md:text-base md:font-semibold flex items-center group text-white"><span className="hidden md:block w-0 h-px bg-white group-hover:w-4 group-hover:mr-2 transition-all"></span>Shop</a></li>
-                            <li><a href="#" className="hover:text-brand-300 transition-colors md:text-base md:font-semibold flex items-center group text-white"><span className="hidden md:block w-0 h-px bg-white group-hover:w-4 group-hover:mr-2 transition-all"></span>Blogs</a></li>
-                            <li><a href="#" className="hover:text-brand-300 transition-colors md:text-base md:font-semibold flex items-center group text-white"><span className="hidden md:block w-0 h-px bg-white group-hover:w-4 group-hover:mr-2 transition-all"></span>Contact</a></li>
-                        </ul>
-                    </div>
-
-                    {/* Categories */}
-                    <div className="md:pt-4">
-                        <h3 className="text-white font-bold text-lg mb-4 md:text-xl md:font-black md:uppercase md:tracking-widest md:mb-8 flex items-center gap-2">
-                            <span className="h-1 w-4 hidden md:block" style={{ backgroundColor: primaryColor }}></span> Categories
-                        </h3>
-                        <ul className="space-y-2 md:space-y-4">
-                            <li><a href="#" className="hover:text-brand-300 transition-colors md:text-base md:font-semibold flex items-center group text-white"><span className="hidden md:block w-0 h-px bg-white group-hover:w-4 group-hover:mr-2 transition-all"></span>Fruits & Vegetables</a></li>
-                            <li><a href="#" className="hover:text-brand-300 transition-colors md:text-base md:font-semibold flex items-center group text-white"><span className="hidden md:block w-0 h-px bg-white group-hover:w-4 group-hover:mr-2 transition-all"></span>Dairy Products</a></li>
-                            <li><a href="#" className="hover:text-brand-300 transition-colors md:text-base md:font-semibold flex items-center group text-white"><span className="hidden md:block w-0 h-px bg-white group-hover:w-4 group-hover:mr-2 transition-all"></span>Meat & Fish</a></li>
-                            <li><a href="#" className="hover:text-brand-300 transition-colors md:text-base md:font-semibold flex items-center group text-white"><span className="hidden md:block w-0 h-px bg-white group-hover:w-4 group-hover:mr-2 transition-all"></span>Bakery & Snacks</a></li>
-                            <li><a href="#" className="hover:text-brand-300 transition-colors md:text-base md:font-semibold flex items-center group text-white"><span className="hidden md:block w-0 h-px bg-white group-hover:w-4 group-hover:mr-2 transition-all"></span>Beverages</a></li>
-                        </ul>
-                    </div>
-
-                    {/* Contact Info */}
-                    <div className="md:pt-4">
-                        <h3 className="text-white font-bold text-lg mb-4 md:text-xl md:font-black md:uppercase md:tracking-widest md:mb-8 flex items-center gap-2">
-                            <span className="h-1 w-4 hidden md:block" style={{ backgroundColor: primaryColor }}></span> Contact Us
-                        </h3>
-                        <ul className="space-y-4 md:space-y-6">
-                            <li className="flex items-start gap-3 md:gap-5 group">
-                                <div className="hidden md:flex h-12 w-12 rounded-xl bg-white/10 items-center justify-center text-white transition-all shrink-0 group-hover:opacity-90"><MapPin size={22} /></div>
-                                <MapPin className="mt-1 shrink-0 md:hidden" size={18} style={{ color: primaryColor }} />
-                                <span className="md:text-base text-white md:pt-1 font-medium">{settings?.address || '—'}</span>
-                            </li>
-                            <li className="flex items-center gap-3 md:gap-5 group">
-                                <div className="hidden md:flex h-12 w-12 rounded-xl bg-white/10 items-center justify-center text-white transition-all shrink-0 group-hover:opacity-90"><Phone size={22} /></div>
-                                <Phone className="shrink-0 md:hidden" size={18} style={{ color: primaryColor }} />
-                                <span className="md:text-base text-white font-medium">{settings?.supportPhone || '—'}</span>
-                            </li>
-                            <li className="flex items-center gap-3 md:gap-5 group">
-                                <div className="hidden md:flex h-12 w-12 rounded-xl bg-white/10 items-center justify-center text-white transition-all shrink-0 group-hover:opacity-90"><Mail size={22} /></div>
-                                <Mail className="shrink-0 md:hidden" size={18} style={{ color: primaryColor }} />
-                                <span className="md:text-base text-white font-medium">{settings?.supportEmail || '—'}</span>
-                            </li>
-                        </ul>
+                        <span className="mt-5 inline-flex items-center gap-2 rounded-full bg-[#d9f2a6] px-4 py-2 text-[13px] font-semibold text-[#173a2a]">
+                            <Truck size={16} />
+                            {eta} minute delivery
+                        </span>
                     </div>
                 </div>
 
-                <div className="border-t border-white/10 mt-12 pt-8 text-center text-sm md:flex md:justify-between md:text-left md:mt-24 md:pt-12">
-                    <p className="md:text-base text-white/60">&copy; {new Date().getFullYear()} {settings?.appName || 'App'}. All rights reserved.</p>
-                    <div className="flex gap-6 justify-center md:justify-end mt-4 md:mt-0 md:gap-12">
-                        <Link to="/privacy" className="hover:text-brand-300 md:text-base text-white/60 transition-all">Privacy Policy</Link>
-                        <Link to="/terms" className="hover:text-brand-300 md:text-base text-white/60 transition-all">Terms of Service</Link>
-                    </div>
-                </div>
+                <div className="mb-6 mt-10 h-px bg-white/10" />
+
+                <p className="text-[13px] text-[#8fae8c]">
+                    &copy; {new Date().getFullYear()} {settings?.appName || 'A to Z Grocery'}. All rights reserved.
+                </p>
             </div>
         </footer>
     );
 };
 
 export default Footer;
-
-

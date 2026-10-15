@@ -16,6 +16,8 @@ import {
   updateDeliveryFinanceSettings,
 } from "../services/finance/financeSettingsService.js";
 import { createFinanceAuditLog } from "../services/finance/auditLogService.js";
+import FinanceAuditLog from "../models/financeAuditLog.js";
+import Admin from "../models/admin.js";
 import {
   financeLedgerQuerySchema,
   payoutProcessSchema,
@@ -135,6 +137,36 @@ export const processAdminFinancePayoutsController = async (req, res) => {
     });
 
     return handleResponse(res, 200, "Payout processing completed", result);
+  } catch (error) {
+    return handleResponse(res, 500, error.message);
+  }
+};
+
+/** Recent finance audit trail (settings changes, payouts, adjustments). */
+export const getAdminFinanceAuditLogsController = async (req, res) => {
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
+    const filter = {};
+    if (req.query.action) {
+      const actions = String(req.query.action).split(",").filter(Boolean);
+      filter.action = { $in: actions };
+    }
+    const logs = await FinanceAuditLog.find(filter).sort({ createdAt: -1 }).limit(limit).lean();
+    const adminIds = [...new Set(logs.filter((l) => l.actorType === OWNER_TYPE.ADMIN && l.actorId).map((l) => String(l.actorId)))];
+    const admins = adminIds.length ? await Admin.find({ _id: { $in: adminIds } }).select("name email").lean() : [];
+    const names = new Map(admins.map((a) => [String(a._id), a.name || a.email]));
+    const items = logs.map((l) => ({
+      id: l._id,
+      action: l.action,
+      actorType: l.actorType,
+      actorName: l.actorId ? names.get(String(l.actorId)) || null : null,
+      metadata: l.metadata || {},
+      note: l.note || "",
+      orderId: l.orderId,
+      payoutId: l.payoutId,
+      createdAt: l.createdAt,
+    }));
+    return handleResponse(res, 200, "Audit logs fetched", { items });
   } catch (error) {
     return handleResponse(res, 500, error.message);
   }

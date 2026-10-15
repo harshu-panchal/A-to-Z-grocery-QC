@@ -27,6 +27,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
   PieChart,
   Pie,
@@ -94,35 +95,42 @@ const Analytics = () => {
     }
   }, [isError]);
 
+  const ov = statsData?.overview || {};
+  const rupee = (n) => `₹${Math.round(Number(n) || 0).toLocaleString("en-IN")}`;
+  const onlineOrders = Number(String(ov.totalOrders || "0").replace(/,/g, "")) || 0;
   const stats = [
     {
       label: "Total Sales",
-      value: statsData?.overview?.totalSales || "₹0",
-      trend: statsData?.overview?.salesTrend || "0%",
+      value: ov.combinedSales || ov.totalSales || "₹0",
+      trend: ov.combinedTrend || ov.salesTrend || "0%",
+      description: `Online ${rupee(ov.onlineSales)} · Counter ${rupee(ov.posSales)}`,
       icon: HiOutlineArrowTrendingUp,
       color: "text-primary",
       bg: "bg-primary/10",
     },
     {
       label: "Total Orders",
-      value: statsData?.overview?.totalOrders || "0",
-      trend: statsData?.overview?.ordersTrend || "0%",
+      value: (onlineOrders + (ov.posBills || 0)).toLocaleString("en-IN"),
+      trend: ov.combinedOrdersTrend || ov.ordersTrend || "0%",
+      description: `Online ${onlineOrders} · Counter bills ${ov.posBills || 0}`,
       icon: HiOutlineShoppingBag,
       color: "text-success",
       bg: "bg-success/10",
     },
     {
       label: "Avg Order Value",
-      value: statsData?.overview?.avgOrderValue || "₹0",
-      trend: "0%",
+      value: ov.avgOrderValue || "₹0",
+      trend: null,
+      description: "Online orders",
       icon: HiOutlineUsers,
       color: "text-warning",
       bg: "bg-warning/10",
     },
     {
-      label: "Conversion Rate",
-      value: statsData?.overview?.conversionRate || "0%",
-      trend: "0%",
+      label: "Counter (POS) Sales",
+      value: rupee(ov.posSales),
+      trend: ov.posTrend || null,
+      description: `${ov.posBills || 0} bill${ov.posBills === 1 ? "" : "s"} · ${rupee(ov.posTodaySales)} today`,
       icon: HiOutlineChartBar,
       color: "text-info",
       bg: "bg-info/10",
@@ -148,18 +156,24 @@ const Analytics = () => {
       const ov = statsData?.overview ?? {};
       lines.push("Overview");
       lines.push("Metric,Value");
-      ["Total Sales", "Total Orders", "Avg Order Value", "Conversion Rate"].forEach((label, i) => {
-        const key = ["totalSales", "totalOrders", "avgOrderValue", "conversionRate"][i];
-        lines.push(`${escapeCsv(label)},${escapeCsv(ov[key] ?? "—")}`);
+      [
+        ["Total Sales (online + counter)", ov.combinedSales ?? ov.totalSales],
+        ["Online Sales", ov.totalSales],
+        ["Counter (POS) Sales", ov.posSales ?? 0],
+        ["Online Orders", ov.totalOrders],
+        ["Counter Bills", ov.posBills ?? 0],
+        ["Avg Order Value (online)", ov.avgOrderValue],
+      ].forEach(([label, value]) => {
+        lines.push(`${escapeCsv(label)},${escapeCsv(value ?? "—")}`);
       });
       lines.push("");
 
       const trend = statsData?.salesTrend ?? [];
       if (trend.length) {
         lines.push("Sales Trend");
-        lines.push("Period,Sales,Traffic");
+        lines.push("Period,Online Sales,Counter Sales,Online Orders,Counter Bills");
         trend.forEach((d) => {
-          lines.push(`${escapeCsv(d.name)},${escapeCsv(d.sales)},${escapeCsv(d.traffic)}`);
+          lines.push(`${escapeCsv(d.name)},${escapeCsv(d.sales)},${escapeCsv(d.posSales ?? 0)},${escapeCsv(d.orders ?? 0)},${escapeCsv(d.posBills ?? 0)}`);
         });
         lines.push("");
       }
@@ -258,7 +272,8 @@ const Analytics = () => {
               value={stat.value}
               icon={stat.icon}
               trend={stat.trend}
-              trendDirection={stat.trend.startsWith("-") ? "down" : "up"}
+              trendDirection={stat.trend && stat.trend.startsWith("-") ? "down" : "up"}
+              description={stat.description}
               color={stat.color}
               bg={stat.bg}
             />
@@ -308,9 +323,9 @@ const Analytics = () => {
                         <stop offset="5%" stopColor="#2563eb" stopOpacity={0.25} />
                         <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
                       </linearGradient>
-                      <linearGradient id="colorTraffic" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.12} />
-                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                      <linearGradient id="colorPosSales" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#16a34a" stopOpacity={0.2} />
+                        <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -321,8 +336,9 @@ const Analytics = () => {
                       itemStyle={{ fontSize: "11px", fontWeight: 700 }}
                       cursor={{ stroke: "#2563eb", strokeWidth: 1, strokeDasharray: "4 4" }}
                     />
-                    <Area type="monotone" dataKey="sales" stroke="#2563eb" strokeWidth={2.5} fillOpacity={1} fill="url(#colorSales)" />
-                    <Area type="monotone" dataKey="traffic" stroke="#8b5cf6" strokeWidth={1.5} strokeDasharray="5 5" fillOpacity={1} fill="url(#colorTraffic)" />
+                    <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+                    <Area type="monotone" dataKey="sales" name="Online" stackId="s" stroke="#2563eb" strokeWidth={2.5} fillOpacity={1} fill="url(#colorSales)" />
+                    <Area type="monotone" dataKey="posSales" name="Counter (POS)" stackId="s" stroke="#16a34a" strokeWidth={2.5} fillOpacity={1} fill="url(#colorPosSales)" />
                   </AreaChart>
                 </ResponsiveContainer>
               </ChartCard>
@@ -380,7 +396,7 @@ const Analytics = () => {
                       </div>
                       <div className="min-w-0">
                         <h4 className="truncate text-sm font-bold text-slate-900">{product.name}</h4>
-                        <p className="text-xs font-medium text-slate-500">{product.sales} units sold</p>
+                        <p className="text-xs font-medium text-slate-500">{product.sales} units sold{product.counterSales ? ` · ${product.counterSales} at counter` : ""}</p>
                       </div>
                     </div>
                     <div className="shrink-0 text-right">

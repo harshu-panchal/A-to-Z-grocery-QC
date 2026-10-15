@@ -284,16 +284,18 @@ export const verifySellerSignupOtp = async (req, res) => {
 export const loginSeller = async (req, res) => {
     try {
         const { email, phone, emailOrPhone, password } = req.body;
-        const identifier = emailOrPhone || email || phone;
+        // copy-pasted credentials often carry stray spaces
+        const identifier = String(emailOrPhone || email || phone || "").trim();
 
         if (!identifier || !password) {
             return handleResponse(res, 400, "Email/Phone and password are required");
         }
 
         // Include password for comparison
-        const query = identifier.includes("@") 
-            ? { email: identifier.toLowerCase() } 
-            : { phone: identifier.replace(/\D/g, "") };
+        const digits = identifier.replace(/\D/g, "");
+        const query = identifier.includes("@")
+            ? { email: identifier.toLowerCase() }
+            : { phone: digits.length === 12 && digits.startsWith("91") ? digits.slice(2) : digits };
 
         const seller = await Seller.findOne(query).select("+password +tokenVersion");
 
@@ -301,7 +303,10 @@ export const loginSeller = async (req, res) => {
             return handleResponse(res, 404, "Seller not found");
         }
 
-        const isMatch = await seller.comparePassword(password);
+        let isMatch = await seller.comparePassword(String(password));
+        if (!isMatch && String(password).trim() !== String(password)) {
+            isMatch = await seller.comparePassword(String(password).trim());
+        }
 
         if (!isMatch) {
             return handleResponse(res, 401, "Invalid credentials");

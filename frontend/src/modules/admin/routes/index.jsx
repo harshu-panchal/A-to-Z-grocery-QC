@@ -82,7 +82,6 @@ const AdminLegalPages = React.lazy(() => import("../pages/AdminLegalPages"));
 const OrdersList = React.lazy(() => import("../pages/OrdersList"));
 const OrderDetail = React.lazy(() => import("../pages/OrderDetail"));
 const Returns = React.lazy(() => import("../pages/Returns"));
-const SellerDetail = React.lazy(() => import("../pages/SellerDetail"));
 const SupportTickets = React.lazy(() => import("../pages/SupportTickets"));
 const ReviewModeration = React.lazy(() => import("../pages/ReviewModeration"));
 const FleetTracking = React.lazy(() => import("../pages/FleetTracking"));
@@ -350,7 +349,7 @@ const AdminRoutes = () => {
         <Route path="/products" element={<ProductManagement />} />
         <Route path="/pos/*" element={<PosRoutes portal="admin" />} />
         <Route path="/sellers/active" element={<ActiveSellers />} />
-        <Route path="/sellers/active/:id" element={<SellerDetail />} />
+        <Route path="/sellers/active/:id" element={<Navigate to="/admin/sellers/active" replace />} />
         <Route path="/support-tickets" element={<SupportTickets />} />
         <Route path="/moderation" element={<ReviewModeration />} />
         <Route path="/experience-studio" element={<ContentManager />} />

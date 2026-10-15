@@ -1,6 +1,7 @@
 import Seller from "../../models/seller.js";
 import Order from "../../models/order.js";
 import Product from "../../models/product.js";
+import { PosOrder } from "../../models/pos.js";
 import {
   computeMapBounds,
   computeMapCenter,
@@ -350,7 +351,7 @@ async function fetchActiveSellersData({
   const sellerIds = sellers.map((seller) => seller._id);
   const allActiveSellerIds = allActiveSellers.map((seller) => seller._id);
 
-  const [ordersBySeller, productsBySeller, overallOrderStats] = await Promise.all([
+  const [ordersBySeller, productsBySeller, overallOrderStats, posBySeller] = await Promise.all([
     sellerIds.length
       ? Order.aggregate([
           { $match: { seller: { $in: sellerIds } } },
@@ -427,14 +428,32 @@ async function fetchActiveSellersData({
           },
         ])
       : Promise.resolve([]),
+    // counter (POS) bills per shop
+    sellerIds.length
+      ? PosOrder.aggregate([
+          { $match: { owner: { $in: sellerIds }, status: "completed" } },
+          {
+            $group: {
+              _id: "$owner",
+              posBills: { $sum: 1 },
+              posSales: { $sum: { $ifNull: ["$total", 0] } },
+              lastPosBillAt: { $max: "$createdAt" },
+            },
+          },
+        ])
+      : Promise.resolve([]),
   ]);
 
   const orderMap = new Map(ordersBySeller.map((row) => [String(row._id), row]));
+  const posMap = new Map(posBySeller.map((row) => [String(row._id), row]));
   const productMap = new Map(productsBySeller.map((row) => [String(row._id), row]));
 
   const enrichedSellers = sellers.map((seller) => {
     const orderStats = orderMap.get(String(seller._id)) || {};
     const productStats = productMap.get(String(seller._id)) || {};
+    const posStats = posMap.get(String(seller._id)) || {};
+    const posSales = Math.round(Number(posStats.posSales || 0) * 100) / 100;
+    const posBills = Number(posStats.posBills || 0);
     const totalOrders = Number(orderStats.totalOrders || 0);
     const deliveredOrders = Number(orderStats.deliveredOrders || 0);
     const pendingOrders = Number(orderStats.pendingOrders || 0);
@@ -475,6 +494,10 @@ async function fetchActiveSellersData({
       pendingOrders,
       totalRevenue,
       avgOrderValue: totalOrders ? totalRevenue / totalOrders : 0,
+      posSales,
+      posBills,
+      lastPosBillAt: posStats.lastPosBillAt || null,
+      combinedRevenue: Math.round((totalRevenue + posSales) * 100) / 100,
       fulfillmentRate,
       productCount,
       activeProductCount,

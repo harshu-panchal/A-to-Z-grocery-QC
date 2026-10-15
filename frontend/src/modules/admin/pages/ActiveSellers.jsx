@@ -75,6 +75,8 @@ const normalizeSeller = (seller) => {
     deliveredOrders: safeNumber(seller.deliveredOrders),
     pendingOrders: safeNumber(seller.pendingOrders),
     totalRevenue: safeNumber(seller.totalRevenue),
+    posSales: safeNumber(seller.posSales),
+    posBills: safeNumber(seller.posBills),
     productCount: safeNumber(seller.productCount),
     avgOrderValue: safeNumber(seller.avgOrderValue),
     fulfillmentRate: safeNumber(seller.fulfillmentRate),
@@ -277,6 +279,9 @@ const ActiveSellers = () => {
             <div className="h-full rounded-full bg-primary" style={{ width: `${Math.min(100, seller.fulfillmentRate || 0)}%` }} />
           </div>
           <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{(seller.fulfillmentRate || 0)}% fulfillment</p>
+          {seller.posBills > 0 && (
+            <p className="text-[10px] font-bold text-success">Counter: {currency(seller.posSales)} · {seller.posBills} bills</p>
+          )}
         </div>
       ),
     },
@@ -558,8 +563,10 @@ const ActiveSellers = () => {
                 <div className="lg:col-span-8 p-5 bg-white">
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
                     {[
-                      { label: "Orders", value: (selectedSeller.totalOrders || 0).toLocaleString("en-IN") },
-                      { label: "Revenue", value: currency(selectedSeller.totalRevenue) },
+                      { label: "Online orders", value: (selectedSeller.totalOrders || 0).toLocaleString("en-IN") },
+                      { label: "Online revenue", value: currency(selectedSeller.totalRevenue) },
+                      { label: "Counter bills", value: (selectedSeller.posBills || 0).toLocaleString("en-IN") },
+                      { label: "Counter sales", value: currency(selectedSeller.posSales) },
                       { label: "Products", value: (selectedSeller.productCount || 0).toLocaleString("en-IN") },
                       { label: "Delivered", value: (selectedSeller.deliveredOrders || 0).toLocaleString("en-IN") },
                       { label: "Pending", value: (selectedSeller.pendingOrders || 0).toLocaleString("en-IN") },

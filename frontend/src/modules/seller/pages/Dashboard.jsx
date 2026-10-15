@@ -35,6 +35,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
+  Legend,
   ResponsiveContainer,
 } from "recharts";
 import { cn } from "@/lib/utils";
@@ -92,56 +93,59 @@ const Dashboard = () => {
       return arr.map((d) => ({
         name: d.name ?? d.date ?? "—",
         sales: Number(d.sales ?? d.revenue ?? d.total ?? 0) || 0,
+        posSales: Number(d.posSales ?? 0) || 0,
       }));
     }
     return Array.from({ length: 7 }, (_, i) => {
       const d = new Date();
       d.setDate(d.getDate() - (6 - i));
-      return { name: dayNames[d.getDay()], sales: 0 };
+      return { name: dayNames[d.getDay()], sales: 0, posSales: 0 };
     });
   }, [statsData?.salesTrend, statsData?.chartData]);
-  const revenueMax = Math.max(1, ...revenueChartData.map((d) => d.sales));
+  const revenueMax = Math.max(1, ...revenueChartData.map((d) => d.sales + d.posSales));
+  const ov = statsData?.overview || {};
+  const rupee = (n) => `₹${Math.round(Number(n) || 0).toLocaleString("en-IN")}`;
+  const dirOf = (t) => (t && String(t).startsWith("-") ? "down" : "up");
+  const onlineOrders = Number(String(ov.totalOrders || "0").replace(/,/g, "")) || 0;
   const categoryMix = statsData?.categoryMix || [];
 
   const stats = [
     {
-      label: "Total Revenue",
-      value: statsData?.overview?.totalSales || "₹0",
-      trend: "+12.5%",
-      trendDirection: "up",
+      label: "Total Sales",
+      value: ov.combinedSales || ov.totalSales || "₹0",
+      trend: ov.combinedTrend || null,
+      trendDirection: dirOf(ov.combinedTrend),
       icon: DollarSign,
       bg: "bg-primary/10",
       color: "text-primary",
-      description: "vs last month",
+      description: `Online ${rupee(ov.onlineSales)} · Counter ${rupee(ov.posSales)}`,
       path: "/seller/earnings",
     },
     {
       label: "Total Orders",
-      value: statsData?.overview?.totalOrders || "0",
-      trend: "+8.2%",
-      trendDirection: "up",
+      value: (onlineOrders + (ov.posBills || 0)).toLocaleString("en-IN"),
+      trend: ov.combinedOrdersTrend || null,
+      trendDirection: dirOf(ov.combinedOrdersTrend),
       icon: ShoppingBag,
       bg: "bg-success/10",
       color: "text-success",
-      description: "vs last month",
+      description: `Online ${onlineOrders} · Counter bills ${ov.posBills || 0}`,
       path: "/seller/orders",
     },
     {
-      label: "Avg Order Value",
-      value: statsData?.overview?.avgOrderValue || "₹0",
-      trend: "+2",
-      trendDirection: "up",
+      label: "Counter (POS) Today",
+      value: rupee(ov.posTodaySales),
+      trend: null,
       icon: Package,
       bg: "bg-info/10",
       color: "text-info",
-      description: "per order",
-      path: "/seller/analytics",
+      description: `${ov.posTodayBills || 0} bill${ov.posTodayBills === 1 ? "" : "s"} today · ${rupee(ov.posWeekSales)} last 7 days`,
+      path: "/seller/pos/report",
     },
     {
       label: "Pending Orders",
       value: safeOrders.filter(o => o.status === 'pending').length.toString(),
-      trend: "-3",
-      trendDirection: "down",
+      trend: null,
       icon: Clock,
       bg: "bg-warning/10",
       color: "text-warning",
@@ -389,13 +393,17 @@ const Dashboard = () => {
           {loadingOrStats ? (
             <SkeletonCard lines={4} />
           ) : (
-            <ChartCard title="Revenue Overview" subtitle="Last 7 days performance" height={260} isEmpty={revenueMax <= 1 && revenueChartData.every(d => d.sales === 0)} emptyMessage="No sales recorded in the last 7 days.">
+            <ChartCard title="Revenue Overview" subtitle="Online orders + counter (POS) bills, last 7 days" height={260} isEmpty={revenueMax <= 1 && revenueChartData.every(d => d.sales === 0 && d.posSales === 0)} emptyMessage="No sales recorded in the last 7 days.">
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={revenueChartData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="revenueGradient" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="5%" stopColor="#2563eb" stopOpacity={0.35} />
                       <stop offset="95%" stopColor="#2563eb" stopOpacity={0.05} />
+                    </linearGradient>
+                    <linearGradient id="posGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#16a34a" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#16a34a" stopOpacity={0.05} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -410,10 +418,12 @@ const Dashboard = () => {
                   />
                   <Tooltip
                     contentStyle={{ backgroundColor: "white", border: "1px solid #e2e8f0", borderRadius: "10px", boxShadow: "0 4px 6px -1px rgb(0 0 0 / 0.1)", color: "#334155" }}
-                    formatter={(value) => [`₹${Number(value).toLocaleString()}`, "Revenue"]}
+                    formatter={(value, name) => [`₹${Number(value).toLocaleString()}`, name]}
                     labelFormatter={(label) => `Day: ${label}`}
                   />
-                  <Area type="monotone" dataKey="sales" stroke="#2563eb" strokeWidth={2.5} fill="url(#revenueGradient)" isAnimationActive />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+                  <Area type="monotone" dataKey="sales" name="Online" stackId="rev" stroke="#2563eb" strokeWidth={2.5} fill="url(#revenueGradient)" isAnimationActive />
+                  <Area type="monotone" dataKey="posSales" name="Counter (POS)" stackId="rev" stroke="#16a34a" strokeWidth={2.5} fill="url(#posGradient)" isAnimationActive />
                 </AreaChart>
               </ResponsiveContainer>
             </ChartCard>

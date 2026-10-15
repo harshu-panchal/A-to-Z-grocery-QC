@@ -26,6 +26,7 @@ import mongoose from "mongoose";
 import Order from "../../models/order.js";
 import Product from "../../models/product.js";
 import { buildKey, getOrSet, getTTL } from "../cacheService.js";
+import { getPosSalesSummary, getPosTopProducts, percentChange } from "../pos/posStatsService.js";
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTH_NAMES = [
@@ -194,6 +195,12 @@ async function computeSellerStats(sellerOid, range) {
     },
   ]);
 
+  // counter (POS) bills of this shop, bucketed the same way as the chart
+  const [pos, posTop] = await Promise.all([
+    getPosSalesSummary(sellerOid, { trendFormat: aggregationFormat, trendSince: trendStartDate, periodDays: 7 }),
+    getPosTopProducts(sellerOid, { since: sevenDaysAgo, limit: 20 }),
+  ]);
+
   const overviewRaw = statsResult.overview[0] || { totalSales: 0, totalOrders: 0 };
   const totalSales = overviewRaw.totalSales;
   const totalOrders = overviewRaw.totalOrders;
@@ -225,32 +232,43 @@ async function computeSellerStats(sellerOid, range) {
       d.setMonth(d.getMonth() - i);
       const dateStr = d.toISOString().slice(0, 7);
       const data = salesTrend.find((item) => item._id === dateStr);
+      const counter = pos.trend.get(dateStr);
       chartData.push({
         name: MONTH_NAMES[d.getMonth()],
         sales: data ? data.sales : 0,
         orders: data ? data.orders : 0,
+        posSales: counter?.sales || 0,
+        posBills: counter?.bills || 0,
         traffic: 0,
       });
     }
   } else if (range === "weekly") {
-    chartData = salesTrend
-      .map((item, idx) => ({
+    const weeks = [...new Set([...salesTrend.map((item) => item._id), ...pos.trend.keys()])].sort().slice(-4);
+    chartData = weeks.map((key, idx) => {
+      const data = salesTrend.find((item) => item._id === key);
+      const counter = pos.trend.get(key);
+      return {
         name: `Week ${idx + 1}`,
-        sales: item.sales,
-        orders: item.orders,
+        sales: data ? data.sales : 0,
+        orders: data ? data.orders : 0,
+        posSales: counter?.sales || 0,
+        posBills: counter?.bills || 0,
         traffic: 0,
-      }))
-      .slice(-4);
+      };
+    });
   } else {
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
       const dateStr = d.toISOString().split("T")[0];
       const data = salesTrend.find((item) => item._id === dateStr);
+      const counter = pos.trend.get(dateStr);
       chartData.push({
         name: DAY_NAMES[d.getDay()],
         sales: data ? data.sales : 0,
         orders: data ? data.orders : 0,
+        posSales: counter?.sales || 0,
+        posBills: counter?.bills || 0,
         traffic: 0,
       });
     }
@@ -290,8 +308,15 @@ async function computeSellerStats(sellerOid, range) {
   const currentItems = statsResult.topProductsCurrent;
   const prevItems = statsResult.topProductsPrev;
 
-  const formattedTopProducts = currentItems
+  const counterById = new Map(posTop.map((p) => [p.productId, p]));
+  const seen = new Set(currentItems.map((item) => item._id?.toString()));
+  const counterOnly = posTop
+    .filter((p) => !seen.has(p.productId))
+    .map((p) => ({ _id: p.productId, name: p.name, sales: 0, revenue: 0 }));
+
+  const formattedTopProducts = [...currentItems, ...counterOnly]
     .map((item) => {
+      const counter = counterById.get(item._id?.toString());
       const prevItem = prevItems.find(
         (p) => p._id?.toString() === item._id?.toString(),
       );
@@ -305,13 +330,17 @@ async function computeSellerStats(sellerOid, range) {
         trend = Math.round(((currSales - pSales) / pSales) * 100);
       }
 
+      const counterQty = counter?.quantity || 0;
       return {
         name: item.name,
-        sales: currSales,
-        revenue: `₹${(item.revenue || 0).toLocaleString()}`,
+        sales: currSales + counterQty,
+        onlineSales: currSales,
+        counterSales: counterQty,
+        revenue: `₹${Math.round((item.revenue || 0) + (counter?.revenue || 0)).toLocaleString()}`,
         trend,
       };
     })
+    .sort((a, b) => b.sales - a.sales)
     .slice(0, 5);
 
   const finalTrafficSources = (statsResult.trafficSources || []).map((s) => ({
@@ -335,6 +364,18 @@ async function computeSellerStats(sellerOid, range) {
       conversionRate: totalOrders > 0 ? "4.2%" : "0%",
       salesTrend: `${salesTrendPerc > 0 ? "+" : ""}${salesTrendPerc}%`,
       ordersTrend: `${ordersTrendPerc > 0 ? "+" : ""}${ordersTrendPerc}%`,
+      // counter (POS) bills, shown next to online sales
+      onlineSales: totalSales,
+      posSales: pos.total.sales,
+      posBills: pos.total.bills,
+      posTodaySales: pos.today.sales,
+      posTodayBills: pos.today.bills,
+      posWeekSales: pos.period.sales,
+      posTrend: percentChange(pos.period.sales, pos.prevPeriod.sales),
+      combinedSales: `₹${Math.round(totalSales + pos.total.sales).toLocaleString()}`,
+      combinedSalesValue: Math.round((totalSales + pos.total.sales) * 100) / 100,
+      combinedTrend: percentChange(currentSales + pos.period.sales, prevSalesVal + pos.prevPeriod.sales),
+      combinedOrdersTrend: percentChange(currentOrdersCount + pos.period.bills, prevOrdersCount + pos.prevPeriod.bills),
     },
     salesTrend: chartData,
     categoryMix: categoryData,

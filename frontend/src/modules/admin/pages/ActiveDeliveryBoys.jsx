@@ -71,7 +71,8 @@ const ActiveDeliveryBoys = () => {
     }, [pageSize, statusFilter]);
 
     const queryParams = useMemo(() => {
-        const params = { page, limit: pageSize };
+        // only approved riders; pending/rejected ones live on the review page
+        const params = { page, limit: pageSize, verified: 'true' };
         if (debouncedSearchTerm) params.search = debouncedSearchTerm;
         if (statusFilter !== 'all') params.status = statusFilter;
         return params;
@@ -121,22 +122,16 @@ const ActiveDeliveryBoys = () => {
     const riders = queryData?.items ?? [];
     const total = queryData?.total ?? 0;
 
-    // Audit note (pre-existing, unrelated to this migration, left as-is):
-    // onboard/edit/delete below only ever mutated local state — there was
-    // no actual `adminApi.createDeliveryPartner`/`updateDeliveryPartner`/
-    // `deleteDeliveryPartner` call anywhere in this file, so these actions
-    // never persisted to the server. Preserved exactly: they still only
-    // splice the current cached page's data via `setQueryData`, the same
-    // way the old `setRiders(...)` only touched local state — no
-    // invalidate/refetch is triggered, matching the original never
-    // re-fetching after these actions either.
-    const setLocalRiders = (updater) => {
-        queryClient.setQueryData(queryKey, (old) => {
-            if (!old) return old;
-            const nextItems = typeof updater === 'function' ? updater(old.items) : updater;
-            return { ...old, items: nextItems };
-        });
-    };
+    const [isSaving, setIsSaving] = useState(false);
+    const refreshRiders = () => queryClient.invalidateQueries({ queryKey: ACTIVE_DELIVERY_BOYS_QUERY_ROOT });
+    const riderPayload = () => ({
+        name: formState.name.trim(),
+        phone: formState.phone.trim(),
+        email: (formState.email || '').trim(),
+        vehicleType: formState.vehicle,
+        vehicleNumber: formState.vehicle === 'cycle' ? '' : formState.vehicleNum.trim(),
+        currentArea: formState.location.trim(),
+    });
 
     // Filtering logic
     const filteredRiders = useMemo(() => {
@@ -152,12 +147,20 @@ const ActiveDeliveryBoys = () => {
         if (type === 'view') {
             setViewingRider(rider);
         } else if (type === 'edit') {
-            setFormState(rider);
+            setFormState({
+                ...rider,
+                email: rider.email || '',
+                vehicle: rider.vehicle || 'bike',
+                vehicleNum: rider.vehicleNum === 'N/A' ? '' : rider.vehicleNum,
+                location: rider.location === 'Unknown' ? '' : rider.location,
+            });
             setSelectedRider(rider);
             setIsEditModalOpen(true);
         } else if (type === 'delete') {
-            if (window.confirm(`Are you sure you want to deactivate ${rider.name}?`)) {
-                setLocalRiders((prev) => prev.filter(r => r.id !== rider.id));
+            if (window.confirm(`Deactivate ${rider.name}? They will go offline and cannot log in until approved again.`)) {
+                adminApi.deactivateDeliveryPartner(rider.id)
+                    .then(() => { toast.success(`${rider.name} deactivated`); setViewingRider(null); refreshRiders(); })
+                    .catch((err) => toast.error(err.response?.data?.message || 'Could not deactivate rider'));
             }
         }
     };
@@ -171,8 +174,8 @@ const ActiveDeliveryBoys = () => {
             toast.error("Mobile number must be exactly 10 digits and start with 6, 7, 8, or 9.");
             return false;
         }
-        if (formState.vehicle !== 'Cycle' && !/^[A-Za-z]{2} [0-9]{2} [A-Za-z]{1,2} [0-9]{4}$/.test(formState.vehicleNum.trim())) {
-            toast.error("Vehicle registration number must follow the format 'AA 00 AA 0000' with spaces (e.g., MH 12 AB 1234).");
+        if (formState.vehicle !== 'cycle' && !/^[A-Za-z]{2}\s?[0-9]{1,2}\s?[A-Za-z]{0,3}\s?[0-9]{4}$/.test(formState.vehicleNum.trim())) {
+            toast.error("Enter a valid vehicle number (e.g., MH 12 AB 1234).");
             return false;
         }
         if (formState.location.trim().length < 3) {
@@ -182,34 +185,38 @@ const ActiveDeliveryBoys = () => {
         return true;
     };
 
-    const handleOnboardSubmit = (e) => {
+    const handleOnboardSubmit = async (e) => {
         e.preventDefault();
         if (!validateForm()) return;
-
-        const newRider = {
-            ...formState,
-            id: 'r' + (riders.length + 1),
-            status: 'offline',
-            rating: 5.0,
-            totalOrders: 0,
-            todayEarnings: 0,
-            lastSync: 'Just now',
-            joinDate: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
-        };
-        setLocalRiders((prev) => [newRider, ...prev]);
-        setIsOnboardModalOpen(false);
-        setFormState({ name: '', phone: '', email: '', vehicle: '', vehicleNum: '', location: '' });
-        toast.success("New rider added successfully");
+        setIsSaving(true);
+        try {
+            await adminApi.createDeliveryPartner(riderPayload());
+            setIsOnboardModalOpen(false);
+            setFormState({ name: '', phone: '', email: '', vehicle: '', vehicleNum: '', location: '' });
+            toast.success("Rider added. They can log in with OTP on this number.");
+            refreshRiders();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Could not add rider');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
-    const handleEditSubmit = (e) => {
+    const handleEditSubmit = async (e) => {
         e.preventDefault();
         if (!validateForm()) return;
-
-        setLocalRiders((prev) => prev.map(r => r.id === selectedRider.id ? { ...r, ...formState } : r));
-        setIsEditModalOpen(false);
-        setSelectedRider(null);
-        toast.success("Rider details updated successfully");
+        setIsSaving(true);
+        try {
+            await adminApi.updateDeliveryPartner(selectedRider.id, riderPayload());
+            setIsEditModalOpen(false);
+            setSelectedRider(null);
+            toast.success("Rider details updated");
+            refreshRiders();
+        } catch (err) {
+            toast.error(err.response?.data?.message || 'Could not update rider');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const stats = [
@@ -470,8 +477,8 @@ const ActiveDeliveryBoys = () => {
                                 </div>
 
                                 <div className="mt-6 flex gap-3">
-                                    <Button className="flex-1">Send Message</Button>
-                                    <Button variant="danger">Deactivate</Button>
+                                    <Button className="flex-1" onClick={() => { window.location.href = `tel:${viewingRider.phone}`; }}>Call Rider</Button>
+                                    <Button variant="danger" onClick={() => handleAction('delete', viewingRider)}>Deactivate</Button>
                                 </div>
                             </div>
                         </motion.div>
@@ -550,14 +557,13 @@ const ActiveDeliveryBoys = () => {
                                             className="w-full rounded-md border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
                                         >
                                             <option value="">Select Vehicle</option>
-                                            <option>Two Wheeler</option>
-                                            <option>Electric Scooter</option>
-                                            <option>Cycle</option>
-                                            <option>Three Wheeler</option>
+                                            <option value="bike">Bike / Motorcycle</option>
+                                            <option value="scooter">Scooter / Electric Scooter</option>
+                                            <option value="cycle">Cycle</option>
                                         </select>
                                     </div>
                                 </div>
-                                {formState.vehicle !== 'Cycle' && (
+                                {formState.vehicle !== 'cycle' && (
                                     <div className="space-y-1.5">
                                         <label className="text-sm font-medium text-slate-700">Registration Vehicle No.</label>
                                         <input
@@ -582,7 +588,7 @@ const ActiveDeliveryBoys = () => {
                                     />
                                 </div>
 
-                                <Button type="submit" className="w-full">
+                                <Button type="submit" className="w-full" isLoading={isSaving}>
                                     {isEditModalOpen ? 'Save Changes' : 'Add Rider'}
                                 </Button>
                             </form>

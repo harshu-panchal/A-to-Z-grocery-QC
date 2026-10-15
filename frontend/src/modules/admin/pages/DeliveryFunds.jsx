@@ -21,7 +21,6 @@ import {
     Landmark,
     FileText,
     ShieldCheck,
-    MessageSquare,
     Users,
     Eye,
 } from 'lucide-react';
@@ -231,6 +230,31 @@ const DeliveryFunds = () => {
         },
     ];
 
+    const downloadReceipt = (txn) => {
+        const lines = [
+            'DELIVERY PARTNER PAYMENT RECEIPT',
+            '',
+            `Transaction ID : ${txn.id}`,
+            `Rider          : ${txn.riderName} (${txn.riderId})`,
+            `Amount         : Rs. ${Number(txn.amount || 0).toLocaleString('en-IN')}`,
+            `Status         : ${txn.status}`,
+            `Date           : ${txn.dateTime}`,
+            `Method         : ${txn.paymentMethod || '-'}`,
+            `Destination    : ${txn.accountInfo || '-'}`,
+            `Reference ID   : ${txn.referenceId || '-'}`,
+            '',
+            `Generated on ${new Date().toLocaleString('en-IN')}`,
+        ];
+        const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/plain;charset=utf-8' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `receipt_${txn.id}.txt`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
     return (
         <div className="space-y-5">
             <PageHeader
@@ -387,12 +411,9 @@ const DeliveryFunds = () => {
                         </div>
 
                         <div className="flex gap-3 pt-1">
-                            <Button className="flex-1">
+                            <Button className="flex-1" onClick={() => downloadReceipt(viewingTxn)}>
                                 Download Receipt
                             </Button>
-                            <button className="flex items-center justify-center rounded-xl bg-slate-100 p-3.5 text-slate-600 transition-all hover:bg-slate-200">
-                                <MessageSquare className="h-5 w-5" />
-                            </button>
                         </div>
                     </div>
                 )}

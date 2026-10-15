@@ -13,6 +13,7 @@ import {
     Store,
     Truck,
     BarChart3,
+    Receipt,
 } from 'lucide-react';
 import {
     AreaChart,
@@ -21,6 +22,7 @@ import {
     YAxis,
     CartesianGrid,
     Tooltip,
+    Legend,
     ResponsiveContainer,
     PieChart,
     Pie,
@@ -51,6 +53,10 @@ const AdminDashboard = () => {
     }, [isError]);
 
     const overview = statsData?.overview || {};
+    const pos = statsData?.pos || {};
+    const trends = overview.trends || {};
+    const rupee = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+    const dir = (t) => (t && t.startsWith('-') ? 'down' : 'up');
     const formatLastUpdated = (value) => {
         if (!value) return 'Last Update: --';
         const now = new Date();
@@ -78,8 +84,9 @@ const AdminDashboard = () => {
             icon: Users,
             color: 'text-primary',
             bg: 'bg-primary/10',
-            trend: '+12.5%',
-            description: 'Active this month',
+            trend: trends.users,
+            trendDirection: dir(trends.users),
+            description: `${overview.newUsers30 ?? 0} joined in last 30 days`,
             onClick: () => navigate('/admin/customers')
         },
         {
@@ -88,28 +95,31 @@ const AdminDashboard = () => {
             icon: Store,
             color: 'text-info',
             bg: 'bg-info/10',
-            trend: '+5.2%',
+            trend: trends.sellers,
+            trendDirection: dir(trends.sellers),
             description: 'Verified stores',
             onClick: () => navigate('/admin/sellers/active')
         },
         {
             label: 'Total Orders',
-            value: overview.totalOrders?.toLocaleString() || '0',
+            value: ((overview.totalOrders || 0) + (overview.posBills || 0)).toLocaleString(),
             icon: Truck,
             color: 'text-warning',
             bg: 'bg-warning/10',
-            trend: '+18.4%',
-            description: 'Last 30 days',
+            trend: trends.orders,
+            trendDirection: dir(trends.orders),
+            description: `Online ${overview.totalOrders || 0} · Counter bills ${overview.posBills || 0}`,
             onClick: () => navigate('/admin/orders/all')
         },
         {
-            label: 'Revenue',
-            value: `₹${overview.totalRevenue?.toLocaleString() || '0'}`,
+            label: 'Total Sales',
+            value: rupee(overview.combinedRevenue ?? overview.totalRevenue),
             icon: BarChart3,
             color: 'text-success',
             bg: 'bg-success/10',
-            trend: '+8.2%',
-            description: 'Net earnings',
+            trend: trends.revenue,
+            trendDirection: dir(trends.revenue),
+            description: `Online ${rupee(overview.onlineRevenue ?? overview.totalRevenue)} · Counter ${rupee(overview.posRevenue)}`,
             onClick: () => navigate('/admin/wallet')
         },
     ];
@@ -175,6 +185,7 @@ const AdminDashboard = () => {
                             value={stat.value}
                             icon={stat.icon}
                             trend={stat.trend}
+                            trendDirection={stat.trendDirection}
                             description={stat.description}
                             color={stat.color}
                             bg={stat.bg}
@@ -188,7 +199,7 @@ const AdminDashboard = () => {
                     {loading ? (
                         <SkeletonCard lines={4} />
                     ) : (
-                        <ChartCard title="Earnings" subtitle="Monthly revenue trends" height={260} isEmpty={chartData.length === 0} emptyMessage="No revenue recorded yet for this period.">
+                        <ChartCard title="Sales" subtitle="Online orders + counter (POS) bills, last 30 days" height={260} isEmpty={chartData.length === 0} emptyMessage="No revenue recorded yet for this period.">
                             <ResponsiveContainer width="100%" height="100%">
                                 <AreaChart data={chartData}>
                                     <defs>
@@ -196,15 +207,21 @@ const AdminDashboard = () => {
                                             <stop offset="5%" stopColor="#2563eb" stopOpacity={0.15} />
                                             <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
                                         </linearGradient>
+                                        <linearGradient id="colorPos" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="5%" stopColor="#16a34a" stopOpacity={0.18} />
+                                            <stop offset="95%" stopColor="#16a34a" stopOpacity={0} />
+                                        </linearGradient>
                                     </defs>
                                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                                     <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} dy={8} />
                                     <YAxis axisLine={false} tickLine={false} tick={{ fill: '#94a3b8', fontSize: 11 }} tickFormatter={(value) => `₹${value}`} />
                                     <Tooltip
-                                        formatter={(value) => [`₹${value}`, 'Revenue']}
+                                        formatter={(value, name) => [`₹${Number(value).toLocaleString('en-IN')}`, name]}
                                         contentStyle={{ borderRadius: '10px', border: '1px solid #000', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', padding: '8px', fontSize: '11px' }}
                                     />
-                                    <Area type="monotone" dataKey="revenue" stroke="#2563eb" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRevenue)" />
+                                    <Legend iconType="circle" wrapperStyle={{ fontSize: 11 }} />
+                                    <Area type="monotone" dataKey="revenue" name="Online" stackId="sales" stroke="#2563eb" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRevenue)" />
+                                    <Area type="monotone" dataKey="pos" name="Counter (POS)" stackId="sales" stroke="#16a34a" strokeWidth={2.5} fillOpacity={1} fill="url(#colorPos)" />
                                 </AreaChart>
                             </ResponsiveContainer>
                         </ChartCard>
@@ -215,7 +232,7 @@ const AdminDashboard = () => {
                     {loading ? (
                         <SkeletonCard lines={3} />
                     ) : (
-                        <ChartCard title="Top Categories" subtitle="Sales breakdown by category" height={190} isEmpty={categoryData.length === 0} emptyMessage="No category sales yet.">
+                        <ChartCard title="Top Categories" subtitle="Products by category" height={190} isEmpty={categoryData.length === 0} emptyMessage="No category sales yet.">
                             <>
                                 <ResponsiveContainer width="100%" height="100%">
                                     <PieChart>
@@ -227,8 +244,8 @@ const AdminDashboard = () => {
                                     </PieChart>
                                 </ResponsiveContainer>
                                 <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-                                    <span className="text-xl font-black text-slate-900">72%</span>
-                                    <span className="text-[9px] font-bold uppercase text-slate-400">Growth</span>
+                                    <span className="text-xl font-black text-slate-900">{(overview.totalProducts || 0).toLocaleString()}</span>
+                                    <span className="text-[9px] font-bold uppercase text-slate-400">Products</span>
                                 </div>
                             </>
                         </ChartCard>
@@ -278,7 +295,7 @@ const AdminDashboard = () => {
                     {loading ? (
                         <SkeletonCard lines={3} />
                     ) : (
-                        <Card title="Top Products" subtitle="Best selling items this week">
+                        <Card title="Top Products" subtitle="Most units sold, online + counter">
                             <div className="space-y-3">
                                 {topProducts.length > 0 ? topProducts.map((product, i) => (
                                     <div key={i} className="flex items-center justify-between rounded-lg p-2 transition-all hover:bg-slate-50">
@@ -297,7 +314,7 @@ const AdminDashboard = () => {
                                         </div>
                                         <div className="text-right">
                                             <p className="text-sm font-bold text-slate-900">{product.rev}</p>
-                                            <p className="text-[10px] font-bold text-success">{product.trend}</p>
+                                            <p className="text-[10px] font-bold text-slate-400">{product.sales} sold</p>
                                         </div>
                                     </div>
                                 )) : (
@@ -314,6 +331,48 @@ const AdminDashboard = () => {
                     )}
                 </div>
             </div>
+
+            {!loading && (
+                <Card title="Counter (POS) Sales" subtitle="Bills made at shop counters by sellers and admin">
+                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                        {[
+                            ['Today', rupee(pos.todaySales), `${pos.todayBills || 0} bills`],
+                            ['Last 30 days', rupee(pos.last30Sales), `${pos.last30Bills || 0} bills`],
+                            ['All time', rupee(pos.totalSales), `${pos.totalBills || 0} bills`],
+                            ['Avg bill', rupee(pos.totalBills ? Math.round(pos.totalSales / pos.totalBills) : 0), 'per bill'],
+                        ].map(([label, value, sub]) => (
+                            <div key={label} className="rounded-lg bg-slate-50 p-3">
+                                <p className="text-[10px] font-black uppercase tracking-wider text-slate-400">{label}</p>
+                                <p className="mt-1 text-lg font-black text-slate-900">{value}</p>
+                                <p className="text-[11px] text-slate-400">{sub}</p>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-4 divide-y divide-slate-100">
+                        {(pos.recentBills || []).length ? pos.recentBills.map((b) => (
+                            <div key={b.id} className="flex items-center justify-between gap-3 py-2.5">
+                                <div className="flex min-w-0 items-center gap-3">
+                                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-success/10 text-success">
+                                        <Receipt className="h-4 w-4" />
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="truncate text-sm font-bold text-slate-900">{b.invoiceNumber} · {b.shop}</p>
+                                        <p className="truncate text-[11px] text-slate-400">
+                                            {b.customer} · {b.items} item{b.items === 1 ? '' : 's'} · {b.paymentMethod}{b.paymentStatus !== 'Paid' ? ` (${b.paymentStatus})` : ''}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                    <p className="text-sm font-bold text-slate-900">{rupee(b.amount)}</p>
+                                    <p className="text-[10px] text-slate-400">{new Date(b.createdAt).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                                </div>
+                            </div>
+                        )) : (
+                            <p className="py-6 text-center text-sm text-slate-400">No counter bills yet.</p>
+                        )}
+                    </div>
+                </Card>
+            )}
         </div>
     );
 };

@@ -278,8 +278,8 @@ const FleetTrackingTable = () => {
                   </div>
                 </div>
 
-                <Button className="w-full">
-                  View Full Profile
+                <Button className="w-full" onClick={() => { window.location.href = `tel:${selectedBoy.phone}`; }}>
+                  Call Rider
                 </Button>
               </div>
             </motion.div>

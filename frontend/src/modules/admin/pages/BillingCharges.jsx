@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import Card from '@shared/components/ui/Card';
 import Button from '@shared/components/ui/Button';
+import Modal from '@shared/components/ui/Modal';
 import PageHeader from '@shared/components/ui/PageHeader';
 import {
     RotateCcw,
@@ -21,6 +22,12 @@ import { adminApi } from '../services/adminApi';
 const BillingCharges = () => {
     const { showToast } = useToast();
     const [isSaving, setIsSaving] = useState(false);
+    const [showAudit, setShowAudit] = useState(false);
+    const auditQuery = useQuery({
+        queryKey: ['admin', 'finance', 'auditLogs'],
+        queryFn: async () => (await adminApi.getFinanceAuditLogs({ limit: 100 })).data.result?.items || [],
+        enabled: showAudit,
+    });
     const [deliveryMode, setDeliveryMode] = useState('distance'); // 'fixed' or 'distance'
 
     const [config, setConfig] = useState({
@@ -134,7 +141,7 @@ const BillingCharges = () => {
                 description="Set up delivery fees, platform charges, and free delivery limits."
                 actions={
                     <>
-                        <Button variant="outline">
+                        <Button variant="outline" onClick={() => setShowAudit(true)}>
                             <History className="h-4 w-4" />
                             Audit Logs
                         </Button>
@@ -281,8 +288,55 @@ const BillingCharges = () => {
                     </div>
                 </Card>
             </div>
+            <Modal isOpen={showAudit} onClose={() => setShowAudit(false)} title="Finance audit logs" size="lg">
+                {auditQuery.isLoading ? (
+                    <p className="py-8 text-center text-sm text-slate-400">Loading...</p>
+                ) : auditQuery.isError ? (
+                    <p className="py-8 text-center text-sm text-danger">Could not load audit logs</p>
+                ) : !(auditQuery.data || []).length ? (
+                    <p className="py-8 text-center text-sm text-slate-400">No audit entries yet</p>
+                ) : (
+                    <div className="max-h-[60vh] divide-y divide-slate-100 overflow-y-auto">
+                        {auditQuery.data.map((log) => (
+                            <div key={log.id} className="flex flex-col gap-1 py-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div className="min-w-0">
+                                    <p className="text-sm font-bold text-slate-900">{AUDIT_LABELS[log.action] || log.action}</p>
+                                    <p className="break-words text-xs text-slate-500">{auditDetails(log)}</p>
+                                </div>
+                                <div className="shrink-0 text-left text-xs text-slate-400 sm:text-right">
+                                    <p>{new Date(log.createdAt).toLocaleString('en-IN')}</p>
+                                    <p>{log.actorName || log.actorType}</p>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </Modal>
         </div>
     );
 };
+
+const AUDIT_LABELS = {
+    DELIVERY_SETTINGS_UPDATED: 'Fees & charges updated',
+    PAYOUT_PROCESSED: 'Payout processed',
+    PAYOUT_QUEUED: 'Payout queued',
+    ORDER_DELIVERED_SETTLED: 'Delivered order settled',
+    COD_MARKED_COLLECTED: 'COD cash marked collected',
+    COD_RECONCILED: 'COD reconciled',
+    ONLINE_PAYMENT_VERIFIED: 'Online payment verified',
+    ORDER_FINANCE_SNAPSHOT_FROZEN: 'Order amounts locked',
+    FINANCE_ADJUSTMENT_APPLIED: 'Finance adjustment',
+};
+
+function auditDetails(log) {
+    const m = log.metadata || {};
+    if (Array.isArray(m.updatedFields)) return `Changed: ${m.updatedFields.join(', ')}`;
+    const parts = [];
+    if (m.payoutType) parts.push(m.payoutType.replace(/_/g, ' ').toLowerCase());
+    if (m.amount !== undefined) parts.push(`₹${Number(m.amount).toLocaleString('en-IN')}`);
+    if (m.orderId) parts.push(`Order ${m.orderId}`);
+    if (log.note) parts.push(log.note);
+    return parts.join(' · ') || '—';
+}
 
 export default BillingCharges;

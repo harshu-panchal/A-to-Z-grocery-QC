@@ -13,6 +13,9 @@ import {
     getDeliveryPartners,
     approveDeliveryPartner,
     rejectDeliveryPartner,
+    createDeliveryPartner,
+    updateDeliveryPartner,
+    deactivateDeliveryPartner,
     getActiveFleet,
     getAdminWalletData,
     getDeliveryTransactions,
@@ -39,6 +42,7 @@ import {
 } from "../controller/adminController.js";
 import {
     exportAdminFinanceStatementController,
+    getAdminFinanceAuditLogsController,
     getAdminFinanceLedgerController,
     getAdminFinancePayoutsController,
     getAdminFinanceSummaryController,
@@ -120,6 +124,7 @@ router.get(
     allowRoles("admin"),
     getAdminFinancePayoutsController,
 );
+router.get("/finance/audit-logs", verifyToken, allowRoles("admin"), getAdminFinanceAuditLogsController);
 router.post(
     "/finance/payouts/process",
     verifyToken,
@@ -183,6 +188,10 @@ router.get(
     allowRoles("admin"),
     getDeliveryPartners
 );
+
+router.post("/delivery-partners", verifyToken, allowRoles("admin"), createDeliveryPartner);
+router.put("/delivery-partners/:id", verifyToken, allowRoles("admin"), updateDeliveryPartner);
+router.patch("/delivery-partners/:id/deactivate", verifyToken, allowRoles("admin"), deactivateDeliveryPartner);
 
 router.patch(
     "/delivery-partners/approve/:id",

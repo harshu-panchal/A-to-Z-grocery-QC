@@ -17,11 +17,7 @@ import { useSettings } from "@core/context/SettingsContext";
 import { useCart } from "../../context/CartContext";
 import { cn } from "@/lib/utils";
 import { applyCloudinaryTransform } from "@/core/utils/imageUtils";
-import {
-  buildHeaderGradient,
-  buildMiniCartColor,
-  buildSearchBarBackgroundColor,
-} from "../../utils/headerTheme";
+import { buildMiniCartColor } from "../../utils/headerTheme";
 import LogoImage from "../../../../assets/atoz-logo.webp";
 
 // MUI Icons
@@ -152,6 +148,16 @@ function CategoryNavColumn({
     </motion.div>
   );
 }
+
+const ATZ_HEADER = {
+  base: "#126b3e",
+  gradient: "linear-gradient(90deg, #116b3d, #20834b)",
+  text: "#ffffff",
+  activeIcon: "#ecffd1",
+  accent: "#d4edb3",
+  searchBg: "#fffefa",
+  searchIcon: "#71806c",
+};
 
 const MainLocationHeader = ({
   categories = [],
@@ -295,13 +301,14 @@ const MainLocationHeader = ({
   const displayContent = useTransform(scrollY, (value) => "block");
   const displayNav = useTransform(scrollY, (value) => "flex");
 
-  const baseHeaderColor = activeCategory?.headerColor || "var(--primary)";
-  const headerFontColor = activeCategory?.headerFontColor || "#111827";
-  const headerIconColor = activeCategory?.headerIconColor || "#111111";
-  
-  const headerGradient = buildHeaderGradient(baseHeaderColor);
-  const searchBarBg = buildSearchBarBackgroundColor(baseHeaderColor);
-  const categoryAccent = headerIconColor;
+  // Same colours as the mobile design's green header (atz.css), on every screen size
+  const baseHeaderColor = ATZ_HEADER.base;
+  const headerFontColor = ATZ_HEADER.text;
+  const headerIconColor = ATZ_HEADER.activeIcon;
+
+  const headerGradient = ATZ_HEADER.gradient;
+  const searchBarBg = ATZ_HEADER.searchBg;
+  const categoryAccent = ATZ_HEADER.accent;
 
   useEffect(() => {
     const c = buildMiniCartColor(baseHeaderColor);
@@ -331,8 +338,6 @@ const MainLocationHeader = ({
             backgroundImage: headerGradient,
           }}
           className="px-4 shadow-[0_4px_20px_rgba(0,0,0,0.15)] overflow-hidden transform-gpu will-change-transform">
-          {/* Subtle Glow Overlay */}
-          <div className="absolute inset-0 bg-white/8 pointer-events-none" />
 
           {/* Corner Lottie */}
           <motion.button
@@ -435,16 +440,16 @@ const MainLocationHeader = ({
                 whileHover={{ scale: 1.01 }}
                 whileTap={{ scale: 0.99 }}
                 style={{ backgroundColor: searchBarBg }}
-                className="rounded-full px-4 h-11 shadow-md flex items-center border border-white/50 transition-all duration-200 focus-within:ring-2 focus-within:ring-brand-400/60 cursor-pointer">
-                <SearchIcon sx={{ color: "#000000", fontSize: 20 }} />
+                className="rounded-full px-4 h-11 shadow-md flex items-center border border-[#dae5d4] transition-all duration-200 focus-within:ring-2 focus-within:ring-brand-400/60 cursor-pointer">
+                <SearchIcon sx={{ color: ATZ_HEADER.searchIcon, fontSize: 20 }} />
                 <input
                   type="text"
                   placeholder={searchPlaceholder || "Search Products..."}
                   readOnly
-                  className="flex-1 bg-transparent border-none outline-none pl-2 text-slate-800 font-semibold placeholder:text-black text-[15px] cursor-pointer"
+                  className="flex-1 bg-transparent border-none outline-none pl-2 text-[#263629] font-semibold placeholder:text-[#596a5d] text-[15px] cursor-pointer"
                 />
-                <div className="flex items-center gap-2 border-l border-slate-100 pl-3">
-                  <MicIcon sx={{ color: "#000000", fontSize: 20 }} />
+                <div className="flex items-center gap-2 border-l border-[#dae5d4] pl-3">
+                  <MicIcon sx={{ color: ATZ_HEADER.searchIcon, fontSize: 20 }} />
                 </div>
               </motion.div>
             </div>

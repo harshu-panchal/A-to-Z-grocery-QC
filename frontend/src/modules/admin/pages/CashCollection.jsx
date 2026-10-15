@@ -20,7 +20,6 @@ import {
     Download,
     Eye,
     Wallet,
-    Bell,
     ArrowDownLeft,
     FileText,
     Percent,
@@ -159,6 +158,64 @@ const CashCollection = () => {
         (h.id || "").toLowerCase().includes(searchTerm.toLowerCase())
     );
 
+    const downloadCsv = (fileName, header, rows) => {
+        const esc = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+        const csv = [header, ...rows].map((r) => r.map(esc).join(',')).join('\n');
+        const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleExportLedger = () => {
+        const day = new Date().toISOString().slice(0, 10);
+        if (activeTab === 'history') {
+            if (!filteredHistory.length) return toast.error('No settlements to export');
+            downloadCsv(`cash_settlements_${day}.csv`, ['Settlement ID', 'Partner', 'Amount', 'Method', 'Date'],
+                filteredHistory.map((h) => [h.id, h.rider, h.amount, h.method, h.date ? new Date(h.date).toLocaleString('en-IN') : '']));
+        } else {
+            if (!filteredRiders.length) return toast.error('No riders to export');
+            downloadCsv(`rider_cash_balances_${day}.csv`, ['Rider ID', 'Name', 'Cash in hand', 'Limit', 'Status', 'Delivered', 'Pending orders', 'Last settlement'],
+                filteredRiders.map((r) => [r.id, r.name, r.currentCash || 0, r.limit || 5000, r.status, r.totalOrders || 0, r.pendingOrders || 0, r.lastSettlement || '']));
+        }
+        toast.success('Ledger exported');
+    };
+
+    const handleBulkSettle = async () => {
+        try {
+            setIsProcessing(true);
+            const res = await adminApi.getDeliveryCashBalances({ page: 1, limit: 1000 });
+            const payload = res.data.result || {};
+            const all = Array.isArray(payload.items) ? payload.items : (payload.riders || []);
+            const due = all.filter((r) => Number(r.currentCash) > 0);
+            if (!due.length) {
+                toast.info('No rider has cash to settle');
+                return;
+            }
+            const total = due.reduce((acc, r) => acc + Number(r.currentCash), 0);
+            if (!window.confirm(`Settle cash for ${due.length} rider(s), total ₹${total.toLocaleString()}?\n\nOnly do this after you have received the cash from every rider.`)) return;
+            let done = 0;
+            for (const r of due) {
+                try {
+                    await adminApi.settleRiderCash({ riderId: r.id, amount: Number(r.currentCash), method: 'Cash submission' });
+                    done += 1;
+                } catch (error) {
+                    toast.error(`${r.name}: ${error.response?.data?.message || 'settlement failed'}`);
+                }
+            }
+            if (done) toast.success(`Settled cash for ${done} of ${due.length} rider(s)`);
+            queryClient.invalidateQueries({ queryKey: CASH_QUERY_ROOT });
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Bulk settlement failed');
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
     const handleSettlement = (rider) => {
         setSettlementData({ rider, amount: rider.currentCash });
         setIsSettleModalOpen(true);
@@ -267,9 +324,6 @@ const CashCollection = () => {
                     <button onClick={() => handleSettlement(rider)} className="rounded-lg bg-primary/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-primary transition-all hover:bg-primary hover:text-white">
                         Settle
                     </button>
-                    <button className="rounded-lg p-2 text-slate-400 transition-all hover:bg-slate-100">
-                        <Bell className="h-4 w-4" />
-                    </button>
                     <button onClick={() => setSelectedRider(rider)} className="rounded-lg p-2 text-slate-400 transition-all hover:bg-slate-900 hover:text-white">
                         <Eye className="h-4 w-4" />
                     </button>
@@ -300,11 +354,11 @@ const CashCollection = () => {
                 description="Manage physical cash collected by delivery partners and track settlements."
                 actions={
                     <>
-                        <Button variant="outline">
+                        <Button variant="outline" onClick={handleExportLedger}>
                             <Download className="h-4 w-4" />
                             Export Ledger
                         </Button>
-                        <Button>
+                        <Button onClick={handleBulkSettle} isLoading={isProcessing}>
                             <CheckCircle2 className="h-4 w-4" />
                             Bulk Settle All
                         </Button>
@@ -451,9 +505,6 @@ const CashCollection = () => {
                             <Button className="flex-1" onClick={() => { setSelectedRider(null); handleSettlement(selectedRider); }}>
                                 Trigger Settlement
                             </Button>
-                            <button className="rounded-xl bg-slate-100 p-3.5 text-slate-500 transition-all hover:bg-slate-200">
-                                <Bell className="h-5 w-5" />
-                            </button>
                         </div>
                     </div>
                 )}
