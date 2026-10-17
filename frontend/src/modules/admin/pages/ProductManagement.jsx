@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Badge from '@shared/components/ui/Badge';
 import Button from '@shared/components/ui/Button';
 import PageHeader from '@shared/components/ui/PageHeader';
@@ -78,7 +79,11 @@ const ProductManagement = () => {
     const [pageSize, setPageSize] = useState(25);
     const [isSaving, setIsSaving] = useState(false);
 
-    const [searchTerm, setSearchTerm] = useState('');
+    // ?q= comes from the search box in the top bar
+    const [searchParams] = useSearchParams();
+    const qFromUrl = searchParams.get('q') || '';
+    const [searchTerm, setSearchTerm] = useState(qFromUrl);
+    useEffect(() => { setSearchTerm(qFromUrl); }, [qFromUrl]);
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
     const [filterStatus, setFilterStatus] = useState('all'); // Added filterStatus

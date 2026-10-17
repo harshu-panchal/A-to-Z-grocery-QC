@@ -476,6 +476,11 @@ export const updateOrderStatus = async (req, res) => {
     const { orderId } = req.params;
     const { status, deliveryBoyId } = req.body;
     const { id: userId, role } = req.user;
+    // shown to the customer on their order page and in the cancel notification
+    const reason = String(req.body?.reason || "").trim().slice(0, 200);
+    if (status === "cancelled" && role === "seller" && !reason) {
+      return handleResponse(res, 400, "Please give a reason for cancelling this order");
+    }
 
     const orderKey = orderMatchQueryFromRouteParam(orderId);
     if (!orderKey) {
@@ -501,7 +506,7 @@ export const updateOrderStatus = async (req, res) => {
       }
       if (status === "cancelled") {
         try {
-          const updated = await sellerRejectAtomic(userId, canonicalOrderId);
+          const updated = await sellerRejectAtomic(userId, canonicalOrderId, reason);
           return handleResponse(res, 200, "Order rejected", updated);
         } catch (e) {
           return handleResponse(res, e.statusCode || 500, e.message);
@@ -563,6 +568,8 @@ export const updateOrderStatus = async (req, res) => {
 
     // Handle Cancellation (Stock Reversal & Transaction Update)
     if (status === "cancelled" && oldStatus !== "cancelled") {
+      order.cancelledBy = role === "seller" ? "seller" : "admin";
+      if (reason) order.cancelReason = reason;
       // 1. Reverse Stock
       for (const item of order.items) {
         await Product.findByIdAndUpdate(item.product, {
@@ -590,6 +597,7 @@ export const updateOrderStatus = async (req, res) => {
         customerId: order.customer,
         userId: order.customer,
         sellerId: order.seller,
+        ...(reason ? { customerMessage: `Your order was cancelled. Reason: ${reason}` } : {}),
       });
     }
 

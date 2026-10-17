@@ -46,8 +46,8 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
         e?.preventDefault();
         const q = (searchQuery || '').trim();
         if (!q) return;
-        if (isSeller) {
-            navigate(`/seller/products?q=${encodeURIComponent(q)}`);
+        if (isSeller || isAdmin) {
+            navigate(`/${isSeller ? 'seller' : 'admin'}/products?q=${encodeURIComponent(q)}`);
         }
     };
 
@@ -205,10 +205,9 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
                     <HiOutlineSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-primary transition-all duration-300" />
                     <input
                         type="text"
-                        placeholder={isSeller ? "Search your products..." : "Search anything..."}
+                        placeholder={isSeller ? "Search your products..." : "Search products..."}
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        onKeyDown={(e) => e.key === 'Enter' && handleSearchSubmit()}
                         className="w-full h-9 pl-10 pr-4 bg-slate-100/70 border border-transparent rounded-full text-sm font-medium text-slate-700 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all duration-300 outline-none"
                     />
                 </form>

@@ -841,6 +841,20 @@ const OrderDetailPage = () => {
           </motion.div>
         )}
 
+        {status === "cancelled" && (
+          <div className="rounded-3xl border border-red-100 bg-red-50 p-5">
+            <div className="flex items-center gap-2">
+              <XCircle size={18} className="text-red-600" />
+              <h3 className="text-sm font-black uppercase tracking-tight text-red-800">
+                {order.cancelledBy === "seller" ? "Cancelled by the store" : "Order cancelled"}
+              </h3>
+            </div>
+            {order.cancelReason && (
+              <p className="mt-2 text-sm text-red-700"><span className="font-semibold">Reason:</span> {order.cancelReason}</p>
+            )}
+          </div>
+        )}
+
         {/* Enhanced Map with Cleaner Design - Hide when delivered or cancelled */}
         {!isAwaitingOnlinePayment && status !== "delivered" && status !== "cancelled" && (
           <motion.div

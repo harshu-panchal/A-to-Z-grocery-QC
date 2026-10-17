@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import CancelReasonModal from "../components/orders/CancelReasonModal";
 import Card from "@shared/components/ui/Card";
 import PageHeader from "@shared/components/ui/PageHeader";
 import StatCard from "@shared/components/ui/StatCard";
@@ -249,10 +250,18 @@ const Dashboard = () => {
     };
   };
 
-  const handleStatusUpdate = async (orderId, newStatus) => {
+  const [cancelOrderId, setCancelOrderId] = useState(null);
+
+  const handleStatusUpdate = async (orderId, newStatus, reason) => {
+    // cancelling needs a reason; the customer sees it on their order
+    if (newStatus.toLowerCase() === "cancelled" && !reason) {
+      setCancelOrderId(orderId);
+      return;
+    }
     try {
       await sellerApi.updateOrderStatus(orderId, {
         status: newStatus.toLowerCase(),
+        ...(reason ? { reason } : {}),
       });
       toast.success(`Order status updated to ${newStatus}`);
       setSelectedOrder((prev) =>
@@ -664,7 +673,7 @@ const Dashboard = () => {
                       <option value="packed" disabled={['out_for_delivery','delivered','cancelled'].includes(selectedOrder.status.toLowerCase())}>Packed</option>
                       <option value="out_for_delivery" disabled={['delivered','cancelled'].includes(selectedOrder.status.toLowerCase())}>Out for Delivery</option>
                       <option value="delivered" disabled={selectedOrder.status.toLowerCase() === 'cancelled'}>Delivered</option>
-                      <option value="cancelled">Cancelled</option>
+                      <option value="cancelled" disabled={['out_for_delivery','delivered','cancelled'].includes(selectedOrder.status.toLowerCase())}>Cancelled</option>
                     </select>
                     <HiOutlineChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none opacity-60" />
                   </div>
@@ -674,6 +683,14 @@ const Dashboard = () => {
           </div>
         )}
       </AnimatePresence>
+      <CancelReasonModal
+        isOpen={Boolean(cancelOrderId)}
+        onClose={() => setCancelOrderId(null)}
+        onConfirm={async (reason) => {
+          await handleStatusUpdate(cancelOrderId, "cancelled", reason);
+          setCancelOrderId(null);
+        }}
+      />
     </div>
   );
 };

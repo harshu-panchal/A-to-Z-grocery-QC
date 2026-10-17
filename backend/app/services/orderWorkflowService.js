@@ -223,32 +223,46 @@ export async function sellerAcceptAtomic(sellerId, orderId) {
 }
 
 /**
- * Seller rejects: SELLER_PENDING -> CANCELLED + compensation.
+ * Seller rejects or cancels: SELLER_PENDING (within the accept window), or an
+ * accepted order the rider has not picked up yet -> CANCELLED + compensation.
  */
-export async function sellerRejectAtomic(sellerId, orderId) {
+export async function sellerRejectAtomic(sellerId, orderId, reason = "") {
   orderId = await requireCanonicalOrderId(orderId);
+  const cancelReason = String(reason || "").trim() || "Rejected by seller";
   const now = new Date();
   const order = await Order.findOneAndUpdate(
     {
       orderId,
       seller: sellerId,
       workflowVersion: { $gte: 2 },
-      workflowStatus: WORKFLOW_STATUS.SELLER_PENDING,
-      sellerPendingExpiresAt: { $gt: now },
+      $or: [
+        { workflowStatus: WORKFLOW_STATUS.SELLER_PENDING, sellerPendingExpiresAt: { $gt: now } },
+        {
+          workflowStatus: {
+            $in: [
+              WORKFLOW_STATUS.SELLER_ACCEPTED,
+              WORKFLOW_STATUS.DELIVERY_SEARCH,
+              WORKFLOW_STATUS.DELIVERY_ASSIGNED,
+              WORKFLOW_STATUS.PICKUP_READY,
+            ],
+          },
+        },
+      ],
     },
     {
       $set: {
         workflowStatus: WORKFLOW_STATUS.CANCELLED,
         status: "cancelled",
+        orderStatus: "cancelled",
         cancelledBy: "seller",
-        cancelReason: "Rejected by seller",
+        cancelReason,
       },
     },
     { new: true },
   );
 
   if (!order) {
-    const err = new Error("Order not available to reject");
+    const err = new Error("This order can no longer be cancelled (it may already be picked up, delivered or cancelled)");
     err.statusCode = 409;
     throw err;
   }
@@ -264,7 +278,7 @@ export async function sellerRejectAtomic(sellerId, orderId) {
     customerId: order.customer,
     userId: order.customer,
     sellerId: order.seller,
-    customerMessage: "Your order was cancelled by the seller.",
+    customerMessage: `Your order was cancelled by the seller. Reason: ${cancelReason}`,
     sellerMessage: `Order #${order.orderId} was cancelled.`,
   });
   return order;

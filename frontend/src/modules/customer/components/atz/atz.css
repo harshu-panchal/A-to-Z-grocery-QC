@@ -31,7 +31,8 @@
 .atz .gaming-banner { margin: 20px 20px 0; border-radius: 15px; position: relative; overflow: hidden; background: #211944; }
 .atz .banner-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .atz .banner-track::-webkit-scrollbar { display: none; }
-.atz .banner-track img { display: block; width: 100%; flex: 0 0 100%; scroll-snap-align: start; }
+.atz .banner-track img { display: block; width: 100%; flex: 0 0 100%; scroll-snap-align: start; aspect-ratio: 824 / 397; object-fit: cover; }
+.atz .gaming-banner.loading { aspect-ratio: 824 / 397; background: #e3ebe0; }
 .atz .ad-label { position: absolute; bottom: 9px; right: 10px; font-size: 8px; color: #fff; background: #ffffff30; border-radius: 3px; padding: 2px 4px; }
 .atz .benefits-strip { margin: 14px 20px 23px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #3f6042; gap: 5px; }
 .atz .benefits-strip span { display: flex; align-items: center; gap: 4px; }

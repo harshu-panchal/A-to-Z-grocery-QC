@@ -3,7 +3,7 @@ import Order from "../models/order.js";
 import Delivery from "../models/delivery.js";
 import Seller from "../models/seller.js";
 import CheckoutGroup from "../models/checkoutGroup.js";
-import { WORKFLOW_STATUS } from "../constants/orderWorkflow.js";
+import { WORKFLOW_STATUS, PENDING_ORDER_QUERY } from "../constants/orderWorkflow.js";
 import { distanceMeters } from "../utils/geoUtils.js";
 import {
   orderMatchQueryFlexible,
@@ -31,7 +31,7 @@ function normalizeSellerStatusFilter(statusParam) {
   }
 
   if (statusParam === "pending") {
-    return { status: "pending" };
+    return PENDING_ORDER_QUERY;
   }
   if (statusParam === "processed") {
     return { status: { $in: ["confirmed", "packed"] } };

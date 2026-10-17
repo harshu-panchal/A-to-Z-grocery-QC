@@ -75,3 +75,13 @@ export function workflowFromLegacyStatus(legacy) {
   if (s === "cancelled") return WORKFLOW_STATUS.CANCELLED;
   return WORKFLOW_STATUS.SELLER_PENDING;
 }
+
+// A new order: its v2 workflow is still waiting, or it has no workflow and the
+// legacy status is pending. An order whose workflow moved on (e.g. CANCELLED)
+// is not new even if its legacy status was never updated.
+export const PENDING_ORDER_QUERY = {
+  $or: [
+    { workflowStatus: { $in: [WORKFLOW_STATUS.CREATED, WORKFLOW_STATUS.SELLER_PENDING] } },
+    { status: "pending", workflowStatus: { $in: [null, ""] } },
+  ],
+};

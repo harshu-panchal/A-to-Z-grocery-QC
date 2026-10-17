@@ -95,6 +95,8 @@ const AtzHome = ({ categories, activeCategory, onCategorySelect, banners, produc
         </div>
       )}
 
+      {/* null = still loading: keep the banner's space so the page doesn't jump */}
+      {banners === null && <div className="gaming-banner loading" aria-hidden="true" />}
       {banners?.length > 0 && (
         <section className="gaming-banner" aria-label="Offers">
           <div className="banner-track">

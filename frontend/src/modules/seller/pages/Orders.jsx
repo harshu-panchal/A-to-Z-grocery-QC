@@ -36,12 +36,11 @@ import { Loader2 } from 'lucide-react';
 import Pagination from '@shared/components/ui/Pagination';
 import { DatePicker } from "@/components/ui/date-picker";
 import { getOrderStatusVariant } from '../components/orders';
+import CancelReasonModal from '../components/orders/CancelReasonModal';
 import { useSellerOrders } from '../context/SellerOrdersContext';
 import { onOrderStatusUpdate } from '@/core/services/orderSocket';
 import { createSocketTokenReader } from '@core/utils/authStorage';
 import { STORAGE_KEYS } from '@core/utils/storage';
-import ConfirmDialog from '@shared/components/ui/ConfirmDialog';
-import useConfirmDialog from '@shared/hooks/useConfirmDialog';
 import PackScanModal from '../../pos/PackScanModal';
 import { ScanLine } from 'lucide-react';
 
@@ -88,7 +87,7 @@ const Orders = () => {
     const [packingOrder, setPackingOrder] = useState(null);
     const canPack = (o) => ['Pending', 'Confirmed', 'Packed'].includes(o.status);
     const { showToast } = useToast();
-    const statusConfirm = useConfirmDialog();
+    const [cancelOrderId, setCancelOrderId] = useState(null);
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(20);
     const [total, setTotal] = useState(0);
@@ -283,9 +282,9 @@ const Orders = () => {
         setIsDetailsModalOpen(true);
     };
 
-    const applyStatusUpdate = async (orderId, newStatus) => {
+    const applyStatusUpdate = async (orderId, newStatus, reason) => {
         try {
-            await sellerApi.updateOrderStatus(orderId, { status: newStatus.toLowerCase() });
+            await sellerApi.updateOrderStatus(orderId, { status: newStatus.toLowerCase(), ...(reason ? { reason } : {}) });
             showToast(`Order status updated to ${newStatus}`, "success");
             fetchOrders(page, false); // Refresh orders without resetting page
             if (selectedOrder && selectedOrder.id === orderId) {
@@ -306,13 +305,8 @@ const Orders = () => {
     // expected, frequent actions.
     const handleStatusUpdate = (orderId, newStatus) => {
         if (String(newStatus).toLowerCase() === 'cancelled') {
-            statusConfirm.open({
-                title: 'Cancel this order?',
-                message: 'This will cancel the order for the customer. This cannot be undone from here.',
-                confirmLabel: 'Cancel Order',
-                cancelLabel: 'Keep Order',
-                onConfirm: () => applyStatusUpdate(orderId, newStatus),
-            });
+            // cancelling needs a reason; the customer sees it on their order
+            setCancelOrderId(orderId);
             return;
         }
         applyStatusUpdate(orderId, newStatus);
@@ -370,7 +364,7 @@ const Orders = () => {
                 <option value="packed" disabled={['out_for_delivery', 'delivered', 'cancelled'].includes(order.status)}>Packed</option>
                 <option value="out_for_delivery" disabled={['delivered', 'cancelled'].includes(order.status)}>Out for Delivery</option>
                 <option value="delivered" disabled={order.status === 'cancelled'}>Delivered</option>
-                <option value="cancelled">Cancelled</option>
+                <option value="cancelled" disabled={['out_for_delivery', 'delivered', 'cancelled'].includes(order.status)}>Cancelled</option>
             </select>
             <HiOutlineChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3 w-3 pointer-events-none opacity-60" />
         </div>
@@ -928,16 +922,13 @@ const Orders = () => {
                     <p className="text-slate-500 font-semibold mt-3 text-xs uppercase tracking-widest">Fetching orders...</p>
                 </div>
             )}
-            <ConfirmDialog
-                isOpen={statusConfirm.isOpen}
-                title={statusConfirm.title}
-                message={statusConfirm.message}
-                confirmLabel={statusConfirm.confirmLabel}
-                cancelLabel={statusConfirm.cancelLabel}
-                onConfirm={statusConfirm.handleConfirm}
-                onCancel={statusConfirm.close}
-                loading={statusConfirm.loading}
-                variant="danger"
+            <CancelReasonModal
+                isOpen={Boolean(cancelOrderId)}
+                onClose={() => setCancelOrderId(null)}
+                onConfirm={async (reason) => {
+                    await applyStatusUpdate(cancelOrderId, 'cancelled', reason);
+                    setCancelOrderId(null);
+                }}
             />
         </div>
     );

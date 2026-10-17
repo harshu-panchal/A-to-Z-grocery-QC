@@ -16,6 +16,7 @@ import { getOrderSocket, onSellerOrderNew, onReturnDropOtp, onOrderStatusUpdate 
 import { createSocketTokenReader } from '@core/utils/authStorage';
 import { STORAGE_KEYS } from '@core/utils/storage';
 import orderAlertSound from '@/assets/sounds/order_alert.mp3';
+import CancelReasonModal from '@/modules/seller/components/orders/CancelReasonModal';
 
 const POLL_INTERVAL_MS = 15000;
 
@@ -46,6 +47,11 @@ const isEarningsRoute = (path) =>
 
 const DashboardLayout = ({ children, navItems, title }) => {
     const [newOrderAlert, setNewOrderAlert] = useState(null);
+    // Declining needs a reason (shown to the customer): the alert steps aside
+    // while the reason popup is open, and comes back if the seller backs out.
+    const [declineOrderId, setDeclineOrderId] = useState(null);
+    // order this device is accepting/declining right now (its own socket echo is not "another device")
+    const actingOrderIdRef = useRef(null);
     const [newReturnAlert, setNewReturnAlert] = useState(null);
     const [shownOrderIds, setShownOrderIds] = useState(() => new Set());
     const [shownReturnOrderIds, setShownReturnOrderIds] = useState(() => new Set());
@@ -193,6 +199,14 @@ const DashboardLayout = ({ children, navItems, title }) => {
                     return;
                 }
 
+                // the open alert's order was handled elsewhere (another device / tab) or expired
+                const open = newOrderAlertRef.current;
+                if (open && !pendingOrders.some((o) => o.orderId === open.orderId)) {
+                    newOrderAlertRef.current = null;
+                    setNewOrderAlert(null);
+                    setDeclineOrderId((id) => (id === open.orderId ? null : id));
+                }
+
                 const newOrder = pendingOrders.find((o) => !shownOrderIdsRef.current.has(o.orderId));
                 if (!newOrder || newOrderAlertRef.current) return;
 
@@ -278,6 +292,20 @@ const DashboardLayout = ({ children, navItems, title }) => {
         // flip the OTP popup to a "Received at store" confirmation.
         const unsubscribeStatus = onOrderStatusUpdate(getToken, (payload) => {
             if (!payload?.orderId) return;
+            // Accepted / declined / cancelled on another device or tab: close the
+            // new-order popup here too, right away.
+            const ws = String(payload.workflowStatus || '').toUpperCase();
+            const st = String(payload.status || '').toLowerCase();
+            const open = newOrderAlertRef.current;
+            if (open?.orderId === payload.orderId && actingOrderIdRef.current !== payload.orderId && ((ws && ws !== 'SELLER_PENDING') || (st && st !== 'pending'))) {
+                newOrderAlertRef.current = null;
+                setNewOrderAlert(null);
+                setDeclineOrderId((id) => (id === payload.orderId ? null : id));
+                toast.info(ws === 'CANCELLED' || st === 'cancelled'
+                    ? `Order #${payload.orderId} was cancelled`
+                    : `Order #${payload.orderId} was accepted on another device`);
+                if (fetchOrdersRef.current) fetchOrdersRef.current();
+            }
             if (!['returned', 'qc_passed', 'refund_completed'].includes(payload.returnStatus)) return;
             setReturnDropOtpAlert((prev) =>
                 prev && prev.orderId === payload.orderId ? { ...prev, received: true } : prev,
@@ -404,6 +432,7 @@ const DashboardLayout = ({ children, navItems, title }) => {
     }, [newOrderAlert]);
 
     const handleAcceptOrder = async (orderId) => {
+        actingOrderIdRef.current = orderId;
         try {
             await sellerApi.updateOrderStatus(orderId, { status: 'confirmed' });
             toast.success(`Order #${orderId} Accepted!`);
@@ -423,20 +452,32 @@ const DashboardLayout = ({ children, navItems, title }) => {
                 if (fetchOrdersRef.current) fetchOrdersRef.current();
             }
             toast.error(msg);
+        } finally {
+            actingOrderIdRef.current = null;
         }
     };
 
-    const handleDeclineOrder = async (orderId) => {
+    const handleDeclineOrder = async (orderId, reason) => {
+        actingOrderIdRef.current = orderId;
         try {
-            await sellerApi.updateOrderStatus(orderId, { status: 'cancelled' });
+            await sellerApi.updateOrderStatus(orderId, { status: 'cancelled', reason });
             toast.error(`Order #${orderId} Declined`);
             stopOrderRingtone();
             setNewOrderAlert(null);
+            setDeclineOrderId(null);
         } catch (error) {
             const msg =
                 error?.response?.data?.message ||
                 "Failed to update order";
+            // the accept window may run out while the reason is being typed
+            if (/not available|no longer|expired/i.test(String(msg))) {
+                stopOrderRingtone();
+                setNewOrderAlert(null);
+                setDeclineOrderId(null);
+            }
             toast.error(msg);
+        } finally {
+            actingOrderIdRef.current = null;
         }
     };
 
@@ -475,7 +516,12 @@ const DashboardLayout = ({ children, navItems, title }) => {
 
             {/* Global Order Alert Modal */}
             <AnimatePresence>
-                {newOrderAlert && (
+                <CancelReasonModal
+                    isOpen={Boolean(declineOrderId)}
+                    onClose={() => setDeclineOrderId(null)}
+                    onConfirm={(reason) => handleDeclineOrder(declineOrderId, reason)}
+                />
+                {newOrderAlert && !declineOrderId && (
                     <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
                         <motion.div
                             initial={{ scale: 0.9, opacity: 0, y: 20 }}
@@ -552,7 +598,7 @@ const DashboardLayout = ({ children, navItems, title }) => {
 
                                 <div className="grid grid-cols-2 gap-4 w-full">
                                     <button
-                                        onClick={() => handleDeclineOrder(newOrderAlert.orderId)}
+                                        onClick={() => setDeclineOrderId(newOrderAlert.orderId)}
                                         className="flex items-center justify-center gap-2 py-4 rounded-2xl bg-slate-100 text-slate-600 font-bold hover:bg-slate-200 transition-colors"
                                     >
                                         <X className="h-5 w-5" />

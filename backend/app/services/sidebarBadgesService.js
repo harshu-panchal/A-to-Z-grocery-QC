@@ -4,13 +4,8 @@ import Seller from "../models/seller.js";
 import Delivery from "../models/delivery.js";
 import Product from "../models/product.js";
 import Transaction from "../models/transaction.js";
-import { WORKFLOW_STATUS } from "../constants/orderWorkflow.js";
+import { PENDING_ORDER_QUERY } from "../constants/orderWorkflow.js";
 import { PRODUCT_APPROVAL_STATUS } from "./productModerationService.js";
-
-const PENDING_ORDER_STATUSES = [
-  WORKFLOW_STATUS.CREATED,
-  WORKFLOW_STATUS.SELLER_PENDING,
-];
 
 const PENDING_WITHDRAWAL_STATUSES = ["Pending", "Processing"];
 
@@ -33,12 +28,7 @@ export async function getAdminSidebarBadges() {
     pendingProducts,
     pendingReturns,
   ] = await Promise.all([
-    Order.countDocuments({
-      $or: [
-        { status: "pending" },
-        { workflowStatus: { $in: PENDING_ORDER_STATUSES } },
-      ],
-    }),
+    Order.countDocuments(PENDING_ORDER_QUERY),
     Seller.countDocuments({
       isVerified: { $ne: true },
       $or: [
@@ -47,7 +37,8 @@ export async function getAdminSidebarBadges() {
         { applicationStatus: null },
       ],
     }),
-    Delivery.countDocuments({ isVerified: { $ne: true } }),
+    // same as the "Waiting for Review" list: rejected/deactivated riders are not pending
+    Delivery.countDocuments({ isVerified: false, applicationStatus: { $ne: "rejected" } }),
     Transaction.countDocuments({
       type: "Withdrawal",
       status: { $in: PENDING_WITHDRAWAL_STATUSES },
@@ -82,13 +73,7 @@ export async function getSellerSidebarBadges(sellerId) {
   }
 
   const [pendingOrders, pendingReturns, pendingWithdrawals] = await Promise.all([
-    Order.countDocuments({
-      seller: sellerObjectId,
-      $or: [
-        { status: "pending" },
-        { workflowStatus: { $in: PENDING_ORDER_STATUSES } },
-      ],
-    }),
+    Order.countDocuments({ seller: sellerObjectId, ...PENDING_ORDER_QUERY }),
     Order.countDocuments({
       seller: sellerObjectId,
       returnStatus: "return_requested",

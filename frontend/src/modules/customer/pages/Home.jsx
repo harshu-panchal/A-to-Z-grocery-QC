@@ -401,7 +401,7 @@ const Home = () => {
         heroConfigCache.current[cacheKey] = resolved;
         if (cacheKey === "__home__") { const homeCacheKey = getHomePageDataCacheKey(currentLocation); const cachedHomeData = homePageDataCache.get(homeCacheKey); if (cachedHomeData) homePageDataCache.set(homeCacheKey, { ...cachedHomeData, heroConfig: resolved }); }
         setHeroConfig(resolved);
-      } catch (e) { setHeroConfig(EMPTY_HERO_CONFIG); }
+      } catch (e) { setHeroConfig({ banners: { items: [] }, categoryIds: [] }); }
     };
     fetchHeroConfig();
   }, [activeCategory, currentLocation?.latitude, currentLocation?.longitude]);
@@ -524,7 +524,7 @@ const Home = () => {
         categories={categories}
         activeCategory={activeCategory}
         onCategorySelect={handleHeaderCategorySelect}
-        banners={heroConfig.banners?.items || []}
+        banners={heroConfig === EMPTY_HERO_CONFIG ? null : heroConfig.banners?.items || []}
         products={tabProducts}
         quickCategories={effectiveQuickCategories}
         categoryMap={categoryMap}
