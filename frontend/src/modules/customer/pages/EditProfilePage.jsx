@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, User, Phone, Mail, Camera, Save } from 'lucide-react';
+import { ArrowLeft, User, Phone, Mail, Camera, Save, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@core/context/AuthContext';
@@ -15,7 +15,6 @@ const EditProfilePage = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [formData, setFormData] = useState({
         name: user?.name || '',
-        phone: user?.phone || '',
         email: user?.email || '',
         bio: user?.bio || ''
     });
@@ -136,17 +135,20 @@ const EditProfilePage = () => {
 
                         <div>
                             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Phone Number</label>
-                            <div className="flex items-center gap-3 bg-slate-50 px-4 py-3 rounded-xl border border-slate-200 focus-within:border-primary focus-within:ring-4 focus-within:ring-primary/10 transition-all">
+                            {/* the registered number is permanent: shown, never editable */}
+                            <div className="flex items-center gap-3 bg-slate-100 px-4 py-3 rounded-xl border border-slate-200">
                                 <Phone size={20} className="text-slate-400" />
                                 <input
                                     type="tel"
-                                    name="phone"
-                                    value={formData.phone}
-                                    onChange={handleChange}
-                                    className="bg-transparent w-full text-slate-800 font-bold outline-none placeholder:font-medium"
-                                    placeholder="Enter phone number"
+                                    value={user?.phone || ''}
+                                    readOnly
+                                    disabled
+                                    aria-readonly="true"
+                                    className="bg-transparent w-full text-slate-500 font-bold outline-none cursor-not-allowed"
                                 />
+                                <Lock size={16} className="text-slate-400 shrink-0" />
                             </div>
+                            <p className="mt-1.5 text-xs text-slate-400">Your registered number can't be changed.</p>
                         </div>
 
                         <div>
