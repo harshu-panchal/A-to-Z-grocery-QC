@@ -5,19 +5,21 @@
 .atz button { cursor: pointer; border: 0; background: none; color: inherit; padding: 0; -webkit-tap-highlight-color: transparent; touch-action: manipulation; transition: background-color 150ms, transform 150ms; }
 .atz button:active { transform: scale(.96); }
 .atz button:focus-visible, .atz input:focus-visible, .atz a:focus-visible { outline: 2px solid var(--green); outline-offset: 4px; }
-.atz.app-shell { background: #fffefa; }
+.atz.app-shell { background: #fffefa; overflow-x: clip; }
 .atz .header { background: linear-gradient(90deg, #116b3d, #20834b); color: #fff; padding: 23px 22px 12px; }
 .atz .header-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+/* long addresses / large phone font: let the left side shrink so the page never scrolls sideways */
+.atz .header-top > div:first-child { min-width: 0; flex: 1 1 auto; }
 .atz .brand { display: flex; align-items: center; gap: 9px; margin-bottom: 15px; }
 .atz .brand-logo { width: 36px; height: 36px; flex-shrink: 0; border-radius: 50%; background: #fbfaf6; object-fit: cover; border: 1.5px solid #ffffff40; box-shadow: 0 2px 8px #0b3a2233; }
 .atz .brand-name { font-family: 'Manrope', sans-serif; font-size: 23px; font-weight: 800; letter-spacing: -.8px; line-height: 1.2; color: #fffef3; white-space: nowrap; }
 .atz .brand-to { font-size: 13px; font-weight: 600; letter-spacing: -.3px; margin: 0 4px; color: #dff0cc; }
 .atz .brand-grocery { font-size: 17px; font-weight: 600; letter-spacing: -.5px; margin-left: 3px; color: #e6f3d9; }
-.atz .location { display: flex; text-align: left; align-items: center; gap: 7px; max-width: 345px; }
+.atz .location { display: flex; text-align: left; align-items: center; gap: 7px; max-width: 100%; }
 .atz .location > svg { flex-shrink: 0; color: #d1f29c; }
 .atz .location div { min-width: 0; }
 .atz .location strong { font-family: 'Manrope', sans-serif; display: block; font-size: 22px; letter-spacing: -.8px; font-weight: 800; line-height: 1.2; }
-.atz .location span { display: block; font-size: 11px; color: #e1f0dd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 255px; margin-top: 5px; }
+.atz .location span { display: block; font-size: 11px; color: #e1f0dd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; margin-top: 5px; }
 .atz .icon-button { background: #ffffff18; border: 1px solid #ffffff35; border-radius: 50%; padding: 12px; flex-shrink: 0; min-width: 48px; min-height: 48px; }
 .atz .search-box { margin-top: 21px; background: #fffefa; display: flex; align-items: center; gap: 12px; padding: 14px 15px; border-radius: 13px; border: 1px solid #dae5d4; color: #71806c; }
 .atz .search-box input { border: none; outline: none; background: transparent; min-width: 0; flex: 1; font-size: 16px; color: #263629; cursor: pointer; }

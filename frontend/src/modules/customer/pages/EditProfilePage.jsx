@@ -1,10 +1,13 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, User, Phone, Mail, Camera, Save } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { useAuth } from '@core/context/AuthContext';
 import { customerApi } from '../services/customerApi';
+import axiosInstance from '@core/api/axios';
+
+const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
 const EditProfilePage = () => {
     const navigate = useNavigate();
@@ -16,6 +19,33 @@ const EditProfilePage = () => {
         email: user?.email || '',
         bio: user?.bio || ''
     });
+
+    const fileRef = useRef(null);
+    const [photoUploading, setPhotoUploading] = useState(false);
+
+    // Photo saves on its own (no need to press Save Changes)
+    const handlePhotoPick = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = '';
+        if (!file) return;
+        if (!file.type.startsWith('image/')) return toast.error('Please choose an image');
+        if (file.size > MAX_PHOTO_BYTES) return toast.error('Image must be under 5 MB');
+        setPhotoUploading(true);
+        try {
+            const form = new FormData();
+            form.append('file', file);
+            const up = await axiosInstance.post('/media/upload', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+            const url = up.data?.result?.url || up.data?.result?.secureUrl;
+            if (!url) throw new Error('Upload failed');
+            const res = await customerApi.updateProfile({ profileImage: url });
+            login({ ...user, ...(res.data?.result || {}), profileImage: url });
+            toast.success('Profile photo updated');
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Could not upload photo');
+        } finally {
+            setPhotoUploading(false);
+        }
+    };
 
     const handleChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -56,13 +86,29 @@ const EditProfilePage = () => {
                 <div className="flex flex-col items-center mb-8">
                     <div className="relative">
                         <div className="h-28 w-28 rounded-full bg-slate-200 border-4 border-white shadow-md flex items-center justify-center overflow-hidden">
-                            <User size={48} className="text-slate-400" />
+                            {user?.profileImage
+                                ? <img src={user.profileImage} alt="Profile" className="h-full w-full object-cover" />
+                                : <User size={48} className="text-slate-400" />}
+                            {photoUploading && (
+                                <div className="absolute inset-0 m-1 flex items-center justify-center rounded-full bg-black/40">
+                                    <div className="h-6 w-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                </div>
+                            )}
                         </div>
-                        <button className="absolute bottom-0 right-0 p-2 bg-primary text-primary-foreground rounded-full border-2 border-white shadow-sm hover:bg-[#0a701a] transition-colors">
+                        <button
+                            type="button"
+                            aria-label="Change photo"
+                            disabled={photoUploading}
+                            onClick={() => fileRef.current?.click()}
+                            className="absolute bottom-0 right-0 p-2 bg-primary text-primary-foreground rounded-full border-2 border-white shadow-sm hover:bg-[#0a701a] transition-colors disabled:opacity-60"
+                        >
                             <Camera size={18} />
                         </button>
+                        <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoPick} />
                     </div>
-                    <p className="mt-3 text-sm font-bold text-primary">Change Photo</p>
+                    <button type="button" disabled={photoUploading} onClick={() => fileRef.current?.click()} className="mt-3 text-sm font-bold text-primary disabled:opacity-60">
+                        {photoUploading ? 'Uploading…' : 'Change Photo'}
+                    </button>
                 </div>
 
                 {/* Edit Form */}

@@ -107,7 +107,7 @@ export const getCustomerProfile = async (req, res) => {
 ================================ */
 export const updateCustomerProfile = async (req, res) => {
     try {
-        const { name, email, addresses } = req.body;
+        const { name, email, addresses, profileImage } = req.body;
 
         const customer = await Customer.findById(req.user.id);
         if (!customer) {
@@ -117,6 +117,14 @@ export const updateCustomerProfile = async (req, res) => {
         if (name) customer.name = name;
         if (email) customer.email = email;
         if (addresses) customer.addresses = addresses;
+        // uploaded via /media/upload first; "" removes the photo
+        if (profileImage !== undefined) {
+            const url = String(profileImage || "").trim();
+            if (url && !/^https?:\/\//i.test(url)) {
+                return handleResponse(res, 400, "Invalid profile image");
+            }
+            customer.profileImage = url || undefined;
+        }
 
         await customer.save();
 

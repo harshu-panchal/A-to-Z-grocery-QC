@@ -49,6 +49,11 @@ const userSchema = new mongoose.Schema(
             select: false, // response me password na aaye
         },
 
+        profileImage: {
+            type: String,
+            trim: true,
+        },
+
         role: {
             type: String,
             enum: ["user", "admin", "delivery", "seller"],

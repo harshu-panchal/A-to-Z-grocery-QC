@@ -53,7 +53,9 @@ const ProfilePage = () => {
                     <div className="flex items-center gap-3">
                         <div className="h-14 w-14 rounded-xl bg-slate-100 flex items-center justify-center p-1 border border-slate-200">
                             <div className="h-full w-full rounded-lg bg-white flex items-center justify-center overflow-hidden">
-                                <User size={28} className="text-slate-700" />
+                                {user?.profileImage
+                                    ? <img src={user.profileImage} alt="" className="h-full w-full object-cover" />
+                                    : <User size={28} className="text-slate-700" />}
                             </div>
                         </div>
                         <div>
