@@ -551,7 +551,7 @@ const Home = () => {
   }
 
   return (
-    <div className={`min-h-screen bg-[#f7f8f6] pt-[190px] md:pt-[250px] ${showNoService ? "bg-white" : ""}`}>
+    <div className={`min-h-screen bg-[#f7f8f6] pt-[190px] md:pt-[176px] ${showNoService ? "bg-white" : ""}`}>
       <div className={cn("contents", isProductDetailOpen && "hidden md:contents")}>
         <MainLocationHeader categories={categories} activeCategory={activeCategory} onCategorySelect={handleHeaderCategorySelect} />
       </div>
@@ -582,6 +582,25 @@ const Home = () => {
               )}
             </div>
           </motion.div>
+
+          {/* Desktop: hero banners in a row (phones use the carousel above) */}
+          {(heroConfig === EMPTY_HERO_CONFIG || heroConfig.banners?.items?.length > 0) && (
+            <section aria-label="Offers" className="mx-auto hidden w-full max-w-[1440px] px-8 pb-6 pt-2 md:block lg:px-12">
+              <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+                {heroConfig === EMPTY_HERO_CONFIG
+                  ? [0, 1, 2].map((i) => <div key={i} className={cn("aspect-[824/397] animate-pulse rounded-2xl bg-slate-200", i === 2 && "hidden lg:block")} />)
+                  : heroConfig.banners.items.slice(0, 6).map((b, i) => (
+                    <img
+                      key={`${i}-${b.imageUrl}`}
+                      src={applyCloudinaryTransform(b.imageUrl, "f_auto,q_auto,c_scale,w_824")}
+                      alt={b.title || "Offer"}
+                      loading={i < 3 ? "eager" : "lazy"}
+                      className="aspect-[824/397] w-full rounded-2xl bg-slate-100 object-cover shadow-sm"
+                    />
+                  ))}
+              </div>
+            </section>
+          )}
 
           <PromoMarquee />
           {/* Header tabs use the in-page category browser below instead */}
