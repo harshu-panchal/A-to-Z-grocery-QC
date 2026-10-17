@@ -223,11 +223,11 @@ const DeliveryLayout = () => {
       startOrderRingtone();
       document.body.style.overflow = "hidden";
       return () => {
-        document.body.style.overflow = "unset";
+        document.body.style.overflow = "";
       };
     }
     stopOrderRingtone();
-    document.body.style.overflow = "unset";
+    document.body.style.overflow = "";
     return undefined;
   }, [activeOrder]);
 

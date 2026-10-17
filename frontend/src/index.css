@@ -51,6 +51,21 @@
   --customer-mini-cart-color: #0284c7;
 }
 
+/* Nothing may make the page scroll sideways (wide header, banners, large
+   phone font in the app's WebView). `clip` where supported: unlike `hidden`
+   it does not turn html/body into scroll containers, so sticky bars keep working. */
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+@supports (overflow-x: clip) {
+  html,
+  body {
+    overflow-x: clip;
+  }
+}
+
 body {
   margin: 0;
   font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',

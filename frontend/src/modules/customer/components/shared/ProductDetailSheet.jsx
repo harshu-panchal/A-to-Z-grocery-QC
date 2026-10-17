@@ -243,17 +243,17 @@ const ProductDetailSheet = () => {
             document.documentElement.style.overflow = "hidden";
         } else {
             controls.start("hidden");
-            document.body.style.overflow = "unset";
-            document.body.style.touchAction = "auto";
-            document.documentElement.style.overflow = "unset";
+            document.body.style.overflow = ""; // clear (not "unset") so the stylesheet overflow-x rule applies again
+            document.body.style.touchAction = "";
+            document.documentElement.style.overflow = "";
             setIsExpanded(false);
         }
 
         // Cleanup function to ensure scroll is restored if component unmounts
         return () => {
-            document.body.style.overflow = "unset";
-            document.body.style.touchAction = "auto";
-            document.documentElement.style.overflow = "unset";
+            document.body.style.overflow = "";
+            document.body.style.touchAction = "";
+            document.documentElement.style.overflow = "";
         }
     }, [isOpen, controls]);
 
