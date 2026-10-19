@@ -495,6 +495,21 @@ export const updateOrderStatus = async (req, res) => {
 
     const canonicalOrderId = order.orderId;
 
+    // "Out for delivery" (rider confirms pickup) and "Delivered" (rider enters
+    // the customer's OTP) belong to the rider. A seller setting them skipped
+    // the OTP and moved the workflow to DELIVERED, so the customer saw
+    // "Delivered" while the rider's OTP then failed with "Invalid state for
+    // delivery completion". Admins keep a manual override for support.
+    if (role === "seller" && (status === "delivered" || status === "out_for_delivery")) {
+      return handleResponse(
+        res,
+        403,
+        status === "delivered"
+          ? "Delivery is completed by the rider with the customer's OTP."
+          : "Out for delivery is set when the rider confirms pickup.",
+      );
+    }
+
     if (order.workflowVersion >= 2 && role === "seller") {
       if (status === "confirmed") {
         try {
@@ -1602,6 +1617,12 @@ export const uploadReturnPickupProof = async (req, res) => {
         400,
         "Proof can only be uploaded when status is return_pickup_assigned.",
       );
+    }
+
+    if (role === "delivery" && !order.returnArrivedAtCustomerAt) {
+      return handleResponse(res, 409, 'Slide "Arrived at customer" first.', {
+        error: { code: "ARRIVAL_REQUIRED", message: 'Slide "Arrived at customer" first.' },
+      });
     }
 
     if (!Array.isArray(images) || images.length === 0) {

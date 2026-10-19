@@ -35,6 +35,7 @@ jest.unstable_mockModule("../app/constants/orderWorkflow.js", () => ({
   DEFAULT_SELLER_TIMEOUT_MS: () => 0,
   workflowFromLegacyStatus: jest.fn(),
   legacyStatusFromWorkflow: jest.fn(),
+  PENDING_ORDER_QUERY: { status: "pending" },
 }));
 
 jest.unstable_mockModule("../app/services/orderWorkflowService.js", () => ({

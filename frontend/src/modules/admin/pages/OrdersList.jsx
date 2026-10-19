@@ -92,6 +92,21 @@ function formatOrdersResponse(payload, fallbackResults, requestedPage) {
     };
 }
 
+// India calendar day, days ago -> "yyyy-MM-dd"
+const istDay = (daysAgo = 0) =>
+    new Date(Date.now() - daysAgo * 86400000).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+function dateRangeToDates(range) {
+    const today = istDay(0);
+    switch (range) {
+        case 'Today': return { startDate: today, endDate: today };
+        case 'Yesterday': return { startDate: istDay(1), endDate: istDay(1) };
+        case 'Last 7 Days': return { startDate: istDay(6), endDate: today };
+        case 'This Month': return { startDate: `${today.slice(0, 8)}01`, endDate: today };
+        default: return null;
+    }
+}
+
 const OrdersList = () => {
     const { status = 'all' } = useParams();
     const navigate = useNavigate();
@@ -126,9 +141,9 @@ const OrdersList = () => {
         const params = { page, limit: pageSize };
         if (status !== 'all') params.status = status;
         if (debouncedSearchTerm.trim()) params.search = debouncedSearchTerm.trim();
-        if (dateRange !== 'All Time') {
-            params.dateFilter = dateRange.toLowerCase().replace(/ /g, '_');
-        }
+        // the API filters by startDate/endDate (yyyy-MM-dd, read as IST days)
+        const range = dateRangeToDates(dateRange);
+        if (range) Object.assign(params, range);
         return params;
     }, [page, pageSize, status, debouncedSearchTerm, dateRange]);
 
@@ -356,6 +371,12 @@ const OrdersList = () => {
                         <Button onClick={handleExport} variant="outline">
                             <Download className="h-4 w-4" />
                             Export
+                        </Button>
+                        <Button
+                            variant={dateRange === 'Today' ? 'primary' : 'outline'}
+                            onClick={() => setDateRange(dateRange === 'Today' ? 'All Time' : 'Today')}
+                        >
+                            Today
                         </Button>
                         <div className="relative">
                             <Button variant="outline" onClick={() => setIsDateMenuOpen(!isDateMenuOpen)}>

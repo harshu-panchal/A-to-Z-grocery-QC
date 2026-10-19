@@ -66,14 +66,10 @@ describe("orderQueryService", () => {
 
     expect(query.seller).toBe("seller-1");
     expect(query.status).toEqual({ $in: ["confirmed", "packed"] });
-    expect(query.createdAt.$gte).toEqual(new Date("2026-03-01"));
-    expect(query.createdAt.$lte.getFullYear()).toBe(2026);
-    expect(query.createdAt.$lte.getMonth()).toBe(2);
-    expect(query.createdAt.$lte.getDate()).toBe(29);
-    expect(query.createdAt.$lte.getHours()).toBe(23);
-    expect(query.createdAt.$lte.getMinutes()).toBe(59);
-    expect(query.createdAt.$lte.getSeconds()).toBe(59);
-    expect(query.createdAt.$lte.getMilliseconds()).toBe(999);
+    // Plain dates are whole days in India time (IST, UTC+5:30), whatever the
+    // server timezone: 1 Mar 00:00 IST -> 29 Mar 23:59:59.999 IST.
+    expect(query.createdAt.$gte.toISOString()).toBe("2026-02-28T18:30:00.000Z");
+    expect(query.createdAt.$lte.toISOString()).toBe("2026-03-29T18:29:59.999Z");
   });
 
   test("fetchAvailableOrdersForDelivery returns requiresLocation when rider has no coordinates", async () => {

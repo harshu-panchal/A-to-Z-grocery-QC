@@ -37,6 +37,7 @@ import {
   verifyDeliveryOtp,
   requestReturnPickupOtp,
   verifyReturnPickupOtp,
+  markReturnArrived,
   requestReturnDropOtp,
   verifyReturnDropOtp,
   getOrderRoute,
@@ -219,6 +220,14 @@ router.post(
   verifyToken,
   allowRoles("delivery", "admin"),
   verifyDeliveryOtp,
+);
+
+// Return legs: rider arrived at customer / seller (must precede photos + OTP)
+router.post(
+  "/workflow/:orderId/return/arrived/:leg",
+  verifyToken,
+  allowRoles("delivery", "admin"),
+  markReturnArrived,
 );
 
 // Workflow routes — return pickup OTP (customer)

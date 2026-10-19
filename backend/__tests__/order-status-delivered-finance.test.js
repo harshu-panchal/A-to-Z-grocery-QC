@@ -46,6 +46,7 @@ jest.unstable_mockModule("../app/constants/orderWorkflow.js", () => ({
   DEFAULT_SELLER_TIMEOUT_MS: () => 0,
   workflowFromLegacyStatus: jest.fn(),
   legacyStatusFromWorkflow: jest.fn(),
+  PENDING_ORDER_QUERY: { status: "pending" },
 }));
 
 jest.unstable_mockModule("../app/services/orderWorkflowService.js", () => ({
@@ -121,4 +122,26 @@ describe("updateOrderStatus delivered finance ordering", () => {
     expect(mockApplyDeliveredSettlement).toHaveBeenCalledWith(orderDoc, "ORD1");
     expect(callOrder).toEqual(["save", "settlement"]);
   });
+
+  it.each([["delivered"], ["out_for_delivery"]])(
+    "a seller cannot set %s (the rider does, with pickup confirm / customer OTP)",
+    async (status) => {
+      const orderDoc = {
+        _id: "mongo-2", orderId: "ORD2", status: "packed", workflowVersion: 2,
+        workflowStatus: "OUT_FOR_DELIVERY", deliveryBoy: "rider-1", seller: "seller-1",
+        save: jest.fn(),
+      };
+      mockOrderFindOne.mockResolvedValue(orderDoc);
+
+      const result = await updateOrderStatus(
+        { params: { orderId: "ORD2" }, body: { status }, user: { id: "seller-1", role: "seller" } },
+        {},
+      );
+
+      expect(result.status).toBe(403);
+      expect(orderDoc.save).not.toHaveBeenCalled();
+      expect(orderDoc.workflowStatus).toBe("OUT_FOR_DELIVERY");
+      expect(mockApplyDeliveredSettlement).not.toHaveBeenCalled();
+    },
+  );
 });

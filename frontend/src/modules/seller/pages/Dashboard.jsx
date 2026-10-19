@@ -671,8 +671,9 @@ const Dashboard = () => {
                       <option value="pending" disabled={['confirmed','packed','out_for_delivery','delivered','cancelled'].includes(selectedOrder.status.toLowerCase())}>Pending</option>
                       <option value="confirmed" disabled={['packed','out_for_delivery','delivered','cancelled'].includes(selectedOrder.status.toLowerCase())}>Confirmed</option>
                       <option value="packed" disabled={['out_for_delivery','delivered','cancelled'].includes(selectedOrder.status.toLowerCase())}>Packed</option>
-                      <option value="out_for_delivery" disabled={['delivered','cancelled'].includes(selectedOrder.status.toLowerCase())}>Out for Delivery</option>
-                      <option value="delivered" disabled={selectedOrder.status.toLowerCase() === 'cancelled'}>Delivered</option>
+                      {/* set by the rider (pickup confirm / customer OTP), not the seller */}
+                      <option value="out_for_delivery" disabled>Out for Delivery</option>
+                      <option value="delivered" disabled>Delivered</option>
                       <option value="cancelled" disabled={['out_for_delivery','delivered','cancelled'].includes(selectedOrder.status.toLowerCase())}>Cancelled</option>
                     </select>
                     <HiOutlineChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 pointer-events-none opacity-60" />

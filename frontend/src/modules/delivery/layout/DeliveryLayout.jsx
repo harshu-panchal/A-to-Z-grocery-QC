@@ -4,7 +4,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import BottomNav from "../components/BottomNav";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
-import { BellRing, MapPin } from "lucide-react";
+import { BellRing, MapPin, X, ChevronUp } from "lucide-react";
 import { deliveryApi } from "../services/deliveryApi";
 import { useAuth } from "@core/context/AuthContext";
 import {
@@ -37,6 +37,9 @@ const DeliveryLayout = () => {
   const { user } = useAuth();
 
   const [activeOrder, setActiveOrder] = useState(null);
+  // Rider closed the popup with X: the offer stays (countdown keeps running)
+  // and a small bar lets them reopen it to accept or reject.
+  const [offerMinimized, setOfferMinimized] = useState(false);
   const [timeLeft, setTimeLeft] = useState(60);
   const [acceptWindowTotal, setAcceptWindowTotal] = useState(60);
   const shownOrderIdsRef = useRef(new Set());
@@ -172,7 +175,8 @@ const DeliveryLayout = () => {
       expiresAt: payload.deliverySearchExpiresAt || new Date(Date.now() + 60000).toISOString(),
       isReturnPickup,
       offerKey,
-      items: payload.items || (isReturnPickup ? p.returnItems : null) || [],
+      items: payload.items || p.items || (isReturnPickup ? p.returnItems : null) || [],
+      paymentMode: p.paymentMode || payload.paymentMode || null,
     });
     return true;
   }, []);
@@ -215,21 +219,39 @@ const DeliveryLayout = () => {
       isReturnPickup,
       offerKey,
       items: (isReturnPickup && newOrder.returnItems?.length ? newOrder.returnItems : newOrder.items) || [],
+      paymentMode: newOrder.paymentMode || null,
     });
   }, []);
 
+  // A new offer always opens as the full popup.
   useEffect(() => {
-    if (activeOrder) {
+    setOfferMinimized(false);
+  }, [activeOrder?.id]);
+
+  const popupOpen = Boolean(activeOrder) && !offerMinimized;
+  useEffect(() => {
+    if (popupOpen) {
       startOrderRingtone();
       document.body.style.overflow = "hidden";
       return () => {
         document.body.style.overflow = "";
       };
     }
+    // closed (X) or no offer: silence; the minimized bar stays quiet
     stopOrderRingtone();
     document.body.style.overflow = "";
     return undefined;
-  }, [activeOrder]);
+  }, [popupOpen]);
+
+  // Escape closes the popup like the X (offer kept, not rejected)
+  useEffect(() => {
+    if (!popupOpen) return undefined;
+    const onKey = (e) => {
+      if (e.key === "Escape") setOfferMinimized(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [popupOpen]);
 
   useEffect(() => {
     return () => {
@@ -827,7 +849,7 @@ const DeliveryLayout = () => {
       {typeof document !== "undefined" &&
         createPortal(
           <AnimatePresence>
-            {activeOrder && (
+            {popupOpen && (
               <div
                 className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-slate-900/85 backdrop-blur-sm"
                 role="dialog"
@@ -840,8 +862,19 @@ const DeliveryLayout = () => {
                   animate={{ scale: 1, opacity: 1, y: 0 }}
                   exit={{ scale: 0.96, opacity: 0, y: 16 }}
                   transition={{ type: "spring", stiffness: 380, damping: 28 }}
-                  className="bg-white rounded-[32px] p-6 w-full max-w-[340px] shadow-2xl border-4 border-primary/20"
+                  className="relative bg-white rounded-[32px] p-6 w-full max-w-[340px] max-h-[90vh] overflow-y-auto overscroll-contain shadow-2xl border-4 border-primary/20"
+                  data-lenis-prevent
                 >
+                  <button
+                    type="button"
+                    onClick={() => setOfferMinimized(true)}
+                    disabled={isAcceptingOrder}
+                    aria-label="Close (the request stays open until the timer ends)"
+                    title="Close — you can reopen it from the bar below"
+                    className="absolute top-3 right-3 h-9 w-9 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 active:scale-95 disabled:opacity-40"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                   <div className="flex flex-col items-center">
                     <div className="h-16 w-16 bg-primary/10 rounded-full flex items-center justify-center mb-4 animate-bounce">
                       <BellRing className="h-8 w-8 text-primary" />
@@ -862,13 +895,23 @@ const DeliveryLayout = () => {
                         Earnings
                       </span>
                     </div>
+                    {!activeOrder.isReturnPickup && Number(activeOrder.value) > 0 && (
+                      <p className="-mt-4 mb-5 text-[11px] font-bold text-slate-500">
+                        Order ₹{activeOrder.value}
+                        {String(activeOrder.paymentMode || "").toUpperCase() === "COD" ? (
+                          <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-amber-800">Cash on delivery: collect ₹{activeOrder.value}</span>
+                        ) : activeOrder.paymentMode ? (
+                          <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-800">Prepaid</span>
+                        ) : null}
+                      </p>
+                    )}
 
                     <div className="w-full space-y-4 mb-6">
-                      {/* Return Items "Small Cart" */}
-                      {activeOrder.isReturnPickup && activeOrder.items?.length > 0 && (
+                      {/* Items "small cart": return items or the order's items */}
+                      {activeOrder.items?.length > 0 && (
                         <div className="bg-slate-50 p-2.5 rounded-2xl border border-slate-100 flex flex-col gap-2">
                           <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest px-1">
-                            Return Items ({activeOrder.items.length})
+                            {activeOrder.isReturnPickup ? "Return Items" : "Order Items"} ({activeOrder.items.length})
                           </p>
                           <div className="flex gap-2 overflow-x-auto no-scrollbar">
                             {activeOrder.items.map((item, idx) => (
@@ -957,6 +1000,32 @@ const DeliveryLayout = () => {
               </div>
             )}
           </AnimatePresence>,
+          document.body,
+        )}
+
+      {/* Popup closed with X: the offer is still open until its timer ends */}
+      {typeof document !== "undefined" &&
+        activeOrder &&
+        offerMinimized &&
+        createPortal(
+          <div className="fixed inset-x-0 bottom-24 z-[9999] flex justify-center px-4 pointer-events-none">
+            <button
+              type="button"
+              onClick={() => setOfferMinimized(false)}
+              className="pointer-events-auto w-full max-w-md flex items-center gap-3 rounded-2xl bg-slate-900 px-4 py-3 text-left text-white shadow-2xl active:scale-[0.98]"
+            >
+              <BellRing className="h-5 w-5 shrink-0 text-primary" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-black truncate">
+                  {activeOrder.isReturnPickup ? "Return pickup request" : "New order request"} · ₹{activeOrder.earnings}
+                </span>
+                <span className={`block text-[11px] font-bold ${timeLeft < 10 ? "text-rose-300" : "text-slate-300"}`}>
+                  {timeLeft}s left · tap to accept or reject
+                </span>
+              </span>
+              <ChevronUp className="h-5 w-5 shrink-0" />
+            </button>
+          </div>,
           document.body,
         )}
 

@@ -310,6 +310,75 @@ export async function validateDeliveryOtp(orderId, enteredOtp) {
 }
 
 /**
+ * Verify an order OTP (delivery / return_pickup / return_drop) atomically.
+ *
+ * The old read -> compare -> save() flow let parallel requests all read
+ * `attempts: 0`, so a burst of guesses could bypass the 3-attempt limit on a
+ * 4-digit code, and two parallel correct submissions could both "consume" it.
+ * Here both the consume and the attempt increment are conditional updates:
+ * a code can be consumed once, and at most `maxAttempts` wrong guesses count.
+ *
+ * @returns {Promise<{valid: boolean, error?: string, message: string, attemptsRemaining?: number}>}
+ */
+export async function verifyOtpAtomic(orderId, type, enteredOtp) {
+  if (!orderId) {
+    return { valid: false, error: 'INVALID_FORMAT', message: 'orderId is required' };
+  }
+  const code = String(enteredOtp ?? '').trim();
+  if (!/^\d{4}$/.test(code)) {
+    return { valid: false, error: 'OTP_INVALID_FORMAT', message: 'OTP must be exactly 4 digits' };
+  }
+
+  const record = await OrderOtp.findOne({ orderId, type }).sort({
+    lastGeneratedAt: -1,
+    createdAt: -1,
+  });
+
+  if (!record) {
+    return { valid: false, error: 'OTP_NOT_FOUND', message: 'No OTP has been generated yet. Please generate one.' };
+  }
+  if (record.consumedAt) {
+    return { valid: false, error: 'OTP_CONSUMED', message: 'This OTP has already been used. Please generate a new one.', attemptsRemaining: 0 };
+  }
+  if (record.attempts >= record.maxAttempts) {
+    return { valid: false, error: 'MAX_ATTEMPTS_EXCEEDED', message: 'Too many wrong attempts. Please generate a new OTP.', attemptsRemaining: 0 };
+  }
+  if (isOtpExpired(record.expiresAt)) {
+    return { valid: false, error: 'OTP_EXPIRED', message: 'OTP has expired. Please generate a new one.', attemptsRemaining: record.maxAttempts - record.attempts };
+  }
+
+  const now = new Date();
+  if (OrderOtp.hashCode(code) === record.codeHash) {
+    const claimed = await OrderOtp.findOneAndUpdate(
+      { _id: record._id, consumedAt: null, attempts: { $lt: record.maxAttempts }, expiresAt: { $gt: now } },
+      { $set: { consumedAt: now } },
+      { new: true },
+    );
+    if (claimed) return { valid: true, message: 'OTP validated successfully' };
+    // Lost the race: consumed, locked or expired between the read and now.
+    return { valid: false, error: 'OTP_CONSUMED', message: 'This OTP is no longer valid. Please generate a new one.', attemptsRemaining: 0 };
+  }
+
+  const bumped = await OrderOtp.findOneAndUpdate(
+    { _id: record._id, consumedAt: null, attempts: { $lt: record.maxAttempts } },
+    { $inc: { attempts: 1 } },
+    { new: true },
+  );
+  if (!bumped) {
+    return { valid: false, error: 'MAX_ATTEMPTS_EXCEEDED', message: 'Too many wrong attempts. Please generate a new OTP.', attemptsRemaining: 0 };
+  }
+  const attemptsRemaining = Math.max(0, bumped.maxAttempts - bumped.attempts);
+  return {
+    valid: false,
+    error: 'OTP_MISMATCH',
+    message: attemptsRemaining > 0
+      ? `Incorrect OTP. ${attemptsRemaining} attempt${attemptsRemaining === 1 ? '' : 's'} left.`
+      : 'Incorrect OTP. No attempts left, please generate a new OTP.',
+    attemptsRemaining,
+  };
+}
+
+/**
  * Generate OTP for return pickup from customer.
  * @param {string} orderId
  * @returns {Promise<Object>}
@@ -400,46 +469,7 @@ export async function generateReturnPickupOtp(orderId, requester = {}) {
  */
 export async function validateReturnPickupOtp(orderId, enteredOtp) {
   try {
-    if (!orderId || !enteredOtp) {
-      return { valid: false, error: 'INVALID_FORMAT', message: 'orderId and OTP are required' };
-    }
-
-    // Find the latest return_pickup OTP record
-    const otpRecord = await OrderOtp.findOne({ orderId, type: 'return_pickup' }).sort({
-      lastGeneratedAt: -1,
-      createdAt: -1,
-    });
-
-    if (!otpRecord) {
-      return { valid: false, error: 'OTP_NOT_FOUND', message: 'No return OTP found.' };
-    }
-
-    if (otpRecord.consumedAt) {
-      return { valid: false, error: 'OTP_CONSUMED', message: 'OTP already consumed.' };
-    }
-
-    if (otpRecord.attempts >= otpRecord.maxAttempts) {
-      return { valid: false, error: 'MAX_ATTEMPTS_EXCEEDED', message: 'Max attempts exceeded.' };
-    }
-
-    if (isOtpExpired(otpRecord.expiresAt)) {
-      return { valid: false, error: 'OTP_EXPIRED', message: 'OTP expired.' };
-    }
-
-    const enteredHash = OrderOtp.hashCode(enteredOtp);
-    const isMatch = enteredHash === otpRecord.codeHash;
-
-    if (!isMatch) {
-      otpRecord.attempts += 1;
-      await otpRecord.save();
-      return { valid: false, error: 'OTP_MISMATCH', message: 'Invalid OTP.' };
-    }
-
-    // OTP is valid - mark as consumed
-    otpRecord.consumedAt = new Date();
-    await otpRecord.save();
-
-    return { valid: true, message: 'OTP validated successfully' };
+    return await verifyOtpAtomic(orderId, 'return_pickup', enteredOtp);
   } catch (error) {
     console.error('Error validating return pickup OTP:', error);
     return { valid: false, error: 'VALIDATION_FAILED', message: 'Internal error.' };
@@ -503,49 +533,7 @@ export async function generateReturnDropOtp(orderId) {
  */
 export async function validateReturnDropOtp(orderId, enteredOtp) {
   try {
-    if (!orderId || !enteredOtp) {
-      return { valid: false, error: 'INVALID_FORMAT', message: 'orderId and OTP are required' };
-    }
-
-    const otpRecord = await OrderOtp.findOne({ orderId, type: 'return_drop' }).sort({
-      lastGeneratedAt: -1,
-      createdAt: -1,
-    });
-
-    if (!otpRecord) {
-      return { valid: false, error: 'OTP_NOT_FOUND', message: 'No seller drop OTP found. Please request a new one.' };
-    }
-
-    if (otpRecord.consumedAt) {
-      return { valid: false, error: 'OTP_CONSUMED', message: 'OTP already consumed.' };
-    }
-
-    if (otpRecord.attempts >= otpRecord.maxAttempts) {
-      return { valid: false, error: 'MAX_ATTEMPTS_EXCEEDED', message: 'Max attempts exceeded.' };
-    }
-
-    if (isOtpExpired(otpRecord.expiresAt)) {
-      return { valid: false, error: 'OTP_EXPIRED', message: 'OTP expired. Please request a new one.' };
-    }
-
-    const enteredHash = OrderOtp.hashCode(enteredOtp);
-    const isMatch = enteredHash === otpRecord.codeHash;
-
-    if (!isMatch) {
-      otpRecord.attempts += 1;
-      await otpRecord.save();
-      return {
-        valid: false,
-        error: 'OTP_MISMATCH',
-        message: 'Invalid OTP.',
-        attemptsRemaining: otpRecord.maxAttempts - otpRecord.attempts,
-      };
-    }
-
-    otpRecord.consumedAt = new Date();
-    await otpRecord.save();
-
-    return { valid: true, message: 'Seller drop OTP validated successfully' };
+    return await verifyOtpAtomic(orderId, 'return_drop', enteredOtp);
   } catch (error) {
     console.error('Error validating return drop OTP:', error);
     return { valid: false, error: 'VALIDATION_FAILED', message: 'Internal error.' };

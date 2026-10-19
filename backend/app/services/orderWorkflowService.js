@@ -1,7 +1,9 @@
+import crypto from "crypto";
 import mongoose from "mongoose";
 import Order from "../models/order.js";
 import DeliveryAssignment from "../models/deliveryAssignment.js";
 import OrderOtp from "../models/orderOtp.js";
+import { verifyOtpAtomic } from "./deliveryOtpService.js";
 import Seller from "../models/seller.js";
 import Delivery from "../models/delivery.js";
 import {
@@ -73,11 +75,18 @@ function deliveryBroadcastPayloadFromOrder(order, extra = {}) {
     workflowStatus: order.workflowStatus || WORKFLOW_STATUS.DELIVERY_SEARCH,
     sellerId: sid != null ? String(sid) : undefined,
     radiusMeters: meta.radiusMeters ?? INITIAL_DELIVERY_RADIUS_M(),
+    // What the rider is carrying, so they can decide before accepting.
+    items: (Array.isArray(order.items) ? order.items : []).slice(0, 10).map((item) => ({
+      name: item.name,
+      quantity: item.quantity,
+      image: item.image || item.thumbnail,
+    })),
     preview: {
       pickup,
       drop,
       total: order.pricing?.total ?? 0,
       earnings: order.paymentBreakdown?.riderPayoutTotal ?? order.riderEarnings ?? 0,
+      paymentMode: order.paymentMode || null,
     },
     deliverySearchExpiresAt: order.deliverySearchExpiresAt,
     ...extra,
@@ -1186,7 +1195,8 @@ export async function requestHandoffOtpAtomic(deliveryId, orderId, lat, lng) {
     }
   }
 
-  const code = String(Math.floor(1000 + Math.random() * 9000)).padStart(4, "0");
+  // crypto, not Math.random: OTPs must not be predictable. Full 0000-9999 range.
+  const code = String(crypto.randomInt(0, 10000)).padStart(4, "0");
   const codeHash = OrderOtp.hashCode(code);
 
   // Mark previous OTPs as consumed (legacy parity) instead of deleting,
@@ -1260,6 +1270,33 @@ function statusCodeForOtpError(errorCode) {
   }
 }
 
+const isOrderDelivered = (o) =>
+  o?.workflowStatus === WORKFLOW_STATUS.DELIVERED ||
+  String(o?.status || "").toLowerCase() === "delivered";
+
+/**
+ * The same answer as a successful verify, for an order this rider already
+ * delivered. A retried verify (double tap, keyboard Enter + button, or a
+ * request that timed out on a slow network after the server had delivered)
+ * used to fail with "Invalid state for delivery completion" even though the
+ * customer saw the order as delivered.
+ */
+function alreadyDeliveredResult(order) {
+  return {
+    order,
+    orderId: order.orderId,
+    deliveredAt: new Date(order.deliveredAt || Date.now()).toISOString(),
+    warning: null,
+    codShortfallAmount: order.paymentBreakdown?.codShortfallAmount || 0,
+    alreadyDelivered: true,
+  };
+}
+
+async function findDeliveredByRider(orderId, deliveryId) {
+  const fresh = await Order.findOne({ orderId, deliveryBoy: deliveryId }).populate("customer", "name phone");
+  return isOrderDelivered(fresh) ? fresh : null;
+}
+
 export async function verifyHandoffOtpAndDeliver(deliveryId, orderId, code, cashCollected = null) {
   // Validate format up-front so the controller surfaces OTP_INVALID_FORMAT
   // exactly like the legacy endpoint did (frontend switches on this code).
@@ -1289,6 +1326,8 @@ export async function verifyHandoffOtpAndDeliver(deliveryId, orderId, code, cash
     throw err;
   }
 
+  if (isOrderDelivered(order)) return alreadyDeliveredResult(order);
+
   const isV2Out = order.workflowStatus === WORKFLOW_STATUS.OUT_FOR_DELIVERY;
   const isV1Out =
     (order.workflowVersion || 1) < 2 &&
@@ -1300,61 +1339,20 @@ export async function verifyHandoffOtpAndDeliver(deliveryId, orderId, code, cash
     throw err;
   }
 
-  // Load the most recent OTP record; do NOT filter on consumedAt so we
-  // can return actionable OTP_CONSUMED instead of a generic OTP_NOT_FOUND.
-  const otp = await OrderOtp.findOne({ orderId, type: "delivery" }).sort({
-    lastGeneratedAt: -1,
-    createdAt: -1,
-  });
-
-  if (!otp) {
-    const err = new Error("No OTP has been generated for this order yet");
-    err.statusCode = statusCodeForOtpError("OTP_NOT_FOUND");
-    err.code = "OTP_NOT_FOUND";
+  // Atomic: consumed at most once, at most maxAttempts wrong guesses count.
+  const check = await verifyOtpAtomic(orderId, "delivery", code);
+  if (!check.valid && check.error === "OTP_CONSUMED") {
+    // A parallel request with this code may have just delivered the order.
+    const delivered = await findDeliveredByRider(orderId, deliveryId);
+    if (delivered) return alreadyDeliveredResult(delivered);
+  }
+  if (!check.valid) {
+    const err = new Error(check.message);
+    err.statusCode = statusCodeForOtpError(check.error);
+    err.code = check.error;
+    if (typeof check.attemptsRemaining === "number") err.attemptsRemaining = check.attemptsRemaining;
     throw err;
   }
-
-  if (otp.consumedAt) {
-    const err = new Error("OTP has already been used. Please generate a new OTP.");
-    err.statusCode = statusCodeForOtpError("OTP_CONSUMED");
-    err.code = "OTP_CONSUMED";
-    err.attemptsRemaining = 0;
-    throw err;
-  }
-
-  if (otp.attempts >= otp.maxAttempts) {
-    const err = new Error(
-      "Maximum validation attempts exceeded. Supervisor intervention required.",
-    );
-    err.statusCode = statusCodeForOtpError("MAX_ATTEMPTS_EXCEEDED");
-    err.code = "MAX_ATTEMPTS_EXCEEDED";
-    err.attemptsRemaining = 0;
-    throw err;
-  }
-
-  if (otp.expiresAt && otp.expiresAt < new Date()) {
-    const err = new Error("OTP has expired. Please generate a new OTP.");
-    err.statusCode = statusCodeForOtpError("OTP_EXPIRED");
-    err.code = "OTP_EXPIRED";
-    err.attemptsRemaining = otp.maxAttempts - otp.attempts;
-    throw err;
-  }
-
-  const match = OrderOtp.hashCode(String(code)) === otp.codeHash;
-  if (!match) {
-    otp.attempts += 1;
-    await otp.save();
-    const err = new Error("Invalid OTP. Please try again.");
-    err.statusCode = statusCodeForOtpError("OTP_MISMATCH");
-    err.code = "OTP_MISMATCH";
-    err.attemptsRemaining = otp.maxAttempts - otp.attempts;
-    throw err;
-  }
-
-  await OrderOtp.updateOne(
-    { _id: otp._id },
-    { $set: { consumedAt: new Date() } },
-  );
 
   const now = new Date();
 
@@ -1433,6 +1431,8 @@ export async function verifyHandoffOtpAndDeliver(deliveryId, orderId, code, cash
   }
 
   if (!updated) {
+    const delivered = await findDeliveredByRider(orderId, deliveryId);
+    if (delivered) return alreadyDeliveredResult(delivered);
     const err = new Error("Could not finalize delivery");
     err.statusCode = 409;
     err.code = "ORDER_NOT_READY";

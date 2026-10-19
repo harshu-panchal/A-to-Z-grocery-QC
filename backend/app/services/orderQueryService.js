@@ -527,7 +527,8 @@ export async function getOrderWithAccess(orderId, userId, role) {
 
   let order = await Order.findOne(orderKey)
     .populate("customer", "name email phone")
-    .populate("items.product", "name mainImage mrp sellingPrice")
+    // gstRate / rackCode / variant MRPs feed the customer invoice (receipt format).
+    .populate("items.product", "name mainImage mrp sellingPrice gstRate hsnCode rackCode variants.name variants.sku variants.mrp variants.rackCode")
     .populate("returnItems.product", "name mainImage mrp sellingPrice")
     .populate("deliveryBoy", "name phone")
     .populate("returnDeliveryBoy", "name phone")

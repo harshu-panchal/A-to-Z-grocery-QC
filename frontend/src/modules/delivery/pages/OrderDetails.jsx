@@ -72,28 +72,15 @@ const RETURN_STATUS_STEPS = [
   { id: 3, label: "Returned" },
 ];
 
-// "Arrived at customer / at seller" is only a UI step (no server status), so
-// it is remembered on the device; otherwise a refresh or reopening the order
-// from "My orders" dropped the rider back to the arrive slider.
-const arrivedKey = (orderId, leg) => `rider-return-arrived:${orderId}:${leg}`;
-const markArrived = (orderId, leg) => {
-  try { localStorage.setItem(arrivedKey(orderId, leg), String(Date.now())); } catch { /* storage blocked */ }
-};
-const hasArrived = (orderId, leg) => {
-  try { return Boolean(localStorage.getItem(arrivedKey(orderId, leg))); } catch { return false; }
-};
-
-/** Return step restored from server state + the remembered "arrived" flags. */
+/**
+ * Return step, entirely from server state. "Arrived at customer / seller" are
+ * saved on the order (returnArrivedAt*), so a refresh, another phone or a
+ * cleared browser can't skip a step or drop the rider back one.
+ */
 const restoreReturnStep = (order, baseStep) => {
   const rs = String(order?.returnStatus || "");
-  if (rs === "return_pickup_assigned") {
-    const atCustomer =
-      (order.returnPickupImages?.length || 0) > 0 ||
-      order.returnOtpPending?.type === "return_pickup" ||
-      hasArrived(order.orderId, "customer");
-    return atCustomer ? 2 : 1;
-  }
-  if (rs === "return_in_transit" && hasArrived(order.orderId, "seller")) return 4;
+  if (rs === "return_pickup_assigned") return order.returnArrivedAtCustomerAt ? 2 : 1;
+  if (rs === "return_in_transit") return order.returnArrivedAtSellerAt ? 4 : 3;
   return baseStep;
 };
 
@@ -238,7 +225,7 @@ const OrderDetails = () => {
     // proof already uploaded -> go straight to "send customer OTP"
     if (isRet && (order.returnPickupImages?.length || 0) > 0) setPickupProofSubmitted(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [order?._id]);
+  }, [order?._id, order?.returnStatus, order?.returnArrivedAtCustomerAt, order?.returnArrivedAtSellerAt]);
 
   // Return OTPs: reopen the right OTP box after a refresh (never re-issue)
   useEffect(() => {
@@ -472,28 +459,26 @@ const OrderDetails = () => {
       // Return pickup flow: slide button only advances UI steps (1→2, 3→4)
       // OTP flows handle actual status transitions
       if (order?.returnStatus && order.returnStatus !== "none") {
-        if (step === 1) {
-          // Accepted → Arrived at Customer: just advance UI to show proof upload
-          markArrived(order.orderId, "customer");
-          setStep(2);
-          setIsSlideComplete(false);
-          setDragX(0);
-          window.scrollTo({ top: 0, behavior: "smooth" });
-          toast.success("Mark: Arrived at customer. Upload proof to continue.");
-          return;
-        } else if (step === 3) {
-          // In transit → Arrived at Seller: advance UI to show seller OTP
-          markArrived(order.orderId, "seller");
-          setStep(4);
-          setIsSlideComplete(false);
-          setDragX(0);
-          window.scrollTo({ top: 0, behavior: "smooth" });
-          toast.success("Mark: Arrived at seller. Request OTP to complete.");
-          return;
-        } else {
-          // Steps 2 and 4 are handled by OTP flows, not the slide button
-          return;
-        }
+        // Steps 2 and 4 are handled by the photo/OTP flows, not this slider.
+        if (step !== 1 && step !== 3) return;
+        const leg = step === 1 ? "customer" : "seller";
+        // Location is sent when available (the server can require it via
+        // ENFORCE_RIDER_PROXIMITY); no GPS fix must not block testing.
+        const location = await new Promise((resolve) => {
+          getCurrentPositionWithCache(resolve, () => resolve(null), { maxCacheAgeMs: 5 * 60 * 1000 });
+        });
+        const res = await deliveryApi.markReturnArrived(order.orderId, leg, location ? { lat: location.lat, lng: location.lng } : {});
+        const updated = res.data?.result || {};
+        // Saved on the server first; the step effect then moves the screen.
+        queryClient.setQueryData(orderQueryKey, (prev) => ({ ...(prev || {}), ...updated }));
+        setStep(step === 1 ? 2 : 4);
+        setIsSlideComplete(false);
+        setDragX(0);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        toast.success(step === 1
+          ? "Arrived at customer. Upload pickup photos to continue."
+          : "Arrived at seller. Send the seller OTP to complete.");
+        return;
       } else {
         const location = await new Promise((resolve, reject) => {
           getCurrentPositionWithCache(resolve, reject, {
@@ -583,8 +568,17 @@ const OrderDetails = () => {
     setShowOtpInput(true);
   };
 
+  // The server refuses an OTP when a step was skipped (stale screen, another
+  // device): resync from the server so the rider sees the step that's missing.
   const handleOtpGenerationError = (error) => {
-    console.error("Failed to generate OTP:", error);
+    const code = error?.response?.data?.result?.error?.code;
+    if (["ARRIVAL_REQUIRED", "PROOF_REQUIRED", "STEP_OUT_OF_ORDER"].includes(code)) {
+      if (code === "PROOF_REQUIRED") setPickupProofSubmitted(false);
+      queryClient.invalidateQueries({ queryKey: orderQueryKey });
+      if (code === "ARRIVAL_REQUIRED") setStep((s) => (s === 4 ? 3 : 1));
+    } else {
+      console.error("Failed to generate OTP:", error);
+    }
   };
 
   const handleOtpValidationSuccess = (data) => {
@@ -1240,8 +1234,8 @@ const OrderDetails = () => {
                   setShowDropOtpInput(true);
                   toast.success("OTP sent to seller!");
                 }}
-                // the slide button already shows the error toast — avoid a duplicate
-                onError={() => {}}
+                // the slide button already shows the error toast; just resync the step
+                onError={handleOtpGenerationError}
               />
             </Card>
           </motion.div>
@@ -1347,7 +1341,8 @@ const OrderDetails = () => {
               setIsSlideComplete(false);
               setDragX(0);
               setShowOtpInput(false);
-              setPickupProofSubmitted(false);
+              // photos already on the server stay done: no second upload
+              setPickupProofSubmitted((order?.returnPickupImages?.length || 0) > 0);
               setShowDropOtpInput(false);
               window.scrollTo({ top: 0, behavior: "smooth" });
             }}

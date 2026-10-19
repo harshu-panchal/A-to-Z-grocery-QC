@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { Plus, Trash2, Barcode, FileText, ArrowRightCircle, ScanLine } from "lucide-react";
@@ -12,6 +12,10 @@ import { printBarcodeLabels, downloadTablePdf } from "../posPrint";
 import { usePosApi, usePosSettings, Pager, inputCls, labelCls, Field, CustomerPicker, useBarcodeWedge, BarcodeScannerModal, QuickAddModal } from "../PosComponents";
 import { IconBtn } from "./PosReport";
 import { SupplierFormModal } from "./PosParties";
+import useBodyScrollLock from "@core/hooks/useBodyScrollLock";
+
+// Full seller Add Product form, loaded only when "+ New product" is used.
+const AddProduct = lazy(() => import("../../seller/pages/AddProduct"));
 
 // ===================================================================== list
 export function PosEntries({ portal, type }) {
@@ -181,6 +185,26 @@ export function PosEntryEditor({ portal }) {
     setQ("");
     setRows([]);
   }, [type]);
+
+  // A product just created from the full Add Product form: add each of its
+  // pack sizes as a purchase row (quantities are then edited as usual).
+  const addCreatedProduct = useCallback(async (product) => {
+    setNewProduct(null);
+    const id = String(product?._id || "");
+    if (!id) return;
+    try {
+      const found = await api.searchProducts({ search: product.name, limit: 50 });
+      const mine = (found || []).filter((r) => String(r.productId) === id);
+      if (!mine.length) {
+        toast.info("Product saved. Search for it to add it to this purchase.");
+        return;
+      }
+      mine.forEach((r) => addRow({ ...r, stock: 0 }));
+      toast.success(mine.length > 1 ? `${product.name}: ${mine.length} pack sizes added` : `${product.name} added to purchase`);
+    } catch {
+      toast.info("Product saved. Search for it to add it to this purchase.");
+    }
+  }, [api, addRow]);
 
   // Scan to receive: each scan adds the item or bumps its quantity by 1
   const [scanOpen, setScanOpen] = useState(false);
@@ -435,7 +459,18 @@ export function PosEntryEditor({ portal }) {
       {isPurchase && form.supplierId && <SupplierDeliveries data={history} onOpen={() => navigate(`/${portal}/pos/suppliers/${form.supplierId}`)} />}
 
       <SupplierFormModal api={api} isOpen={newSupplier} onClose={() => setNewSupplier(false)} onSaved={(s) => { loadSuppliers(); if (s?._id) setForm((f) => ({ ...f, supplierId: s._id })); }} />
-      <QuickAddModal api={api} saveOnly isOpen={newProduct !== null} initialBarcode={newProduct || ""} sellers={sellers} onClose={() => setNewProduct(null)} onAdd={(row) => row?.productId && addRow({ ...row, stock: 0 })} />
+      {portal === "seller" ? (
+        newProduct !== null && (
+          <FullProductFormOverlay
+            initialBarcode={newProduct}
+            onCancel={() => setNewProduct(null)}
+            onSaved={addCreatedProduct}
+          />
+        )
+      ) : (
+        // Admins have no create-product form (they only edit), so they keep the quick form.
+        <QuickAddModal api={api} saveOnly isOpen={newProduct !== null} initialBarcode={newProduct || ""} sellers={sellers} onClose={() => setNewProduct(null)} onAdd={(row) => row?.productId && addRow({ ...row, stock: 0 })} />
+      )}
     </div>
   );
 }
@@ -443,6 +478,18 @@ export function PosEntryEditor({ portal }) {
 const owesLabel = (v) => (v > 0.004 ? { text: "You owe", cls: "text-red-600" } : v < -0.004 ? { text: "Advance paid", cls: "text-emerald-700" } : { text: "Settled", cls: "text-slate-500" });
 
 /** Supplier account for this purchase: before, this bill, paid now, after. */
+/** The full Add Product form on top of the purchase entry, so the draft stays put. */
+function FullProductFormOverlay({ initialBarcode, onSaved, onCancel }) {
+  useBodyScrollLock(true);
+  return (
+    <div className="fixed inset-0 z-[200] overflow-y-auto overscroll-contain bg-slate-50 p-4 md:p-8" data-lenis-prevent role="dialog" aria-modal="true" aria-label="New product">
+      <Suspense fallback={<div className="py-24 text-center text-sm font-semibold text-slate-500">Loading product form...</div>}>
+        <AddProduct embedded initialBarcode={initialBarcode || ""} onSaved={onSaved} onCancel={onCancel} />
+      </Suspense>
+    </div>
+  );
+}
+
 function SupplierBalance({ balance, bill, paid, done }) {
   if (done) {
     const now = owesLabel(balance);

@@ -8,6 +8,15 @@ const mockFindByIdAndDelete = jest.fn();
 const mockFindOne = jest.fn();
 const mockInvalidate = jest.fn();
 const mockHandleResponse = jest.fn();
+const mockProductCount = jest.fn();
+const CATEGORY_ID = "64b000000000000000000001";
+
+// Category.find(...) is both awaited directly and chained .select().lean().
+const findResult = (docs) => ({
+  select: () => ({ lean: async () => docs }),
+  lean: async () => docs,
+  then: (resolve, reject) => Promise.resolve(docs).then(resolve, reject),
+});
 
 jest.unstable_mockModule("../app/models/category.js", () => ({
   default: {
@@ -18,6 +27,11 @@ jest.unstable_mockModule("../app/models/category.js", () => ({
     findByIdAndDelete: mockFindByIdAndDelete,
     findOne: mockFindOne,
   },
+}));
+
+// deleteCategory refuses while products still use the category subtree.
+jest.unstable_mockModule("../app/models/product.js", () => ({
+  default: { countDocuments: mockProductCount },
 }));
 
 jest.unstable_mockModule("../app/utils/helper.js", () => ({
@@ -47,7 +61,8 @@ describe("cache invalidation on category mutations", () => {
         lean: async () => ({ type: "header", parentId: null }),
       }),
     });
-    mockFind.mockResolvedValue([]);
+    mockFind.mockImplementation(() => findResult([]));
+    mockProductCount.mockResolvedValue(0);
     mockFindByIdAndDelete.mockResolvedValue({ _id: "cat-1" });
     mockFindOne.mockReturnValue({ lean: async () => null });
   });
@@ -86,10 +101,19 @@ describe("cache invalidation on category mutations", () => {
   test("deleteCategory invalidates category caches", async () => {
     await deleteCategory(
       {
-        params: { id: "cat-1" },
+        params: { id: CATEGORY_ID },
       },
       {},
     );
+    expect(mockFindByIdAndDelete).toHaveBeenCalledWith(CATEGORY_ID);
     expect(mockInvalidate).toHaveBeenCalledWith("cache:catalog:categories:*");
+  });
+
+  test("deleteCategory leaves the cache alone when products still use the category", async () => {
+    mockProductCount.mockResolvedValue(3);
+    await deleteCategory({ params: { id: CATEGORY_ID } }, {});
+    expect(mockHandleResponse).toHaveBeenCalledWith({}, 409, expect.stringContaining("3 products use"));
+    expect(mockFindByIdAndDelete).not.toHaveBeenCalled();
+    expect(mockInvalidate).not.toHaveBeenCalled();
   });
 });

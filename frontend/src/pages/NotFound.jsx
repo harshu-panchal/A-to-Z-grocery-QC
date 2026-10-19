@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
++import { useNavigate } from 'react-router-dom';
 import Button from '@shared/components/ui/Button';
 
 const NotFound = () => {

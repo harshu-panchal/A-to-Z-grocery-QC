@@ -282,10 +282,12 @@ export const getOrderRoute = async (req, res) => {
  * Only the rider who accepted the return pickup (returnDeliveryBoy) may run
  * the customer-pickup OTP steps. Returns { status, message } or null if OK.
  */
-async function assertReturnRider(orderId, user) {
+async function assertReturnRider(orderId, user, { requireArrival = false } = {}) {
   const orderKey = orderMatchQueryFromRouteParam(orderId);
   if (!orderKey) return { status: 404, message: "Order not found" };
-  const order = await Order.findOne(orderKey).select("returnDeliveryBoy returnStatus").lean();
+  const order = await Order.findOne(orderKey)
+    .select("returnDeliveryBoy returnStatus returnArrivedAtCustomerAt returnPickupImages")
+    .lean();
   if (!order) return { status: 404, message: "Order not found" };
   if (user?.role === "admin") return null;
   if (!order.returnDeliveryBoy || String(order.returnDeliveryBoy) !== String(user?.id)) {
@@ -294,14 +296,121 @@ async function assertReturnRider(orderId, user) {
   if (order.returnStatus !== "return_pickup_assigned") {
     return { status: 400, message: "Return pickup is not waiting for customer OTP." };
   }
+  // Step order: arrive at the customer, upload pickup photos, THEN the OTP.
+  if (requireArrival && !order.returnArrivedAtCustomerAt) {
+    return { status: 409, code: "ARRIVAL_REQUIRED", message: "Slide \"Arrived at customer\" first." };
+  }
+  if (requireArrival && !(order.returnPickupImages?.length > 0)) {
+    return { status: 409, code: "PROOF_REQUIRED", message: "Upload the pickup photos before sending the OTP." };
+  }
   return null;
 }
+
+const stepError = (res, e) =>
+  handleResponse(res, e.status, e.message, e.code ? { error: { code: e.code, message: e.message } } : undefined);
+
+// Off by default while testing (the forward-delivery distance checks are off
+// too). Set ENFORCE_RIDER_PROXIMITY=true to require the rider to be near.
+const ENFORCE_RIDER_PROXIMITY = () => process.env.ENFORCE_RIDER_PROXIMITY === "true";
+const RETURN_ARRIVAL_RADIUS_M = () => Number(process.env.RETURN_ARRIVAL_RADIUS_M) || 300;
+
+const RETURN_LEGS = {
+  customer: {
+    statuses: ["return_pickup_assigned"],
+    field: "returnArrivedAtCustomerAt",
+    notReady: "This return is not waiting for pickup.",
+  },
+  seller: {
+    statuses: ["return_in_transit", "return_drop_pending"],
+    field: "returnArrivedAtSellerAt",
+    notReady: "Pick up the item from the customer (OTP) before going to the seller.",
+  },
+};
+
+function haversineMeters(a, b) {
+  const R = 6371000;
+  const rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+/**
+ * Rider slides "Arrived at customer" (leg=customer) or "Arrived at seller"
+ * (leg=seller). Recorded on the order so the next step (photos + OTP) is only
+ * unlocked after it, on every device and after a refresh. Idempotent.
+ */
+export const markReturnArrived = async (req, res) => {
+  try {
+    const { orderId, leg: legName } = req.params;
+    const leg = RETURN_LEGS[legName];
+    if (!leg) return handleResponse(res, 404, "Unknown return step");
+
+    const orderKey = orderMatchQueryFromRouteParam(orderId);
+    if (!orderKey) return handleResponse(res, 404, "Order not found");
+    const order = await Order.findOne(orderKey).populate("seller", "location").lean();
+    if (!order) return handleResponse(res, 404, "Order not found");
+
+    if (req.user.role !== "admin" && String(order.returnDeliveryBoy || "") !== String(req.user.id)) {
+      return handleResponse(res, 403, "Not assigned to this return");
+    }
+    if (!leg.statuses.includes(order.returnStatus)) {
+      return stepError(res, { status: 409, code: "STEP_OUT_OF_ORDER", message: leg.notReady });
+    }
+    if (order[leg.field]) {
+      return handleResponse(res, 200, "Already marked as arrived", {
+        returnStatus: order.returnStatus,
+        [leg.field]: order[leg.field],
+      });
+    }
+
+    const { lat, lng } = req.body || {};
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lng);
+    if (ENFORCE_RIDER_PROXIMITY()) {
+      if (!hasCoords) {
+        return stepError(res, { status: 400, code: "LOCATION_REQUIRED", message: "Turn on location to mark arrival." });
+      }
+      const target = legName === "customer"
+        ? order.address?.location
+        : Array.isArray(order.seller?.location?.coordinates)
+          ? { lat: order.seller.location.coordinates[1], lng: order.seller.location.coordinates[0] }
+          : null;
+      if (Number.isFinite(target?.lat) && Number.isFinite(target?.lng)) {
+        const d = haversineMeters({ lat, lng }, target);
+        if (d > RETURN_ARRIVAL_RADIUS_M()) {
+          return stepError(res, {
+            status: 403,
+            code: "PROXIMITY_OUT_OF_RANGE",
+            message: `You are ${Math.round(d)} m away. Come within ${RETURN_ARRIVAL_RADIUS_M()} m of the ${legName} to continue.`,
+          });
+        }
+      }
+    }
+
+    const now = new Date();
+    const updated = await Order.findOneAndUpdate(
+      { _id: order._id, returnStatus: { $in: leg.statuses } },
+      { $set: { [leg.field]: now } },
+      { new: true, projection: { returnStatus: 1, [leg.field]: 1 } },
+    ).lean();
+    if (!updated) {
+      return stepError(res, { status: 409, code: "STEP_OUT_OF_ORDER", message: leg.notReady });
+    }
+    return handleResponse(res, 200, legName === "customer" ? "Arrived at customer" : "Arrived at seller", {
+      returnStatus: updated.returnStatus,
+      [leg.field]: updated[leg.field],
+    });
+  } catch (e) {
+    return handleResponse(res, e.statusCode || 500, e.message);
+  }
+};
 
 export const requestReturnPickupOtp = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const ownerError = await assertReturnRider(orderId, req.user);
-    if (ownerError) return handleResponse(res, ownerError.status, ownerError.message);
+    const ownerError = await assertReturnRider(orderId, req.user, { requireArrival: true });
+    if (ownerError) return stepError(res, ownerError);
     const result = await generateReturnPickupOtp(orderId);
     if (!result.success) {
       return handleResponse(res, 400, result.error);
@@ -371,9 +480,13 @@ export const verifyReturnPickupOtp = async (req, res) => {
 
     const validation = await validateReturnPickupOtp(orderId, enteredCode);
     if (!validation.valid) {
+      // Same shape as the delivery OTP endpoint: result.error.{code,message,attemptsRemaining}
       return handleResponse(res, 400, validation.message, {
-        error: validation.error,
-        attemptsRemaining: validation.attemptsRemaining,
+        error: {
+          code: validation.error,
+          message: validation.message,
+          ...(typeof validation.attemptsRemaining === "number" ? { attemptsRemaining: validation.attemptsRemaining } : {}),
+        },
       });
     }
 
@@ -419,6 +532,9 @@ export const requestReturnDropOtp = async (req, res) => {
     const allowedStatuses = ["return_in_transit", "return_drop_pending"];
     if (!allowedStatuses.includes(order.returnStatus)) {
       return handleResponse(res, 400, `Cannot request seller OTP in status: ${order.returnStatus}`);
+    }
+    if (!order.returnArrivedAtSellerAt) {
+      return stepError(res, { status: 409, code: "ARRIVAL_REQUIRED", message: "Slide \"Arrived at seller\" first." });
     }
 
     const result = await generateReturnDropOtp(orderId);
@@ -490,11 +606,19 @@ export const verifyReturnDropOtp = async (req, res) => {
       return handleResponse(res, 403, "Not assigned to this return");
     }
 
-    const validation = await validateReturnDropOtp(orderId, code);
+    if (!["return_in_transit", "return_drop_pending"].includes(order.returnStatus)) {
+      return handleResponse(res, 409, "This return has already been handed over to the seller.");
+    }
+
+    const validation = await validateReturnDropOtp(order.orderId, code);
     if (!validation.valid) {
+      // Same shape as the delivery OTP endpoint: result.error.{code,message,attemptsRemaining}
       return handleResponse(res, 400, validation.message, {
-        error: validation.error,
-        attemptsRemaining: validation.attemptsRemaining,
+        error: {
+          code: validation.error,
+          message: validation.message,
+          ...(typeof validation.attemptsRemaining === "number" ? { attemptsRemaining: validation.attemptsRemaining } : {}),
+        },
       });
     }
 
@@ -529,8 +653,15 @@ export const verifyReturnDropOtp = async (req, res) => {
     setImmediate(async () => {
       try {
         const commission = order.returnDeliveryCommission || 0;
-        const alreadyPaid = order.financeFlags?.returnPickupCommissionPaid;
-        if (commission > 0 && order.returnDeliveryBoy && !alreadyPaid) {
+        if (!(commission > 0 && order.returnDeliveryBoy)) return;
+        // Claim first: only one request (and never the later QC refund step,
+        // which checks the same flag) can pay this commission.
+        const claim = await Order.updateOne(
+          { _id: order._id, "financeFlags.returnPickupCommissionPaid": { $ne: true } },
+          { $set: { "financeFlags.returnPickupCommissionPaid": true } },
+        );
+        if (claim.modifiedCount !== 1) return;
+        try {
           await creditWallet({
             ownerType: "DELIVERY_PARTNER",
             ownerId: order.returnDeliveryBoy,
@@ -548,11 +679,13 @@ export const verifyReturnDropOtp = async (req, res) => {
             reference: `RET-DROP-${order.orderId}`,
             meta: { flow: "return_drop_commission" },
           });
-
+        } catch (payErr) {
+          // Not paid: release the claim so the QC refund step pays it instead.
           await Order.updateOne(
             { _id: order._id },
-            { $set: { "financeFlags.returnPickupCommissionPaid": true } },
+            { $set: { "financeFlags.returnPickupCommissionPaid": false } },
           );
+          throw payErr;
         }
       } catch (commErr) {
         console.error("[verifyReturnDropOtp] Background commission credit failed:", commErr.message);

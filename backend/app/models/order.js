@@ -521,6 +521,10 @@ const orderSchema = new mongoose.Schema(
     returnPickedAt: {
       type: Date,
     },
+    // Rider slid "Arrived at customer / at seller" (server-side, so a refresh
+    // or another device can't skip a step and OTPs can't be requested early).
+    returnArrivedAtCustomerAt: { type: Date },
+    returnArrivedAtSellerAt: { type: Date },
     returnDeliveredBackAt: {
       type: Date,
     },
@@ -734,6 +738,7 @@ orderSchema.pre('updateMany', preUpdateMirror);
  * ------------------------------------------------------------------ */
 async function emitReturnStatusChange(doc) {
   if (!doc?.orderId) return;
+  invalidateCustomerOrderList(doc);
   try {
     const { emitToRooms } = await import("../services/orderSocketEmitter.js");
     const idOf = (v) => (v ? String(v._id || v) : null);
@@ -759,6 +764,20 @@ async function emitReturnStatusChange(doc) {
     );
   } catch {
     /* socket layer not ready (scripts/tests) — ignore */
+  }
+}
+
+// The customer "My orders" list is cached (CACHE_ORDERS_TTL). Return steps
+// never cleared it, so the list kept showing "Delivered" after a return
+// started or moved on. Clear it on every return status change.
+async function invalidateCustomerOrderList(doc) {
+  const customer = doc?.customer ? String(doc.customer._id || doc.customer) : null;
+  if (!customer) return;
+  try {
+    const { invalidate, buildKey } = await import("../services/cacheService.js");
+    await invalidate(buildKey("orders", "customer", `${customer}:*`));
+  } catch {
+    /* cache layer not ready (scripts/tests) — the TTL still expires it */
   }
 }
 

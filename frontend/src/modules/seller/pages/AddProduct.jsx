@@ -20,8 +20,18 @@ import { sellerApi } from "../services/sellerApi";
 import VariantBarcodeField, { variantBarcodeError } from "../../pos/VariantBarcodeField";
 
 
-const AddProduct = () => {
+/**
+ * Seller "Add Product" page.
+ *
+ * Embedded mode (`embedded`) is used by POS -> Purchase "+ New product": the
+ * same full form opens on top of the purchase entry, so the draft is kept.
+ * There, stock is fixed at 0 (the purchase entry brings the stock in, so an
+ * opening stock here would count it twice) and saving calls `onSaved(product)`
+ * instead of leaving the page.
+ */
+const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel } = {}) => {
   const navigate = useNavigate();
+  const goBack = () => (embedded ? onCancel?.() : navigate(-1));
   const [modalTab, setModalTab] = useState("general");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -68,8 +78,9 @@ const AddProduct = () => {
         mrp: "",
         sellingPrice: "",
         purchaseRate: "",
-        stock: "",
+        stock: embedded ? "0" : "",
         sku: "",
+        ...(embedded && initialBarcode ? { barcode: initialBarcode } : {}),
       },
     ],
   });
@@ -230,6 +241,10 @@ const AddProduct = () => {
       } else {
         toast.success(response?.data?.message || "Product saved successfully!");
       }
+      if (embedded) {
+        await onSaved?.(response?.data?.result);
+        return;
+      }
       navigate("/seller/products");
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to save product");
@@ -280,12 +295,12 @@ const AddProduct = () => {
         <Button
           variant="ghost"
           className="pl-0 hover:bg-transparent hover:text-primary-600"
-          onClick={() => navigate(-1)}>
+          onClick={goBack}>
           <HiOutlineArrowLeft className="mr-2 h-5 w-5" />
-          Back to Products
+          {embedded ? "Back to Purchase" : "Back to Products"}
         </Button>
         <div className="flex gap-3">
-          <Button variant="outline" onClick={() => navigate(-1)}>
+          <Button variant="outline" onClick={goBack}>
             Cancel
           </Button>
           <Button
@@ -297,6 +312,8 @@ const AddProduct = () => {
                 <HiOutlineArrowPath className="mr-2 h-5 w-5 animate-spin" />
                 Publishing...
               </>
+            ) : embedded ? (
+              "Save & Add to Purchase"
             ) : (
               "Save & Publish"
             )}
@@ -537,7 +554,7 @@ const AddProduct = () => {
                           mrp: "",
                           sellingPrice: "",
                           purchaseRate: "",
-                          stock: "",
+                          stock: embedded ? "0" : "",
                           sku: makeSku(prev.name, prev.variants.length + 1),
                         },
                       ],
@@ -650,6 +667,16 @@ const AddProduct = () => {
                         className="w-full px-3 py-2 bg-primary/5 ring-1 ring-primary/20 border-none rounded-xl text-xs font-bold text-primary outline-none focus:ring-2 focus:ring-primary/20"
                       />
                     </div>
+                    {embedded ? (
+                    <div className="col-span-6 md:col-span-2 space-y-1">
+                      <span className="text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
+                        Stock
+                      </span>
+                      <p className="px-3 py-2 rounded-xl bg-slate-100 text-[11px] font-semibold text-slate-500">
+                        Added by this purchase
+                      </p>
+                    </div>
+                    ) : (
                     <div className="col-span-6 md:col-span-2 space-y-1">
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
                         Stock
@@ -677,6 +704,7 @@ const AddProduct = () => {
                         className="w-full px-3 py-2 bg-white ring-1 ring-slate-200 border-none rounded-xl text-xs font-bold outline-none focus:ring-2 focus:ring-primary/10"
                       />
                     </div>
+                    )}
                     <div className="col-span-5 md:col-span-1 space-y-1">
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
                         Product Code

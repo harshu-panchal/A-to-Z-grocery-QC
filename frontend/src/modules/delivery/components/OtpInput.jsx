@@ -28,6 +28,9 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
   const [lastErrorCode, setLastErrorCode] = useState(null);
   const [attemptsRemaining, setAttemptsRemaining] = useState(3);
   const inputRefs = [useRef(null), useRef(null), useRef(null), useRef(null)];
+  // Synchronous guard: state updates are async, so a double tap or Enter +
+  // button could send two verifies before `isLoading` re-rendered.
+  const submittingRef = useRef(false);
 
   // Auto-focus first input on mount
   useEffect(() => {
@@ -54,21 +57,31 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
    * Implements auto-focus to next field on digit entry
    * Requirement 5.2: Accept exactly 4 numeric digits
    */
-  const handleChange = (index, value) => {
-    // Only allow numeric input
-    if (value && !/^\d$/.test(value)) {
-      return;
-    }
-
+  // Put digits into the boxes starting at `index`, then focus the next empty one.
+  const fillFrom = (index, digits) => {
     const newOtp = [...otp];
-    newOtp[index] = value;
+    digits.slice(0, 4 - index).split("").forEach((d, i) => { newOtp[index + i] = d; });
     setOtp(newOtp);
     setError(null);
+    const next = Math.min(index + digits.length, 3);
+    inputRefs[next].current?.focus();
+  };
 
-    // Auto-focus next field if digit entered
-    if (value && index < 3) {
-      inputRefs[index + 1].current?.focus();
+  const handleChange = (index, value) => {
+    const digits = String(value).replace(/\D/g, "");
+    if (!value) {
+      const newOtp = [...otp];
+      newOtp[index] = "";
+      setOtp(newOtp);
+      return;
     }
+    if (!digits) return; // letters etc.
+    // One box can receive several digits: SMS autofill / keyboard suggestion
+    // drops the whole code into the first box, and typing over a filled box
+    // gives "old+new". Use the full code, or just the newly typed digit.
+    if (digits.length >= 4) return fillFrom(0, digits.slice(-4));
+    if (digits.length > 1 && otp[index]) return fillFrom(index, digits.replace(otp[index], "") || digits.slice(-1));
+    fillFrom(index, digits);
   };
 
   /**
@@ -78,6 +91,8 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
   const handleKeyDown = (index, e) => {
     if (e.key === "Backspace" && !otp[index] && index > 0) {
       inputRefs[index - 1].current?.focus();
+    } else if (e.key === "Enter" && otp.every((d) => d !== "")) {
+      handleSubmit();
     }
   };
 
@@ -86,16 +101,10 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
    */
   const handlePaste = (e) => {
     e.preventDefault();
-    const pastedData = e.clipboardData.getData("text").trim();
-
-    // Only accept 4-digit numeric paste
-    if (/^\d{4}$/.test(pastedData)) {
-      const newOtp = pastedData.split("");
-      setOtp(newOtp);
-      setError(null);
-      // Focus last input
-      inputRefs[3].current?.focus();
-    }
+    // "OTP is 1 2 3 4", "1234 " ... -> the 4 digits
+    const digits = e.clipboardData.getData("text").replace(/\D/g, "");
+    if (digits.length >= 4) fillFrom(0, digits.slice(0, 4));
+    else if (digits) setError("Paste the full 4-digit code");
   };
 
   /**
@@ -113,16 +122,23 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
 
     setIsGenerating(true);
     try {
-      const response = isReturn
-        ? await deliveryApi.requestReturnOtp(orderId, {})
-        : await deliveryApi.requestDeliveryOtp(orderId, {});
-      toast.success(response.data?.message || "OTP generated and sent to customer");
+      // Seller drop-off used to fall through to the DELIVERY OTP endpoint.
+      const response = isReturnDrop
+        ? await deliveryApi.requestReturnDropOtp(orderId, {})
+        : isReturn
+          ? await deliveryApi.requestReturnOtp(orderId, {})
+          : await deliveryApi.requestDeliveryOtp(orderId, {});
+      toast.success(response.data?.message || (isReturnDrop ? "New OTP sent to seller" : "New OTP sent to customer"));
       setError(null);
       setLastErrorCode(null);
+      setAttemptsRemaining(3);
       clearInputs();
     } catch (err) {
+      const data = err.response?.data || {};
       const errorMessage =
-        err.response?.data?.error?.message ||
+        data.result?.error?.message ||
+        data.error?.message ||
+        data.message ||
         err.message ||
         "Failed to generate OTP";
       toast.error(errorMessage);
@@ -138,6 +154,7 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
    * Requirement 6.5: Show attempts remaining counter
    */
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
     const otpString = otp.join("");
 
     // Validate OTP format before submission
@@ -146,6 +163,7 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
       return;
     }
 
+    submittingRef.current = true;
     setIsLoading(true);
     setError(null);
     setLastErrorCode(null);
@@ -177,17 +195,20 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
       // wraps data inside `result`), but historically clients also read
       // `data.error` directly. Read both for forward-compat.
       const respData = err.response?.data || {};
-      const errorData =
-        (respData.result && respData.result.error) ||
-        (typeof respData.error === "object" ? respData.error : null) ||
-        {};
+      const raw = respData.result?.error ?? respData.error ?? null;
+      // Older return endpoints sent the code as a plain string.
+      const errorData = typeof raw === "string" ? { code: raw } : raw || {};
       const errorCode = errorData.code;
       const errorMessage =
         errorData.message ||
         respData.message ||
+        (err.response ? null : "No internet connection. Check your network and try again.") ||
         err.message ||
         "Failed to validate OTP";
-      const remainingAttempts = errorData.attemptsRemaining;
+      const remainingAttempts =
+        typeof errorData.attemptsRemaining === "number"
+          ? errorData.attemptsRemaining
+          : respData.result?.attemptsRemaining;
 
       setLastErrorCode(errorCode || null);
 
@@ -198,8 +219,14 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
 
       // Display appropriate error message
       if (errorCode === "OTP_MISMATCH") {
-        setError(`Incorrect OTP. ${remainingAttempts} attempt${remainingAttempts !== 1 ? "s" : ""} remaining.`);
-        toast.error(`Incorrect OTP. ${remainingAttempts} attempt${remainingAttempts !== 1 ? "s" : ""} remaining.`);
+        const msg = typeof remainingAttempts !== "number"
+          ? "Incorrect OTP. Please check and try again."
+          : remainingAttempts > 0
+            ? `Incorrect OTP. ${remainingAttempts} attempt${remainingAttempts !== 1 ? "s" : ""} remaining.`
+            : "Incorrect OTP. No attempts left, generate a new OTP.";
+        if (remainingAttempts === 0) setLastErrorCode("MAX_ATTEMPTS_EXCEEDED");
+        setError(msg);
+        toast.error(msg);
         clearInputs();
       } else if (errorCode === "OTP_EXPIRED") {
         setError("OTP has expired. Please generate a new one.");
@@ -208,10 +235,10 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
         setError("OTP was already used. Please generate a new one.");
         toast.error("OTP was already used. Please generate a new one.");
       } else if (errorCode === "MAX_ATTEMPTS_EXCEEDED") {
-        setError("Maximum attempts exceeded. Please contact supervisor.");
-        toast.error("Maximum attempts exceeded. Please contact supervisor.", {
-          duration: 6000,
-        });
+        // A fresh OTP resets the attempts, so offer that instead of a dead end.
+        setError("Too many wrong attempts. Generate a new OTP.");
+        toast.error("Too many wrong attempts. Generate a new OTP.", { duration: 6000 });
+        clearInputs();
       } else if (errorCode === "OTP_INVALID_FORMAT") {
         setError("Invalid OTP format. Please enter 4 digits.");
         toast.error("Invalid OTP format. Please enter 4 digits.");
@@ -228,12 +255,14 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
         onError(err);
       }
     } finally {
+      submittingRef.current = false;
       setIsLoading(false);
     }
   };
 
   // Check if all 4 digits are entered
   const isComplete = otp.every((digit) => digit !== "");
+  const isLocked = lastErrorCode === "MAX_ATTEMPTS_EXCEEDED";
 
   return (
     <div className="space-y-6">
@@ -258,11 +287,12 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
             type="text"
             inputMode="numeric"
             pattern="[0-9]*"
-            maxLength={1}
+            autoComplete={index === 0 ? "one-time-code" : "off"}
             value={digit}
             onChange={(e) => handleChange(index, e.target.value)}
             onKeyDown={(e) => handleKeyDown(index, e)}
-            onPaste={index === 0 ? handlePaste : undefined}
+            onPaste={handlePaste}
+            onFocus={(e) => e.target.select()}
             disabled={isLoading}
             className={`w-14 h-16 text-center text-2xl font-bold font-mono border-2 rounded-xl transition-all duration-200 outline-none focus:outline-none focus:ring-2 focus:ring-offset-0 ${error
                 ? "border-red-300 bg-red-50 text-red-900 focus:border-red-500 focus:ring-red-500"
@@ -293,7 +323,7 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
         </div>
       )}
 
-      {["OTP_NOT_FOUND", "OTP_EXPIRED", "OTP_CONSUMED"].includes(lastErrorCode) && (
+      {["OTP_NOT_FOUND", "OTP_EXPIRED", "OTP_CONSUMED", "MAX_ATTEMPTS_EXCEEDED"].includes(lastErrorCode) && (
         <button
           onClick={handleGenerateOtp}
           disabled={isLoading || isGenerating}
@@ -314,8 +344,8 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
       {/* Enable submit button only when 4 digits entered */}
       <button
         onClick={handleSubmit}
-        disabled={!isComplete || isLoading || isGenerating}
-        className={`w-full h-12 rounded-xl font-bold transition-all duration-200 flex items-center justify-center gap-2 outline-none focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-0 ${!isComplete || isLoading || isGenerating
+        disabled={!isComplete || isLoading || isGenerating || isLocked}
+        className={`w-full h-12 rounded-xl font-bold transition-all duration-200 flex items-center justify-center gap-2 outline-none focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-0 ${!isComplete || isLoading || isGenerating || isLocked
             ? "bg-gray-200 text-gray-600 cursor-not-allowed"
             : "bg-primary text-primary-foreground hover:bg-primary/90 active:scale-95 shadow-md hover:shadow-lg"
           }`}
@@ -356,7 +386,9 @@ const OtpInput = ({ orderId, isReturn = false, isReturnDrop = false, onSuccess, 
       {/* Help Text */}
       <div className="bg-brand-50 border border-brand-200 rounded-xl p-3">
         <p className="text-xs text-brand-800 text-center">
-          💡 The customer will see this OTP on their app when you're nearby
+          {isReturnDrop
+            ? "💡 The seller gets this OTP in their app and by SMS"
+            : "💡 The customer sees this OTP in their app (and gets an SMS)"}
         </p>
       </div>
     </div>

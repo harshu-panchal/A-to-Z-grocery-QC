@@ -42,6 +42,7 @@ import { onOrderStatusUpdate } from '@/core/services/orderSocket';
 import { createSocketTokenReader } from '@core/utils/authStorage';
 import { STORAGE_KEYS } from '@core/utils/storage';
 import PackScanModal from '../../pos/PackScanModal';
+import InvoiceModal from '../../customer/components/order/InvoiceModal';
 import { ScanLine } from 'lucide-react';
 
 /** Semantic variant (from getOrderStatusVariant) -> select-control tint classes. Shared across the mobile list, desktop table, and details modal so all three read the same colors for the same status. */
@@ -83,6 +84,9 @@ const Orders = () => {
     const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
     const [isQuickViewModalOpen, setIsQuickViewModalOpen] = useState(false);
     const [selectedOrder, setSelectedOrder] = useState(null);
+    // Full order (with product MRP/GST/rack) for the receipt-format invoice
+    const [invoiceOrder, setInvoiceOrder] = useState(null);
+    const [invoiceLoading, setInvoiceLoading] = useState(false);
     // order being packed with the barcode scanner
     const [packingOrder, setPackingOrder] = useState(null);
     const canPack = (o) => ['Pending', 'Confirmed', 'Packed'].includes(o.status);
@@ -277,6 +281,21 @@ const Orders = () => {
 
     const getStatusColor = getOrderStatusVariant;
 
+    const openInvoice = async (order) => {
+        if (!order?.id || invoiceLoading) return;
+        setInvoiceLoading(true);
+        try {
+            const res = await sellerApi.getOrderDetails(order.id);
+            const full = res.data?.result;
+            if (!full?.items?.length) throw new Error('empty order');
+            setInvoiceOrder(full);
+        } catch (error) {
+            showToast(error.response?.data?.message || 'Could not load the invoice for this order', 'error');
+        } finally {
+            setInvoiceLoading(false);
+        }
+    };
+
     const handleViewDetails = (order) => {
         setSelectedOrder(order);
         setIsDetailsModalOpen(true);
@@ -362,8 +381,9 @@ const Orders = () => {
                 <option value="pending" disabled={['confirmed', 'packed', 'out_for_delivery', 'delivered', 'cancelled'].includes(order.status)}>Pending</option>
                 <option value="confirmed" disabled={['packed', 'out_for_delivery', 'delivered', 'cancelled'].includes(order.status)}>Confirmed</option>
                 <option value="packed" disabled={['out_for_delivery', 'delivered', 'cancelled'].includes(order.status)}>Packed</option>
-                <option value="out_for_delivery" disabled={['delivered', 'cancelled'].includes(order.status)}>Out for Delivery</option>
-                <option value="delivered" disabled={order.status === 'cancelled'}>Delivered</option>
+                {/* set by the rider (pickup confirm / customer OTP), not the seller */}
+                <option value="out_for_delivery" disabled>Out for Delivery</option>
+                <option value="delivered" disabled>Delivered</option>
                 <option value="cancelled" disabled={['out_for_delivery', 'delivered', 'cancelled'].includes(order.status)}>Cancelled</option>
             </select>
             <HiOutlineChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3 w-3 pointer-events-none opacity-60" />
@@ -444,6 +464,7 @@ const Orders = () => {
 
     return (
         <div className="space-y-5">
+            <InvoiceModal isOpen={!!invoiceOrder} order={invoiceOrder} onClose={() => setInvoiceOrder(null)} />
             {packingOrder && (
                 <PackScanModal
                     portal="seller"
@@ -522,6 +543,23 @@ const Orders = () => {
                         }
                         right={
                             <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        const isToday = startDate === todayStr && endDate === todayStr;
+                                        setStartDate(isToday ? '' : todayStr);
+                                        setEndDate(isToday ? '' : todayStr);
+                                        setPage(1);
+                                    }}
+                                    className={cn(
+                                        "h-9 rounded-md border px-3 text-xs font-bold transition-colors",
+                                        startDate === todayStr && endDate === todayStr
+                                            ? "border-primary bg-primary text-primary-foreground"
+                                            : "border-slate-200 bg-white text-slate-600 hover:border-primary hover:text-primary"
+                                    )}
+                                >
+                                    Today
+                                </button>
                                 <div className="w-32">
                                     <DatePicker
                                         value={startDate}
@@ -907,6 +945,14 @@ const Orders = () => {
                                     <div className="px-4 py-3 sm:px-6 sm:py-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row gap-3 sm:gap-0 sm:items-center justify-end">
                                         <div className="flex gap-2 items-center">
                                             <button onClick={() => setIsDetailsModalOpen(false)} className="px-6 py-2.5 rounded-xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-all">Close</button>
+                                            <button
+                                                onClick={() => openInvoice(selectedOrder)}
+                                                disabled={invoiceLoading}
+                                                className="px-4 py-2.5 rounded-xl text-sm font-bold border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 transition-all flex items-center gap-2 disabled:opacity-60"
+                                            >
+                                                <HiOutlinePrinter className="h-4 w-4" />
+                                                {invoiceLoading ? 'Loading...' : 'Invoice'}
+                                            </button>
                                             <StatusSelect order={{ ...selectedOrder, status: selectedOrder.status.toLowerCase() }} className="w-40" />
                                         </div>
                                     </div>

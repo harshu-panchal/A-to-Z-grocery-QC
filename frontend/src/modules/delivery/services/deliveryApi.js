@@ -58,6 +58,9 @@ export const deliveryApi = {
     axiosInstance.put(`/orders/returns/${orderId}/accept-pickup`),
   rejectReturnPickup: (orderId) =>
     axiosInstance.put(`/orders/returns/${orderId}/reject-pickup`),
+  // leg: "customer" | "seller" — recorded on the server, unlocks the next step
+  markReturnArrived: (orderId, leg, body) =>
+    axiosInstance.post(`/orders/workflow/${orderId}/return/arrived/${leg}`, body),
   requestReturnOtp: (orderId, body) =>
     axiosInstance.post(`/orders/workflow/${orderId}/return-otp/request`, body),
   verifyReturnOtp: (orderId, body) =>

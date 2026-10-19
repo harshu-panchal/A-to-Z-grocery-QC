@@ -197,7 +197,9 @@ const OrderDetailPage = () => {
         if (returnDetails?.returnPickupOtp) {
           returnPickupOtp = returnDetails.returnPickupOtp;
         }
-      } catch {
+      } catch (e) {
+        // The page falls back to the order's own return fields (see below).
+        console.warn("[OrderDetailPage] return details unavailable:", e?.response?.status || e?.message);
         returnDetails = null;
       }
       return { order: ord, returnDetails, returnPickupOtp };
@@ -206,7 +208,21 @@ const OrderDetailPage = () => {
   });
 
   const order = orderDetailData?.order ?? null;
-  const returnDetails = orderDetailData?.returnDetails ?? null;
+  const fetchedReturnDetails = orderDetailData?.returnDetails ?? null;
+  // The return section used to come only from GET /orders/:id/returns; when
+  // that call failed the whole return progress silently vanished. The order
+  // itself carries the return status, so fall back to it.
+  const returnDetails = useMemo(() => {
+    const status = fetchedReturnDetails?.returnStatus || order?.returnStatus;
+    if (!status || status === "none") return fetchedReturnDetails;
+    return {
+      returnRefundAmount: order?.returnRefundAmount,
+      returnRejectedReason: order?.returnRejectedReason,
+      returnItems: order?.returnItems,
+      ...(fetchedReturnDetails || {}),
+      returnStatus: status,
+    };
+  }, [fetchedReturnDetails, order]);
 
   useEffect(() => {
     if (orderDetailData?.returnPickupOtp) {
@@ -583,6 +599,7 @@ const OrderDetailPage = () => {
     if (!order) return false;
     if (order.status === "cancelled") return false;
     if (order.status !== "delivered") return false;
+    if (order.returnStatus && order.returnStatus !== "none") return false;
     if (
       returnDetails &&
       returnDetails.returnStatus &&
@@ -607,8 +624,22 @@ const OrderDetailPage = () => {
     });
   };
 
+  const setReturnQuantity = (index, delta) => {
+    setSelectedReturnItems((prev) => {
+      const current = prev[index];
+      if (!current) return prev;
+      const max = Number(order.items[index].quantity) || 1;
+      const quantity = Math.min(max, Math.max(1, current.quantity + delta));
+      return { ...prev, [index]: { quantity } };
+    });
+  };
+
   const handleReturnSubmit = async () => {
-    if (!order) return;
+    if (!order || requestingReturn) return;
+    if (isUploadingImage) {
+      toast.error("Please wait for the photos to finish uploading.");
+      return;
+    }
     if (!Object.keys(selectedReturnItems).length) {
       toast.error("Please select at least one item to return.");
       return;
@@ -692,13 +723,12 @@ const OrderDetailPage = () => {
             uploadRes.data?.data?.url ||
             uploadRes.data?.url;
         } catch {
-          url = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result);
-            reader.readAsDataURL(file);
-          });
+          // No base64 fallback: a phone photo as base64 is larger than the
+          // 1 MB request limit, so the whole return request then failed.
+          url = null;
         }
         if (url) newImages.push(url);
+        else toast.error(`Could not upload ${file.name}. Please try again.`);
       } catch (err) {
         toast.error("Failed to process image.");
       }
@@ -1198,9 +1228,9 @@ const OrderDetailPage = () => {
                       A delivery partner is coming to collect your return. Please share this OTP when they arrive:
                     </p>
                     <div className="ml-11 flex items-center gap-2">
-                      {handoffOtp ? (
+                      {(handoffOtp || returnDetails.returnPickupOtp) ? (
                         <div className="flex gap-2">
-                          {handoffOtp.split('').map((digit, i) => (
+                          {String(handoffOtp || returnDetails.returnPickupOtp).split('').map((digit, i) => (
                             <div key={i} className="h-10 w-8 bg-white border-2 border-brand-200 rounded-lg flex items-center justify-center text-lg font-black text-brand-700 shadow-sm">
                               {digit}
                             </div>
@@ -1224,7 +1254,7 @@ const OrderDetailPage = () => {
                     <div className="bg-brand-50 p-4 rounded-2xl border border-brand-100">
                       <p className="text-xs font-bold text-brand-800 uppercase tracking-wider mb-1">Refund Successful</p>
                       <p className="text-sm text-brand-700 font-medium">
-                        ₹{returnDetails.returnRefundAmount} has been credited to your {order.paymentMethod === 'cod' ? 'hand (Cash)' : 'wallet'}.
+                        ₹{returnDetails.returnRefundAmount} has been credited to your wallet.
                       </p>
                     </div>
                   )}
@@ -1308,6 +1338,17 @@ const OrderDetailPage = () => {
                         Qty: {item.quantity} • ₹{item.price * item.quantity}
                       </p>
                     </div>
+                    {checked && Number(item.quantity) > 1 && (
+                      <div className="flex items-center gap-1" onClick={(e) => e.preventDefault()}>
+                        <button type="button" aria-label="Return one less" onClick={() => setReturnQuantity(idx, -1)}
+                          disabled={selectedReturnItems[idx].quantity <= 1}
+                          className="h-7 w-7 rounded-lg border border-slate-200 font-bold text-slate-600 disabled:opacity-40">−</button>
+                        <span className="w-6 text-center text-sm font-bold tabular-nums">{selectedReturnItems[idx].quantity}</span>
+                        <button type="button" aria-label="Return one more" onClick={() => setReturnQuantity(idx, 1)}
+                          disabled={selectedReturnItems[idx].quantity >= Number(item.quantity)}
+                          className="h-7 w-7 rounded-lg border border-slate-200 font-bold text-slate-600 disabled:opacity-40">+</button>
+                      </div>
+                    )}
                   </label>
                 );
               })}
@@ -1410,8 +1451,8 @@ const OrderDetailPage = () => {
               <button
                 onClick={handleReturnSubmit}
                 className="px-4 py-2 rounded-xl text-sm font-bold text-white bg-slate-900 hover:bg-slate-800 disabled:opacity-70 transition-all"
-                disabled={requestingReturn}>
-                {requestingReturn ? "Submitting..." : "Submit Request"}
+                disabled={requestingReturn || isUploadingImage}>
+                {requestingReturn ? "Submitting..." : isUploadingImage ? "Uploading photos..." : "Submit Request"}
               </button>
             </div>
           </motion.div>

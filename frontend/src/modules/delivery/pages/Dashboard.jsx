@@ -108,11 +108,11 @@ const Dashboard = () => {
     enabled: isOnline,
   });
 
-  // Returns tab: tasks already assigned to me vs open offers (popup handles those)
+  // Returns tab: only tasks already assigned to me. Open offers are answered
+  // in the fullscreen popup, so they are not listed here.
   const myId = String(user?._id || user?.id || "");
   const isMine = (o) => String(o.returnDeliveryBoy?._id || o.returnDeliveryBoy || "") === myId;
   const myReturnTasks = activeTab === "return" ? availableOrders.filter(isMine) : [];
-  const openReturnOffers = activeTab === "return" ? availableOrders.filter((o) => !isMine(o)) : [];
 
   // One request at a time; the UI flips immediately and rolls back on error.
   // Previously a drag also fired the track's click, toggling twice (back to
@@ -456,18 +456,6 @@ const Dashboard = () => {
               </div>
               {/* New pickup offers are accepted from the fullscreen popup (same
                   as deliveries); this list only shows returns already yours. */}
-              {openReturnOffers.length > 0 && (
-                <div className="bg-white rounded-2xl p-4 border-2 border-primary/25 text-center">
-                  <p className="text-sm font-bold text-gray-900">
-                    {openReturnOffers.length === 1
-                      ? "1 return pickup nearby"
-                      : `${openReturnOffers.length} return pickups nearby`}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-1">
-                    A popup will open with <strong>Accept</strong> and <strong>Reject</strong>.
-                  </p>
-                </div>
-              )}
               {myReturnTasks.length > 0 ? (
                 myReturnTasks.map((order) => (
                   <Card key={order._id} className="p-4 border-2 border-primary/5 hover:border-primary/20 transition-all shadow-sm">

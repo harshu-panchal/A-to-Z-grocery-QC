@@ -47,6 +47,31 @@ function err(message, statusCode) {
   return error;
 }
 
+const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+/**
+ * Refund for the returned items: their value minus their proportional share
+ * of the order's coupon discount, so a customer is never refunded more than
+ * they actually paid for those items.
+ */
+export function computeReturnRefund(order, returnItems = []) {
+  const itemsValue = returnItems.reduce(
+    (sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0),
+    0,
+  );
+  const orderSubtotal = (order?.items || []).reduce(
+    (sum, item) => sum + (Number(item.price) || 0) * (Number(item.quantity) || 0),
+    0,
+  );
+  const discount = Math.max(0, Number(order?.pricing?.discount) || 0);
+  if (!discount || orderSubtotal <= 0) return round2(itemsValue);
+  const share = Math.min(1, itemsValue / orderSubtotal);
+  return round2(Math.max(0, itemsValue - discount * share));
+}
+
+const MAX_RETURN_TEXT = 1000;
+const isImageRef = (v) => typeof v === "string" && v.length <= 2048 && (/^https?:\/\//i.test(v) || v.startsWith("/uploads/"));
+
 export class OrderReturnService {
   /**
    * Creates a new return request on a delivered order.
@@ -60,6 +85,18 @@ export class OrderReturnService {
     }
     if (!reason || typeof reason !== "string" || reason.trim().length === 0) {
       throw err("Return reason is required.", 400);
+    }
+    if (reason.trim().length > MAX_RETURN_TEXT || String(reasonDetail ?? "").length > MAX_RETURN_TEXT) {
+      throw err("Return reason is too long.", 400);
+    }
+    if (images !== undefined && !Array.isArray(images)) {
+      throw err("Invalid return images.", 400);
+    }
+    // Uploaded image URLs only. A base64 data: URL (the old upload fallback)
+    // bloats the order document and breaks the request size limit.
+    const cleanImages = (images || []).filter(isImageRef).slice(0, 5);
+    if ((images || []).length && !cleanImages.length) {
+      throw err("Return photos did not upload. Please add them again.", 400);
     }
 
     const orderKey = orderMatchQueryFromRouteParam(orderId);
@@ -84,18 +121,28 @@ export class OrderReturnService {
     // Timer validations removed as per request
 
     const selectedItems = [];
+    const seen = new Set();
     for (const entry of items) {
       const { itemIndex, quantity } = entry || {};
       if (
-        typeof itemIndex !== "number" ||
+        !Number.isInteger(itemIndex) ||
         itemIndex < 0 ||
         itemIndex >= order.items.length
       ) {
         throw err("Invalid item selection for return.", 400);
       }
+      // The same line twice would double its quantity (and its refund).
+      if (seen.has(itemIndex)) {
+        throw err("The same item was selected more than once.", 400);
+      }
+      seen.add(itemIndex);
       const original = order.items[itemIndex];
-      const qty = Number(quantity) || original.quantity;
-      if (qty <= 0 || qty > original.quantity) {
+      // Missing quantity = the whole line; anything given must be a whole
+      // number from 1 to what was bought (0 used to silently mean "all").
+      const qty = quantity === undefined || quantity === null || quantity === ""
+        ? original.quantity
+        : Number(quantity);
+      if (!Number.isInteger(qty) || qty <= 0 || qty > original.quantity) {
         throw err("Invalid quantity for one of the return items.", 400);
       }
 
@@ -110,18 +157,34 @@ export class OrderReturnService {
       });
     }
 
-    order.returnStatus = "return_requested";
-    order.returnReason = reason.trim();
-    order.returnReasonDetail = reasonDetail?.trim() || "";
-    order.returnConditionAssurance = Boolean(conditionAssurance);
-    order.returnImages = Array.isArray(images) ? images.slice(0, 5) : [];
-    order.returnItems = selectedItems;
-    order.returnRequestedAt = now;
-    order.returnEligibleAt = now;
-    order.returnWindowExpiresAt = null;
-    order.returnDeadline = null;
-
-    await order.save();
+    // Atomic: two quick submits can't both create a return (the second used
+    // to overwrite the first).
+    const updated = await Order.findOneAndUpdate(
+      {
+        _id: order._id,
+        status: "delivered",
+        $or: [{ returnStatus: { $exists: false } }, { returnStatus: null }, { returnStatus: "none" }],
+      },
+      {
+        $set: {
+          returnStatus: "return_requested",
+          returnReason: reason.trim(),
+          returnReasonDetail: String(reasonDetail ?? "").trim(),
+          returnConditionAssurance: Boolean(conditionAssurance),
+          returnImages: cleanImages,
+          returnItems: selectedItems,
+          returnRequestedAt: now,
+          returnEligibleAt: now,
+          returnWindowExpiresAt: null,
+          returnDeadline: null,
+        },
+      },
+      { new: true },
+    );
+    if (!updated) {
+      throw err("Return request already exists for this order.", 400);
+    }
+    Object.assign(order, updated.toObject ? updated.toObject() : updated);
 
     emitNotificationEvent(NOTIFICATION_EVENTS.RETURN_REQUESTED, {
       orderId: order.orderId,
@@ -198,7 +261,9 @@ export class OrderReturnService {
     }
 
     let activeOtp = null;
-    if (order.returnStatus === "return_pickup_assigned") {
+    // Only the customer may see the pickup code: the rider has to get it
+    // from the customer, that is the whole point of the OTP.
+    if (order.returnStatus === "return_pickup_assigned" && isOwnerCustomer) {
       const otpDoc = await OrderOtp.findOne({
         orderId: order.orderId,
         type: "return_pickup",
@@ -267,10 +332,7 @@ export class OrderReturnService {
       throw err("No return items found for this order.", 400);
     }
 
-    const refundAmount = order.returnItems.reduce(
-      (sum, item) => sum + (item.price || 0) * (item.quantity || 0),
-      0,
-    );
+    const refundAmount = computeReturnRefund(order, order.returnItems);
 
     const settings = await Setting.findOne({}).lean();
     

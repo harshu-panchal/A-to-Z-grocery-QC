@@ -52,7 +52,7 @@ jest.unstable_mockModule("../app/services/mapsGeocodeService.js", () => ({
 jest.unstable_mockModule("../app/models/transaction.js", () => ({ default: {} }));
 
 jest.unstable_mockModule("../app/utils/orderLookup.js", () => ({
-  orderMatchQueryFromRouteParam: jest.fn(),
+  orderMatchQueryFromRouteParam: (orderId) => ({ orderId }),
 }));
 
 jest.unstable_mockModule("../app/services/finance/walletService.js", () => ({
@@ -78,6 +78,25 @@ function makeRes() {
   return res;
 }
 
+// The endpoint first checks the caller is the rider assigned to this return
+// (assertReturnRider), then looks the order up again for the SMS. One fake
+// order serves both lookups.
+const RIDER = { id: "rider-1", role: "delivery" };
+function mockOrder(fields) {
+  mockOrderFindOne.mockReturnValue({
+    select: () => ({
+      lean: () => Promise.resolve({
+        returnDeliveryBoy: RIDER.id,
+        returnStatus: "return_pickup_assigned",
+        // rider already slid "Arrived at customer" and uploaded photos
+        returnArrivedAtCustomerAt: new Date(),
+        returnPickupImages: ["https://cdn.example.com/proof.jpg"],
+        ...fields,
+      }),
+    }),
+  });
+}
+
 // Give background setImmediate SMS dispatch a tick to run.
 function flushSetImmediate() {
   return new Promise((resolve) => setImmediate(resolve));
@@ -94,16 +113,12 @@ describe("requestReturnPickupOtp SMS dispatch (audit ReferenceError fix)", () =>
       otp: "1234",
       expiresAt: new Date(Date.now() + 600000),
     });
-    mockOrderFindOne.mockReturnValue({
-      select: () => ({
-        lean: () => Promise.resolve({ customer: "cust-1", address: { phone: "9999999999" } }),
-      }),
-    });
+    mockOrder({ customer: "cust-1", address: { phone: "9999999999" } });
     mockCustomerFindById.mockReturnValue({
       lean: () => Promise.resolve({ phone: "8888888888" }),
     });
 
-    const req = { params: { orderId: "ORD-1" } };
+    const req = { params: { orderId: "ORD-1" }, user: RIDER };
     const res = makeRes();
 
     await requestReturnPickupOtp(req, res);
@@ -122,16 +137,12 @@ describe("requestReturnPickupOtp SMS dispatch (audit ReferenceError fix)", () =>
       otp: "5678",
       expiresAt: new Date(Date.now() + 600000),
     });
-    mockOrderFindOne.mockReturnValue({
-      select: () => ({
-        lean: () => Promise.resolve({ customer: "cust-1", address: { phone: "7777777777" } }),
-      }),
-    });
+    mockOrder({ customer: "cust-1", address: { phone: "7777777777" } });
     mockCustomerFindById.mockReturnValue({
       lean: () => Promise.resolve({ phone: null }),
     });
 
-    const req = { params: { orderId: "ORD-2" } };
+    const req = { params: { orderId: "ORD-2" }, user: RIDER };
     const res = makeRes();
 
     await requestReturnPickupOtp(req, res);
@@ -141,5 +152,35 @@ describe("requestReturnPickupOtp SMS dispatch (audit ReferenceError fix)", () =>
     expect(mockSendSmsIndiaHubOtp).toHaveBeenCalledWith(
       expect.objectContaining({ phone: "7777777777", otp: "5678" }),
     );
+  });
+
+  it("refuses a rider who is not assigned to the return, without creating an OTP", async () => {
+    mockOrder({ customer: "cust-1", returnDeliveryBoy: "someone-else" });
+    const res = makeRes();
+
+    await requestReturnPickupOtp({ params: { orderId: "ORD-3" }, user: RIDER }, res);
+    await flushSetImmediate();
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(mockGenerateReturnPickupOtp).not.toHaveBeenCalled();
+    expect(mockSendSmsIndiaHubOtp).not.toHaveBeenCalled();
+  });
+
+  it("refuses to send the OTP before the rider marked arrival at the customer", async () => {
+    mockOrder({ customer: "cust-1", returnArrivedAtCustomerAt: null });
+    const res = makeRes();
+    await requestReturnPickupOtp({ params: { orderId: "ORD-4" }, user: RIDER }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json.mock.calls[0][0].result.error.code).toBe("ARRIVAL_REQUIRED");
+    expect(mockGenerateReturnPickupOtp).not.toHaveBeenCalled();
+  });
+
+  it("refuses to send the OTP before pickup photos are uploaded", async () => {
+    mockOrder({ customer: "cust-1", returnPickupImages: [] });
+    const res = makeRes();
+    await requestReturnPickupOtp({ params: { orderId: "ORD-5" }, user: RIDER }, res);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json.mock.calls[0][0].result.error.code).toBe("PROOF_REQUIRED");
+    expect(mockGenerateReturnPickupOtp).not.toHaveBeenCalled();
   });
 });

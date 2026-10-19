@@ -42,7 +42,7 @@ const ReturnPickupProofUpload = ({ orderId, onSubmitted }) => {
         formData.append("upload_preset", "return_proof"); // Cloudinary preset
 
         // Try Cloudinary upload via existing media endpoint or directly
-        let url = preview; // fallback: use base64 (works for demo)
+        let url = null;
         try {
           const { default: axiosInstance } = await import("@core/api/axios");
           // Use existing media upload route
@@ -55,13 +55,15 @@ const ReturnPickupProofUpload = ({ orderId, onSubmitted }) => {
             uploadRes.data?.result?.url ||
             uploadRes.data?.data?.url ||
             uploadRes.data?.url ||
-            preview;
+            null;
         } catch {
-          // Fallback to base64 data URL for dev/offline
-          url = preview;
+          // No base64 fallback: phone photos as base64 exceed the 1 MB request
+          // limit, so submitting the proof then failed with "Upload failed".
+          url = null;
         }
 
-        newImages.push({ url, preview });
+        if (url) newImages.push({ url, preview });
+        else toast.error(`Could not upload ${file.name}. Check your connection and try again.`);
       } catch (err) {
         toast.error("Failed to process image: " + (err.message || "Unknown error"));
       }
