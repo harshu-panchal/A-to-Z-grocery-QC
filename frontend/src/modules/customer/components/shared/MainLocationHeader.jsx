@@ -11,6 +11,7 @@ const CartIconPlaceholder = () => (
   </span>
 );
 import LocationDrawer from "./LocationDrawer";
+import ProfileAvatar from "./ProfileAvatar";
 import { useLocation } from "../../context/LocationContext";
 import { useProductDetail } from "../../context/ProductDetailContext";
 import { useSettings } from "@core/context/SettingsContext";
@@ -495,10 +496,14 @@ const MainLocationHeader = ({
                 whileHover={{ scale: 1.15 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={() => navigate("/profile")}
-                className="lg:bg-white/30 p-1.5 lg:rounded-full hover:bg-white transition-all"
+                aria-label="My profile"
+                className="p-1.5 transition-all"
                 style={{ color: headerFontColor }}
               >
-                <AccountCircleOutlinedIcon sx={{ fontSize: 28 }} />
+                <ProfileAvatar
+                  size={28}
+                  fallback={<AccountCircleOutlinedIcon sx={{ fontSize: 28 }} />}
+                />
               </motion.button>
             </div>
           </div>
