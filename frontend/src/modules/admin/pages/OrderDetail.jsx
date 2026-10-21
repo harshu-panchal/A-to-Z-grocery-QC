@@ -220,12 +220,14 @@ const OrderDetail = () => {
                                 <select
                                     value={displayStatus}
                                     onChange={(e) => handleStatusUpdate(e.target.value)}
+                                    // delivered / cancelled are final (server refuses changes; use Returns for delivered)
+                                    disabled={['delivered', 'cancelled'].includes(displayStatus)}
                                     className={cn(
                                         "w-full cursor-pointer appearance-none rounded-lg border py-1.5 pl-3 pr-8 text-[10px] font-bold uppercase tracking-widest shadow-sm outline-none transition-all",
                                         getStatusStyles(displayStatus)
                                     )}
                                 >
-                                    <option value="pending">Pending</option>
+                                    <option value="pending" disabled={displayStatus !== 'pending'}>Pending</option>
                                     <option value="confirmed">Confirmed</option>
                                     <option value="packed">Packed</option>
                                     <option value="out_for_delivery">Out for Delivery</option>

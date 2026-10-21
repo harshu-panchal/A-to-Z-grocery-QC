@@ -51,16 +51,20 @@ export const getPlatformSettings = async (req, res) => {
 
 export const updatePlatformSettings = async (req, res) => {
   try {
-    const payload = req.body || {};
+    const payload = { ...(req.body || {}) };
+    // `_id` in $set made the update fail (500); timestamps are server-owned.
+    for (const key of ["_id", "__v", "createdAt", "updatedAt"]) delete payload[key];
     const toSet = {};
     for (const [key, value] of Object.entries(payload)) {
       flattenForMongoSet(key, value, toSet);
     }
 
+    // runValidators: the schema's min/max (e.g. fees >= 0) were skipped here,
+    // so a negative fee could be saved through this endpoint.
     const settings = await Setting.findOneAndUpdate(
       {},
       { $set: toSet },
-      { new: true, upsert: true },
+      { new: true, upsert: true, runValidators: true },
     );
 
     const result = settings?.toObject?.() || settings || {};
@@ -73,6 +77,12 @@ export const updatePlatformSettings = async (req, res) => {
       result,
     );
   } catch (error) {
+    if (error.name === "ValidationError" || error.name === "CastError") {
+      const message = error.errors
+        ? Object.values(error.errors).map((e) => e.message).join(", ")
+        : `Invalid value for ${error.path}`;
+      return handleResponse(res, 400, message);
+    }
     return handleResponse(res, 500, error.message);
   }
 };

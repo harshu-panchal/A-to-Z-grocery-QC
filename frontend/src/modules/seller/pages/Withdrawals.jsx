@@ -96,10 +96,16 @@ const Withdrawals = () => {
         const pending = Math.abs(Number(data?.balances?.pendingPayouts ?? 0));
         const available = Math.max(0, settled - pending);
 
-        if (!amount || parseFloat(amount) <= 0 || parseFloat(amount) > available) {
-            toast.error(`Please enter a valid amount within your available balance (₹${available}).`);
+        const value = Number(amount);
+        if (!Number.isFinite(value) || value < 1 || value > available) {
+            toast.error(`Please enter an amount between ₹1 and your available balance (₹${available}).`);
             return;
         }
+        if (Math.round(value * 100) !== value * 100) {
+            toast.error("Amount can have at most 2 decimal places.");
+            return;
+        }
+        if (isSubmitting) return;
 
         try {
             setIsSubmitting(true);
@@ -286,6 +292,9 @@ const Withdrawals = () => {
                                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-xl font-black text-slate-300">₹</span>
                                 <input
                                     type="number"
+                                    min="1"
+                                    step="0.01"
+                                    inputMode="decimal"
                                     value={amount}
                                     onChange={(e) => setAmount(e.target.value)}
                                     placeholder="0.00"
@@ -301,8 +310,9 @@ const Withdrawals = () => {
                                     <Building2 className="h-4.5 w-4.5 text-primary" />
                                 </div>
                                 <div className="flex-1">
-                                    <p className="text-xs font-bold text-slate-900">HDFC Bank Limited</p>
-                                    <p className="text-[10px] font-medium text-slate-500">Acct ending in **** 4589</p>
+                                    {/* Was a hard-coded "HDFC Bank Limited, Acct **** 4589" shown to every seller. */}
+                                    <p className="text-xs font-bold text-slate-900">Your registered payout account</p>
+                                    <p className="text-[10px] font-medium text-slate-500">Admin confirms the account before paying out</p>
                                 </div>
                                 <ArrowRight className="h-4 w-4 text-slate-300" />
                             </div>

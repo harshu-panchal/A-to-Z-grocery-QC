@@ -50,9 +50,9 @@ export const approveSellerApplication = async (req, res) => {
 export const rejectSellerApplication = async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body || {};
+    const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
 
-    if (!reason || !reason.trim()) {
+    if (!reason.trim()) {
       return handleResponse(res, 400, "Rejection reason is required");
     }
 

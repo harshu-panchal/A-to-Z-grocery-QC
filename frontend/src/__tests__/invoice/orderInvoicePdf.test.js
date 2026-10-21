@@ -5,6 +5,7 @@ import {
   loadPdfLibs,
   getInvoiceLines,
   getInvoiceNumber,
+  getInvoiceSummary,
   RECEIPT_WIDTH,
 } from "../../modules/customer/utils/orderInvoicePdf.js";
 
@@ -101,5 +102,24 @@ describe("customer invoice — receipt format", () => {
   test("tolerates an order with no address, items or pricing", async () => {
     const { doc } = buildInvoicePdf({ orderId: "X1" }, {}, await loadPdfLibs());
     expect(doc.output()).toContain("NET AMOUNT TO PAY");
+  });
+});
+
+describe("customer invoice — on-screen card", () => {
+  test("every charge is listed so the rows add up to Total Paid (599 + 10 = 609)", () => {
+    const card = getInvoiceSummary({
+      orderId: "ORD-9",
+      items: [{ name: "Yoga Mat 6mm", quantity: 1, price: 599 }],
+      pricing: { subtotal: 599, deliveryFee: 10, gst: 0, discount: 0, total: 609 },
+    });
+    expect(card.rows).toEqual([["Item Total", 599], ["Delivery Fee", 10]]);
+    expect(card.rows.reduce((s, [, v]) => s + v, 0)).toBe(card.total);
+    expect(card.total).toBe(609);
+  });
+
+  test("coupon shows as a negative row with its code; savings include MRP and coupon", () => {
+    const card = getInvoiceSummary(order);
+    expect(card.rows).toContainEqual(["Coupon (SAVE50)", -50]);
+    expect(card.saved).toBe(160);
   });
 });

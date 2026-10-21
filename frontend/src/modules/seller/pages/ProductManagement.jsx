@@ -497,7 +497,7 @@ const ProductManagement = () => {
       setPage(1);
       invalidateProducts();
     } catch (error) {
-      toast.error("Failed to delete product");
+      toast.error(error.response?.data?.message || "Failed to delete product");
     }
   };
 

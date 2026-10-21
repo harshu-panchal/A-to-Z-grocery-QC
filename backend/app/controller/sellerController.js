@@ -90,11 +90,13 @@ export const requestWithdrawal = async (req, res) => {
     const sellerId = req.user.id;
     const { amount } = req.body;
 
-    if (!amount || amount <= 0 || !Number.isFinite(Number(amount))) {
-      return handleResponse(res, 400, "Please enter a valid amount");
-    }
-
     const requestAmount = Number(amount);
+    if (!Number.isFinite(requestAmount) || requestAmount < 1) {
+      return handleResponse(res, 400, "Please enter an amount of at least ₹1");
+    }
+    if (Math.round(requestAmount * 100) !== requestAmount * 100) {
+      return handleResponse(res, 400, "Amount can have at most 2 decimal places");
+    }
 
     // Audit fix M2: the balance read and the withdrawal-transaction write
     // used to happen with no lock tying them together, so two concurrent
@@ -194,33 +196,61 @@ export const updateSellerProfile = async (req, res) => {
       return handleResponse(res, 404, "Seller not found");
     }
 
-    // Update fields if provided
-    if (name) seller.name = name;
-    if (shopName) seller.shopName = shopName;
-    if (phone) seller.phone = phone;
-    if (address !== undefined) seller.address = address;
-    if (locality !== undefined) seller.locality = locality;
-    if (pincode !== undefined) seller.pincode = pincode;
-    if (city !== undefined) seller.city = city;
-    if (state !== undefined) seller.state = state;
+    // Text fields: strings only, trimmed, bounded; name/shop can't be blank.
+    const text = (value, label, max = 200) => {
+      if (typeof value !== "string") return { error: `${label} must be text` };
+      const v = value.trim();
+      if (v.length > max) return { error: `${label} is too long (${max} characters max)` };
+      return { value: v };
+    };
+    for (const [key, label, required, max] of [
+      ["name", "Name", true, 100],
+      ["shopName", "Shop name", true, 120],
+      ["address", "Address", false, 300],
+      ["locality", "Locality", false, 120],
+      ["city", "City", false, 80],
+      ["state", "State", false, 80],
+    ]) {
+      if (req.body[key] === undefined) continue;
+      const r = text(req.body[key], label, max);
+      if (r.error) return handleResponse(res, 400, r.error);
+      if (required && !r.value) return handleResponse(res, 400, `${label} can't be empty`);
+      seller[key] = r.value;
+    }
 
-    // Validate and update geo data
+    if (pincode !== undefined && pincode !== "") {
+      if (!/^\d{6}$/.test(String(pincode).trim())) {
+        return handleResponse(res, 400, "Pincode must be 6 digits");
+      }
+      seller.pincode = String(pincode).trim();
+    }
+
+    // The phone was verified by OTP at signup and is the login id; changing it
+    // here skipped verification. Same rule as the customer profile.
+    if (phone !== undefined && String(phone).trim() && String(phone).trim() !== String(seller.phone || "")) {
+      return handleResponse(res, 400, "Your registered phone number can't be changed here. Contact support.");
+    }
+
+    // Validate and update geo data ("abc" used to pass the range checks as NaN)
     if (lat !== undefined && lng !== undefined) {
-      if (lat < -90 || lat > 90)
+      const la = Number(lat);
+      const lo = Number(lng);
+      if (!Number.isFinite(la) || la < -90 || la > 90)
         return handleResponse(res, 400, "Invalid latitude");
-      if (lng < -180 || lng > 180)
+      if (!Number.isFinite(lo) || lo < -180 || lo > 180)
         return handleResponse(res, 400, "Invalid longitude");
 
       seller.location = {
         type: "Point",
-        coordinates: [Number(lng), Number(lat)],
+        coordinates: [lo, la],
       };
     }
 
     if (radius !== undefined) {
-      if (radius < 1 || radius > 100)
+      const r = Number(radius);
+      if (!Number.isFinite(r) || r < 1 || r > 100)
         return handleResponse(res, 400, "Radius must be between 1 and 100 km");
-      seller.serviceRadius = Number(radius);
+      seller.serviceRadius = r;
     }
 
     const updatedSeller = await seller.save();

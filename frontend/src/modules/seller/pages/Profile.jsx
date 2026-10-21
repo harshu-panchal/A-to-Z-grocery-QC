@@ -101,20 +101,18 @@ const SellerProfile = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    // Basic phone validation: must be exactly 10 digits
-    if (!/^[0-9]{10}$/.test(formData.phone)) {
-      toast.error("Please enter a valid 10-digit phone number.");
-      return;
-    }
-    // Basic email validation
-    if (!formData.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      toast.error("Please enter a valid email address.");
+    if (!String(formData.shopName || "").trim()) {
+      toast.error("Shop name can't be empty.");
       return;
     }
     setIsSaving(true);
     try {
+      // Phone and email are the login identity (OTP-verified at signup):
+      // shown read-only and not sent, so they can't be changed from here.
+      // eslint-disable-next-line no-unused-vars
+      const { phone, email, ...editable } = formData;
       const payload = {
-        ...formData,
+        ...editable,
         lat: formData.lat,
         lng: formData.lng,
         radius: formData.radius,
@@ -301,8 +299,9 @@ const SellerProfile = () => {
                       type="tel"
                       name="phone"
                       value={formData.phone}
-                      onChange={handleChange}
-                      disabled={!isEditing}
+                      readOnly
+                      disabled
+                      title="Registered phone number. Contact support to change it."
                       className="h-11 w-full rounded-md border border-slate-200 bg-white pl-10 pr-4 text-sm font-semibold text-slate-700 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-slate-50 disabled:opacity-70"
                     />
                   </div>
@@ -320,8 +319,9 @@ const SellerProfile = () => {
                       type="email"
                       name="email"
                       value={formData.email}
-                      onChange={handleChange}
-                      disabled={!isEditing}
+                      readOnly
+                      disabled
+                      title="Registered email. Contact support to change it."
                       className="h-11 w-full rounded-md border border-slate-200 bg-white pl-10 pr-4 text-sm font-semibold text-slate-700 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:bg-slate-50 disabled:opacity-70"
                     />
                   </div>

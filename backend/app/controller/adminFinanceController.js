@@ -18,6 +18,7 @@ import {
 import { createFinanceAuditLog } from "../services/finance/auditLogService.js";
 import FinanceAuditLog from "../models/financeAuditLog.js";
 import Admin from "../models/admin.js";
+import Setting from "../models/setting.js";
 import {
   financeLedgerQuerySchema,
   payoutProcessSchema,
@@ -200,6 +201,15 @@ export const updateDeliverySettingsController = async (req, res) => {
     const validated = validateWithJoi(updateDeliverySettingsSchema, req.body || {});
     if (!validated.isValid) {
       return handleResponse(res, 400, validated.message);
+    }
+    const { codEnabled, onlineEnabled } = validated.value;
+    if (codEnabled === false || onlineEnabled === false) {
+      const current = await Setting.findOne({}).select("codEnabled onlineEnabled").lean();
+      const cod = codEnabled ?? current?.codEnabled ?? true;
+      const online = onlineEnabled ?? current?.onlineEnabled ?? true;
+      if (!cod && !online) {
+        return handleResponse(res, 400, "Keep at least one payment method (COD or online) on, otherwise customers can't place orders.");
+      }
     }
     const updated = await updateDeliveryFinanceSettings(validated.value);
     await createFinanceAuditLog({

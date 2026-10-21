@@ -136,36 +136,80 @@ export async function getDeliveryWithdrawalsData({ page, limit, skip }) {
   };
 }
 
+// Withdrawal lifecycle. Settled (paid) and Failed are final: a paid
+// withdrawal flipped to "Failed" returned the money to the available balance,
+// so the same amount could be withdrawn and paid a second time.
+const WITHDRAWAL_TRANSITIONS = {
+  Processing: ["Pending"],
+  Settled: ["Pending", "Processing"],
+  Failed: ["Pending", "Processing"],
+};
+
 export async function updateWithdrawalStatusById({ id, status, reason }) {
   if (!["Settled", "Failed", "Processing"].includes(status)) {
     throw new Error("Invalid status");
   }
-
-  const transaction = await Transaction.findById(id).populate("user", "name");
-  if (!transaction) {
+  if (!/^[a-f\d]{24}$/i.test(String(id || ""))) {
     return null;
   }
 
-  transaction.status = status;
-  if (reason) {
-    transaction.notes = reason;
-  }
+  // Atomic: only a withdrawal, only from an allowed state. A double click or
+  // two admins can't apply it twice.
+  const set = { status };
+  if (reason) set.notes = String(reason).trim().slice(0, 500);
+  const transaction = await Transaction.findOneAndUpdate(
+    { _id: id, type: "Withdrawal", status: { $in: WITHDRAWAL_TRANSITIONS[status] } },
+    { $set: set },
+    { new: true },
+  ).populate("user", "name");
+  if (transaction) return transaction;
 
-  await transaction.save();
-  return transaction;
+  const existing = await Transaction.findById(id).select("type status").lean();
+  if (!existing) return null;
+  const err = new Error(
+    existing.type !== "Withdrawal"
+      ? "This transaction is not a withdrawal request."
+      : `This withdrawal is already ${String(existing.status).toLowerCase()} and can't be changed to ${status.toLowerCase()}.`,
+  );
+  err.statusCode = 409;
+  throw err;
 }
 
+// Rider earnings waiting to be settled. Withdrawal requests are excluded:
+// "settle" here means "earning confirmed", not "money sent", and withdrawals
+// are paid through the withdrawal screen (bulk-settle used to mark every
+// pending rider withdrawal as paid).
+const SETTLEABLE_DELIVERY_FILTER = {
+  userModel: "Delivery",
+  status: "Pending",
+  type: { $nin: ["Withdrawal"] },
+};
+
 export async function settleDeliveryTransactionById(id) {
-  const transaction = await Transaction.findByIdAndUpdate(
-    id,
-    { status: "Settled" },
+  if (!/^[a-f\d]{24}$/i.test(String(id || ""))) {
+    return null;
+  }
+  const transaction = await Transaction.findOneAndUpdate(
+    { _id: id, ...SETTLEABLE_DELIVERY_FILTER },
+    { $set: { status: "Settled" } },
     { new: true },
   ).populate("user", "name");
 
   if (!transaction) {
-    return null;
+    const existing = await Transaction.findById(id).select("type status userModel").lean();
+    if (!existing) return null;
+    const err = new Error(
+      existing.type === "Withdrawal"
+        ? "Withdrawal requests are paid from the Withdrawals screen."
+        : existing.userModel !== "Delivery"
+          ? "This is not a delivery partner transaction."
+          : `This transaction is already ${String(existing.status).toLowerCase()}.`,
+    );
+    err.statusCode = 409;
+    throw err;
   }
 
+  if (!transaction.user?._id) return transaction;
   await Notification.create({
     recipient: transaction.user._id,
     recipientModel: "Delivery",
@@ -179,8 +223,5 @@ export async function settleDeliveryTransactionById(id) {
 }
 
 export async function bulkSettleDeliveryTransactions() {
-  return Transaction.updateMany(
-    { userModel: "Delivery", status: "Pending" },
-    { status: "Settled" },
-  );
+  return Transaction.updateMany(SETTLEABLE_DELIVERY_FILTER, { $set: { status: "Settled" } });
 }

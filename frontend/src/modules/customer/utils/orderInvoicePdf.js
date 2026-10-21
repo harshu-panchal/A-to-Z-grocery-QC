@@ -108,6 +108,28 @@ function paymentLabel(order) {
 /**
  * The receipt as an array of `{ text, bold }` rows, each at most 48 chars.
  */
+/**
+ * Totals for the on-screen invoice card. Same figures as the receipt; every
+ * charge is listed, so the rows add up to the total (the old card showed only
+ * Subtotal + Tax, e.g. 599 + 0 with "Total Paid 609").
+ */
+export function getInvoiceSummary(order) {
+  const p = order?.pricing || {};
+  const lines = getInvoiceLines(order);
+  const subtotal = lines.reduce((s, l) => s + l.amount, 0);
+  const rows = [["Item Total", subtotal]];
+  const couponCode = order?.couponSnapshot?.code;
+  if (Number(p.discount)) rows.push([`Coupon${couponCode ? ` (${String(couponCode).toUpperCase()})` : ""}`, -Math.abs(p.discount)]);
+  if (Number(p.deliveryFee)) rows.push(["Delivery Fee", p.deliveryFee]);
+  if (Number(p.platformFee)) rows.push(["Handling Fee", p.platformFee]);
+  if (Number(p.gst)) rows.push(["GST", p.gst]);
+  if (Number(p.tip)) rows.push(["Tip", p.tip]);
+  const total = p.total ?? rows.reduce((s, [, v]) => s + Number(v || 0), 0);
+  const walletUsed = Number(p.walletAmount) || 0;
+  const saved = lines.reduce((s, l) => s + (l.mrp - l.rate) * l.qty, 0) + (Number(p.discount) || 0);
+  return { lines, rows, total, walletUsed, saved };
+}
+
 export function buildReceiptLines(order, settings = {}) {
   const out = [];
   const add = (text, bold = false) => out.push({ text, bold });

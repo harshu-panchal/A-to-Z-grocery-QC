@@ -293,12 +293,14 @@ const OrdersList = () => {
                     <select
                         value={order.status}
                         onChange={(e) => handleStatusUpdate(order._id, e.target.value)}
+                        // delivered / cancelled are final (server refuses changes; use Returns for delivered)
+                        disabled={['delivered', 'cancelled'].includes(order.status)}
                         className={cn(
                             "w-full text-[10px] pl-3 pr-7 py-1.5 rounded-full font-bold uppercase tracking-wider border-none appearance-none cursor-pointer outline-none",
                             STATUS_SELECT_STYLES[order.status] || 'bg-slate-100 text-slate-600'
                         )}
                     >
-                        <option value="pending">Pending</option>
+                        <option value="pending" disabled={order.status !== 'pending'}>Pending</option>
                         <option value="confirmed">Confirmed</option>
                         <option value="packed">Packed</option>
                         <option value="out_for_delivery">Out for Delivery</option>

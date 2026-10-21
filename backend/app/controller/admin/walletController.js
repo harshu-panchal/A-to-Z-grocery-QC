@@ -97,7 +97,7 @@ export const updateWithdrawalStatus = async (req, res) => {
 
     return handleResponse(res, 200, `Withdrawal ${status} successfully`);
   } catch (error) {
-    const statusCode = error.message === "Invalid status" ? 400 : 500;
+    const statusCode = error.statusCode || (error.message === "Invalid status" ? 400 : 500);
     return handleResponse(res, statusCode, error.message);
   }
 };
@@ -118,7 +118,7 @@ export const settleTransaction = async (req, res) => {
       transaction,
     );
   } catch (error) {
-    return handleResponse(res, 500, error.message);
+    return handleResponse(res, error.statusCode || 500, error.message);
   }
 };
 

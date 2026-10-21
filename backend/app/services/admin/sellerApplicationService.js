@@ -148,5 +148,11 @@ export async function rejectSellerApplicationById({
     return null;
   }
 
+  // A rejected / deactivated store must disappear for customers right away
+  // (it stayed in the cached "nearby sellers" list).
+  invalidate(NEARBY_SELLERS_CACHE_PATTERN).catch((err) => {
+    console.warn("[SellerApplication] Nearby-sellers cache invalidation failed:", err.message);
+  });
+
   return formatSellerApplication(seller);
 }

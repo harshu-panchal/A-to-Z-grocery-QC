@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Delivery from "../../models/delivery.js";
 import Transaction from "../../models/transaction.js";
 import Notification from "../../models/notification.js";
+import { withLock } from "../../utils/distributedLock.js";
 
 export async function getDeliveryCashBalancesData({ page, limit, skip }) {
   const ridersPipeline = [
@@ -178,8 +179,18 @@ export async function getDeliveryCashBalancesData({ page, limit, skip }) {
 }
 
 export async function settleRiderCashEntry({ riderId, amount, method }) {
-  if (!riderId || !amount || amount <= 0) {
+  const settleAmount = Number(amount);
+  // "abc" used to pass `amount <= 0` (NaN) and record a NaN settlement
+  if (!riderId || !Number.isFinite(settleAmount) || settleAmount <= 0) {
     throw new Error("Missing riderId or invalid amount");
+  }
+  if (Math.round(settleAmount * 100) !== settleAmount * 100) {
+    const err = new Error("Amount can have at most 2 decimal places");
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!mongoose.isValidObjectId(riderId)) {
+    return null;
   }
 
   const rider = await Delivery.findById(riderId);
@@ -187,8 +198,9 @@ export async function settleRiderCashEntry({ riderId, amount, method }) {
     return null;
   }
 
+  // One settlement per rider at a time: a double click used to settle twice.
+  return withLock(`cash-settle:${riderId}`, 10_000, async () => {
   const currentCash = await computeRiderCurrentCash(riderId);
-  const settleAmount = Number(amount);
   if (settleAmount > currentCash + 0.01) {
     const err = new Error(
       `Cannot settle more than pending cash balance (\u20B9${currentCash})`,
@@ -217,6 +229,7 @@ export async function settleRiderCashEntry({ riderId, amount, method }) {
   });
 
   return settlement;
+  });
 }
 
 async function computeRiderCurrentCash(riderId) {

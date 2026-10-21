@@ -155,6 +155,7 @@ const WithdrawalRequests = () => {
     };
 
     const confirmAction = async () => {
+        if (isMutating) return; // double click
         try {
             setIsMutating(true);
             const status = actionModal.type === 'approve' ? 'Settled' : 'Failed';
@@ -165,7 +166,9 @@ const WithdrawalRequests = () => {
                 setActionModal({ isOpen: false, type: null, request: null });
             }
         } catch (error) {
-            toast.error("Action failed");
+            // e.g. "This withdrawal is already settled and can't be changed to failed."
+            toast.error(error.response?.data?.message || "Action failed");
+            queryClient.invalidateQueries({ queryKey: WITHDRAWALS_QUERY_ROOT });
         } finally {
             setIsMutating(false);
         }
@@ -276,7 +279,8 @@ const WithdrawalRequests = () => {
             align: 'right',
             cell: (req) => (
                 <div className="flex items-center justify-end gap-1.5">
-                    {req.status === 'Pending' && (
+                    {/* Processing requests also need a way to finish */}
+                    {(req.status === 'Pending' || req.status === 'Processing') && (
                         <>
                             <button
                                 onClick={() => handleAction('approve', req)}

@@ -32,6 +32,9 @@ export const adjustStock = async (req, res) => {
         }
         const delta = isRestock ? qty : -qty;
 
+        if (!/^[a-f\d]{24}$/i.test(String(productId || ""))) {
+            return handleResponse(res, 404, "Product not found or unauthorized");
+        }
         const product = await Product.findOne({ _id: productId, sellerId })
             .select("name stock lowStockAlert variants sellerId")
             .lean();

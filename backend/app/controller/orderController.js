@@ -12,6 +12,7 @@ import getPagination from "../utils/pagination.js";
 import {
   WORKFLOW_STATUS,
   workflowFromLegacyStatus,
+  legacyStatusFromWorkflow,
 } from "../constants/orderWorkflow.js";
 import {
   sellerAcceptAtomic,
@@ -22,6 +23,7 @@ import {
   removeReturnPickupTimeoutJob,
 } from "../services/orderWorkflowService.js";
 import { applyDeliveredSettlement } from "../services/orderSettlement.js";
+import { compensateOrderCancellation } from "../services/orderCompensation.js";
 import {
   reverseOrderFinanceOnCancellation,
 } from "../services/finance/orderFinanceService.js";
@@ -500,6 +502,11 @@ export const updateOrderStatus = async (req, res) => {
     // the OTP and moved the workflow to DELIVERED, so the customer saw
     // "Delivered" while the rider's OTP then failed with "Invalid state for
     // delivery completion". Admins keep a manual override for support.
+    const ORDER_STATUSES = ["pending", "confirmed", "packed", "out_for_delivery", "delivered", "cancelled"];
+    if (status !== undefined && !ORDER_STATUSES.includes(status)) {
+      return handleResponse(res, 400, "Unknown order status");
+    }
+
     if (role === "seller" && (status === "delivered" || status === "out_for_delivery")) {
       return handleResponse(
         res,
@@ -508,6 +515,51 @@ export const updateOrderStatus = async (req, res) => {
           ? "Delivery is completed by the rider with the customer's OTP."
           : "Out for delivery is set when the rider confirms pickup.",
       );
+    }
+
+    // Admin override still can't touch a finished order: cancelling a
+    // delivered order restocked it and failed its payment, and "delivering" a
+    // cancelled one ran the delivery settlement. Use returns for delivered.
+    if (role === "admin" && status) {
+      const current = String(
+        (order.workflowVersion >= 2 && order.workflowStatus
+          ? legacyStatusFromWorkflow(order.workflowStatus)
+          : order.status) || "pending",
+      );
+      if (status === current) {
+        return handleResponse(res, 200, "Order status unchanged", order);
+      }
+      if (current === "delivered" || current === "cancelled") {
+        return handleResponse(res, 409, `This order is already ${current}; its status can't be changed.`);
+      }
+      if (status === "pending") {
+        return handleResponse(res, 409, "An order can't be moved back to pending.");
+      }
+    }
+
+    // Sellers only move an order forward: pending -> confirmed -> packed, or
+    // cancel before pickup. The dropdown hid the rest, but the API accepted
+    // e.g. "pending" on a confirmed order (resetting the v2 workflow) or
+    // "cancelled" on a delivered legacy order (restocking + failing payment).
+    if (role === "seller" && status && order.seller?.toString() === String(userId)) {
+      const current = String(
+        order.workflowVersion >= 2 && order.workflowStatus
+          ? (order.sellerPackedAt && legacyStatusFromWorkflow(order.workflowStatus) === "confirmed"
+              ? "packed"
+              : legacyStatusFromWorkflow(order.workflowStatus))
+          : order.status || "pending",
+      );
+      if (status === current) {
+        return handleResponse(res, 200, "Order status unchanged", order);
+      }
+      const allowedFrom = {
+        confirmed: ["pending"],
+        packed: ["confirmed"],
+        cancelled: ["pending", "confirmed", "packed"],
+      }[status];
+      if (!allowedFrom || !allowedFrom.includes(current)) {
+        return handleResponse(res, 409, `Can't change an order from "${current.replace(/_/g, " ")}" to "${status.replace(/_/g, " ")}".`);
+      }
     }
 
     if (order.workflowVersion >= 2 && role === "seller") {
@@ -546,6 +598,7 @@ export const updateOrderStatus = async (req, res) => {
     // -----------------------------
 
     const oldStatus = order.status;
+    let runCancellationCompensation = false;
     if (status) {
       // v2 "packed" is seller-reported and independent of the
       // delivery-matching state machine (workflowStatus may already be
@@ -585,27 +638,10 @@ export const updateOrderStatus = async (req, res) => {
     if (status === "cancelled" && oldStatus !== "cancelled") {
       order.cancelledBy = role === "seller" ? "seller" : "admin";
       if (reason) order.cancelReason = reason;
-      // 1. Reverse Stock
-      for (const item of order.items) {
-        await Product.findByIdAndUpdate(item.product, {
-          $inc: { stock: item.quantity },
-        });
-
-        await StockHistory.create({
-          product: item.product,
-          seller: order.seller,
-          type: "Correction",
-          quantity: item.quantity,
-          note: `Order #${canonicalOrderId} Cancelled`,
-          order: order._id,
-        });
-      }
-
-      // 2. Update Transaction
-      await Transaction.findOneAndUpdate(
-        { reference: canonicalOrderId },
-        { status: "Failed" },
-      );
+      // Stock, payment and wallet are reversed after the save below by the
+      // shared cancellation path. This block used to restock only the master
+      // stock (pack-size stock stayed sold) and never refunded wallet money.
+      runCancellationCompensation = true;
 
       emitNotificationEvent(NOTIFICATION_EVENTS.ORDER_CANCELLED, {
         orderId: canonicalOrderId,
@@ -645,6 +681,13 @@ export const updateOrderStatus = async (req, res) => {
     }
 
     await order.save();
+
+    if (runCancellationCompensation) {
+      await compensateOrderCancellation(order, canonicalOrderId, {
+        actorId: userId,
+        reason: reason || `Cancelled by ${role}`,
+      });
+    }
 
     emitOrderStatusUpdate(
       canonicalOrderId,
@@ -775,13 +818,25 @@ export const updateReturnQcStatus = async (req, res) => {
       );
     }
 
-    order.returnStatus = qcStatus;
-    order.returnQcStatus = qcStatus === "qc_passed" ? "passed" : "failed";
-    order.returnQcAt = new Date();
-    order.returnQcBy = userId;
-    order.returnQcNote = note ? String(note).trim().slice(0, 500) : undefined;
-
-    await order.save();
+    // Atomic "returned -> qc_*": a double click (or two admins) used to run QC
+    // twice, and the second save could overwrite refund_completed and refund
+    // the customer again.
+    const qcSet = {
+      returnStatus: qcStatus,
+      returnQcStatus: qcStatus === "qc_passed" ? "passed" : "failed",
+      returnQcAt: new Date(),
+      returnQcBy: userId,
+    };
+    if (note) qcSet.returnQcNote = String(note).trim().slice(0, 500);
+    const claimed = await Order.findOneAndUpdate(
+      { _id: order._id, returnStatus: "returned" },
+      { $set: qcSet },
+      { new: true },
+    );
+    if (!claimed) {
+      return handleResponse(res, 409, "QC for this return was already completed.");
+    }
+    Object.assign(order, qcSet);
 
     if (qcStatus === "qc_passed") {
       const updated = await completeReturnAndRefund(order);

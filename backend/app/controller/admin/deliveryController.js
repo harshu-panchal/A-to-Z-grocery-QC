@@ -71,11 +71,14 @@ export const approveDeliveryPartner = async (req, res) => {
 export const rejectDeliveryPartner = async (req, res) => {
   try {
     const { id } = req.params;
-    const { reason } = req.body || {};
+    const reason = typeof req.body?.reason === "string" ? req.body.reason : "";
 
-    if (!reason || !reason.trim()) {
+    if (!reason.trim()) {
       return handleResponse(res, 400, "Rejection reason is required");
     }
+
+    const busy = await riderActiveWork(id);
+    if (busy) return handleResponse(res, 409, busy);
 
     const rider = await Delivery.findByIdAndUpdate(
       id,
@@ -162,10 +165,33 @@ export const updateDeliveryPartner = async (req, res) => {
   }
 };
 
+const ACTIVE_RIDER_WORK = (riderId) => ({
+  $or: [
+    { deliveryBoy: riderId, workflowStatus: { $in: ["DELIVERY_ASSIGNED", "PICKUP_READY", "OUT_FOR_DELIVERY"] } },
+    { deliveryBoy: riderId, workflowVersion: { $lt: 2 }, status: { $in: ["packed", "out_for_delivery"] } },
+    { returnDeliveryBoy: riderId, returnStatus: { $in: ["return_pickup_assigned", "return_in_transit", "return_drop_pending"] } },
+  ],
+});
+
+/**
+ * Deactivating / rejecting a rider in the middle of a delivery or return
+ * pickup left those orders stuck with a rider who can't log in.
+ * Returns a message when the rider is busy, otherwise null.
+ */
+async function riderActiveWork(riderId) {
+  if (!/^[a-f\d]{24}$/i.test(String(riderId || ""))) return null;
+  const count = await Order.countDocuments(ACTIVE_RIDER_WORK(riderId));
+  return count > 0
+    ? `This rider has ${count} order${count > 1 ? "s" : ""} in progress. Wait until ${count > 1 ? "they are" : "it is"} delivered or reassign ${count > 1 ? "them" : "it"} first.`
+    : null;
+}
+
 /** Takes a rider off the platform: offline, unverified, and login is refused. */
 export const deactivateDeliveryPartner = async (req, res) => {
   try {
     const reason = String(req.body?.reason || "").trim() || "Deactivated by admin";
+    const busy = await riderActiveWork(req.params.id);
+    if (busy) return handleResponse(res, 409, busy);
     const rider = await Delivery.findByIdAndUpdate(
       req.params.id,
       { isVerified: false, isOnline: false, applicationStatus: "rejected", rejectionReason: reason },

@@ -378,9 +378,10 @@ const Orders = () => {
                     STATUS_SELECT_STYLES[getStatusColor(order.status)] || STATUS_SELECT_STYLES.secondary
                 )}
             >
-                <option value="pending" disabled={['confirmed', 'packed', 'out_for_delivery', 'delivered', 'cancelled'].includes(order.status)}>Pending</option>
-                <option value="confirmed" disabled={['packed', 'out_for_delivery', 'delivered', 'cancelled'].includes(order.status)}>Confirmed</option>
-                <option value="packed" disabled={['out_for_delivery', 'delivered', 'cancelled'].includes(order.status)}>Packed</option>
+                {/* forward only: pending -> confirmed -> packed (server enforces the same) */}
+                <option value="pending" disabled>Pending</option>
+                <option value="confirmed" disabled={order.status !== 'pending'}>Confirmed</option>
+                <option value="packed" disabled={order.status !== 'confirmed'}>Packed</option>
                 {/* set by the rider (pickup confirm / customer OTP), not the seller */}
                 <option value="out_for_delivery" disabled>Out for Delivery</option>
                 <option value="delivered" disabled>Delivered</option>

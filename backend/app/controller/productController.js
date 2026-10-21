@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import { validateProductBarcodes } from "../services/inventory/barcodeService.js";
 import Product from "../models/product.js";
 import Order from "../models/order.js";
+import Cart from "../models/cart.js";
+import crypto from "crypto";
 import Review from "../models/review.js";
 import { handleResponse } from "../utils/helper.js";
 import { slugify } from "../utils/slugify.js";
@@ -129,6 +131,98 @@ function parseSellerIdFilters({ sellerId, sellerIds }) {
 
   return [];
 }
+
+// Shape of the SKUs the seller form auto-fills ("amulm-001"). Only these are
+// regenerated on a clash; a SKU the seller typed is never silently changed.
+const AUTO_SKU_PATTERN = /^[a-z0-9]{1,5}-\d{3}$/;
+
+/**
+ * `slug` and `sku` are unique across ALL sellers (DB unique index), and the
+ * auto values only use the first 5 letters of the name. So a second seller
+ * adding "Amul Milk", or the same seller adding "Amul Milk 1L" after
+ * "Amul Milk 500ml", failed with "Slug or SKU already exists". Add a short
+ * suffix until the value is free.
+ */
+async function uniqueProductValue(field, base, excludeId = null) {
+  let candidate = base;
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const query = { [field]: candidate };
+    if (excludeId) query._id = { $ne: excludeId };
+    if (!(await Product.exists(query))) return candidate;
+    candidate = `${base}-${crypto.randomBytes(2).toString("hex")}`;
+  }
+  return `${base}-${Date.now().toString(36)}`;
+}
+
+/** Resolve slug + sku for a create/update. Returns an error message or null. */
+export async function assignUniqueSlugAndSku(productData, { excludeId = null, currentSku = null } = {}) {
+  if (productData.slug) {
+    productData.slug = await uniqueProductValue("slug", productData.slug, excludeId);
+  }
+  const sku = String(productData.sku || "").trim();
+  if (!sku || sku === currentSku) return null;
+  if (AUTO_SKU_PATTERN.test(sku)) {
+    productData.sku = await uniqueProductValue("sku", sku, excludeId);
+    return null;
+  }
+  const taken = await Product.exists({ sku, ...(excludeId ? { _id: { $ne: excludeId } } : {}) });
+  return taken ? `Product code "${sku}" is already used by another product. Please use a different code.` : null;
+}
+
+/**
+ * Prices: never negative, never above MRP, and something must cost more than
+ * 0 (a product or pack with MRP 0 and no selling price was sold for ₹0).
+ * `existing` supplies stored values for fields an update doesn't send.
+ * Returns an error message or null.
+ */
+export function validateProductPrices(productData, existing = null) {
+  const num = (v) => (v === undefined || v === null || String(v).trim() === "" ? undefined : Number(v));
+  const check = (label, mrpIn, saleIn, fallback = {}) => {
+    const mrp = num(mrpIn) ?? num(fallback.mrp);
+    const sale = num(saleIn) ?? num(fallback.sellingPrice);
+    for (const [name, v] of [["MRP", mrp], ["Selling price", sale]]) {
+      if (v !== undefined && (!Number.isFinite(v) || v < 0)) return `${name} must be 0 or more${label}`;
+    }
+    if (!((sale || 0) > 0 || (mrp || 0) > 0)) return `Enter an MRP or selling price above ₹0${label}`;
+    if (mrp > 0 && sale > mrp) return `Selling price can't be more than MRP${label}`;
+    return null;
+  };
+
+  if (Array.isArray(productData.variants) && productData.variants.length > 0) {
+    for (const [i, v] of productData.variants.entries()) {
+      const err = check(` (${v?.name || `variant ${i + 1}`})`, v?.mrp, v?.sellingPrice);
+      if (err) return err;
+    }
+    return null;
+  }
+  const touchesPrice = productData.mrp !== undefined || productData.sellingPrice !== undefined;
+  if (!existing || touchesPrice) {
+    return check("", productData.mrp, productData.sellingPrice, existing || {});
+  }
+  return null;
+}
+
+/** Variant names and codes must be unique within a product (orders pick a variant by them). */
+export function validateVariantIdentity(productData) {
+  const variants = productData.variants;
+  if (!Array.isArray(variants) || variants.length === 0) return null;
+  const names = new Set();
+  const skus = new Set();
+  for (const [i, v] of variants.entries()) {
+    const name = String(v?.name || "").trim();
+    if (variants.length > 1 && !name) return `Give every variant a name (variant ${i + 1} is empty)`;
+    const nKey = name.toLowerCase();
+    if (name && names.has(nKey)) return `Two variants are both named "${name}"`;
+    names.add(nKey);
+    const sku = String(v?.sku || "").trim().toLowerCase();
+    if (sku && skus.has(sku)) return `Two variants use the same product code "${v.sku}"`;
+    skus.add(sku);
+  }
+  return null;
+}
+
+/** Fields only the platform may set. */
+const SELLER_FORBIDDEN_FIELDS = ["isFeatured"];
 
 function makeProductSku(name, index = 1) {
   const prefix = String(name || "")
@@ -770,10 +864,12 @@ export const createProduct = async (req, res) => {
       }
     } else {
       productData.sellerId = req.user.id;
+      for (const field of SELLER_FORBIDDEN_FIELDS) delete productData[field];
     }
 
     // Handle multipart files (mainImage and galleryImages)
     const files = req.files || [];
+    let failedUploads = 0;
     if (files.length > 0) {
       const galleryUrls = [];
       for (const file of files) {
@@ -792,6 +888,7 @@ export const createProduct = async (req, res) => {
             galleryUrls.push(url);
           }
         } catch (err) {
+          failedUploads += 1;
           logger.error("Cloudinary upload failed", {
             scope: "createProduct",
             error: err,
@@ -802,16 +899,18 @@ export const createProduct = async (req, res) => {
         productData.galleryImages = galleryUrls;
       }
     }
+    // Don't create a product without the photos the seller added.
+    if (failedUploads > 0) {
+      return handleResponse(res, 502, `${failedUploads} image${failedUploads > 1 ? "s" : ""} failed to upload. Please try again.`);
+    }
 
     // Parse JSON fields if they come as strings from FormData
     if (typeof productData.variants === "string") {
       try {
         productData.variants = JSON.parse(productData.variants);
       } catch (e) {
-        logger.error("Failed to parse variants JSON", {
-          scope: "createProduct",
-          error: e,
-        });
+        // was logged and silently replaced by [] (product saved without variants)
+        return handleResponse(res, 400, "Variants data is invalid. Please check the variant rows and try again.");
       }
     }
     if (typeof productData.tags === "string" && productData.tags.startsWith("[")) {
@@ -822,8 +921,12 @@ export const createProduct = async (req, res) => {
       }
     }
 
-    if (!productData.name) {
+    productData.name = typeof productData.name === "string" ? productData.name.trim() : productData.name;
+    if (!productData.name || typeof productData.name !== "string") {
       return handleResponse(res, 400, "Product name is required");
+    }
+    if (productData.name.length > 200) {
+      return handleResponse(res, 400, "Product name is too long (200 characters max)");
     }
     
     // Auto-generate slug
@@ -870,11 +973,19 @@ export const createProduct = async (req, res) => {
     }
 
     normalizeWholesalePrices(productData);
+    const identityError = validateVariantIdentity(productData);
+    if (identityError) return handleResponse(res, 400, identityError);
+    const priceError = validateProductPrices(productData);
+    if (priceError) return handleResponse(res, 400, priceError);
+
     const barcodeError = await validateProductBarcodes(productData, productData.sellerId);
     if (barcodeError) return handleResponse(res, 409, barcodeError);
 
     const stockError = normalizeStockFields(productData);
     if (stockError) return handleResponse(res, 400, stockError);
+
+    const skuError = await assignUniqueSlugAndSku(productData);
+    if (skuError) return handleResponse(res, 409, skuError);
 
     let moderationUpdate = {};
     let successMessage = "Product created successfully";
@@ -935,8 +1046,14 @@ export const createProduct = async (req, res) => {
     );
   } catch (error) {
     logger.error("Create Product Error", { scope: "createProduct", error });
+    if (error.name === "ValidationError") {
+      return handleResponse(res, 400, Object.values(error.errors).map((e) => e.message).join(", "));
+    }
+    if (error.name === "CastError") {
+      return handleResponse(res, 400, `Invalid ${error.path}`);
+    }
     if (error.code === 11000) {
-      return handleResponse(res, 400, "Slug or SKU already exists");
+      return handleResponse(res, 409, "This product code or link is already used. Please try again.");
     }
     return handleResponse(res, 500, error.message);
   }
@@ -955,6 +1072,12 @@ export const updateProduct = async (req, res) => {
     if (Object.prototype.hasOwnProperty.call(productData, "sellerId")) {
       delete productData.sellerId;
     }
+    if (role !== "admin") {
+      for (const field of SELLER_FORBIDDEN_FIELDS) delete productData[field];
+    }
+    if (!mongoose.isValidObjectId(id)) {
+      return handleResponse(res, 404, "Product not found or unauthorized");
+    }
 
     // Admin bypasses sellerId check
     const query = role === "admin" ? { _id: id } : { _id: id, sellerId };
@@ -966,6 +1089,7 @@ export const updateProduct = async (req, res) => {
 
     // Handle multipart files (mainImage and galleryImages)
     const files = req.files || [];
+    let failedUploads = 0;
     if (files.length > 0) {
       const galleryUrls = [];
       const oldGalleryImages = Array.isArray(product.galleryImages) ? [...product.galleryImages] : [];
@@ -990,6 +1114,7 @@ export const updateProduct = async (req, res) => {
             galleryUrls.push(url);
           }
         } catch (err) {
+          failedUploads += 1;
           logger.error("Cloudinary upload failed during update", {
             scope: "updateProduct",
             error: err,
@@ -1012,16 +1137,22 @@ export const updateProduct = async (req, res) => {
       }
     }
 
+    if (failedUploads > 0) {
+      return handleResponse(res, 502, `${failedUploads} image${failedUploads > 1 ? "s" : ""} failed to upload. Please try again.`);
+    }
+
     // Parse JSON fields
     if (typeof productData.variants === "string") {
       try {
         productData.variants = JSON.parse(productData.variants);
       } catch (e) {
-        logger.error("Failed to parse variants JSON during update", {
-          scope: "updateProduct",
-          error: e,
-        });
+        return handleResponse(res, 400, "Variants data is invalid. Please check the variant rows and try again.");
       }
+    }
+    if (productData.name !== undefined) {
+      productData.name = String(productData.name).trim();
+      if (!productData.name) return handleResponse(res, 400, "Product name is required");
+      if (productData.name.length > 200) return handleResponse(res, 400, "Product name is too long (200 characters max)");
     }
     if (typeof productData.tags === "string" && productData.tags.startsWith("[")) {
       try {
@@ -1076,11 +1207,20 @@ export const updateProduct = async (req, res) => {
     }
 
     normalizeWholesalePrices(productData);
+    const identityError = validateVariantIdentity(productData);
+    if (identityError) return handleResponse(res, 400, identityError);
+    const priceError = validateProductPrices(productData, product);
+    if (priceError) return handleResponse(res, 400, priceError);
+
     const barcodeError = await validateProductBarcodes(productData, product.sellerId, product._id);
     if (barcodeError) return handleResponse(res, 409, barcodeError);
 
     const stockError = normalizeStockFields(productData);
     if (stockError) return handleResponse(res, 400, stockError);
+
+    if (productData.slug === product.slug) delete productData.slug;
+    const skuError = await assignUniqueSlugAndSku(productData, { excludeId: product._id, currentSku: product.sku });
+    if (skuError) return handleResponse(res, 409, skuError);
 
     let moderationUpdate = {};
     let successMessage = "Product updated successfully";
@@ -1156,7 +1296,7 @@ export const updateProduct = async (req, res) => {
       return handleResponse(res, 400, `Invalid ${error.path}: ${error.value}`);
     }
     if (error.code === 11000) {
-      return handleResponse(res, 400, "Slug or SKU already exists");
+      return handleResponse(res, 409, "This product code or link is already used. Please try again.");
     }
     return handleResponse(res, 500, error.message);
   }
@@ -1171,12 +1311,20 @@ export const deleteProduct = async (req, res) => {
     const sellerId = req.user.id;
     const role = req.user.role;
 
+    if (!mongoose.isValidObjectId(id)) {
+      return handleResponse(res, 404, "Product not found or unauthorized");
+    }
     const query = role === "admin" ? { _id: id } : { _id: id, sellerId };
     const product = await Product.findOneAndDelete(query);
 
     if (!product) {
       return handleResponse(res, 404, "Product not found or unauthorized");
     }
+
+    // Carts kept the deleted line, and coupon checks / checkout pricing then
+    // failed for those customers with "Product not found for line item".
+    Cart.updateMany({ "items.productId": product._id }, { $pull: { items: { productId: product._id } } })
+      .catch((err) => logger.error("Cart cleanup after product delete failed", { scope: "deleteProduct", error: err.message }));
     
     // Enqueue search index removal asynchronously
     await enqueueProductRemoval(id);

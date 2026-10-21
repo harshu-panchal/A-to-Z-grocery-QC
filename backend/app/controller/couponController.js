@@ -70,9 +70,17 @@ function checkCouponRules(c) {
     return null;
 }
 
+// Server-owned counters: an edit used to be able to reset "times used".
+const stripCouponCounters = (data) => {
+    delete data.usedCount;
+    delete data._id;
+    return data;
+};
+const isObjectIdLike = (v) => /^[a-f\d]{24}$/i.test(String(v || ""));
+
 export const createCoupon = async (req, res) => {
     try {
-        const data = { ...req.body };
+        const data = stripCouponCounters({ ...req.body });
         const invalid = checkCouponRules(data);
         if (invalid) return handleResponse(res, 400, invalid);
         const coupon = await Coupon.create(data);
@@ -88,7 +96,8 @@ export const createCoupon = async (req, res) => {
 export const updateCoupon = async (req, res) => {
     try {
         const { id } = req.params;
-        const data = { ...req.body };
+        if (!isObjectIdLike(id)) return handleResponse(res, 404, "Coupon not found");
+        const data = stripCouponCounters({ ...req.body });
         const existing = await Coupon.findById(id).lean();
         if (!existing) {
             return handleResponse(res, 404, "Coupon not found");
@@ -104,6 +113,9 @@ export const updateCoupon = async (req, res) => {
         }
         return handleResponse(res, 200, "Coupon updated successfully", coupon);
     } catch (error) {
+        if (error.code === 11000) {
+            return handleResponse(res, 400, "Coupon code already exists");
+        }
         return handleResponse(res, 500, error.message);
     }
 };
@@ -111,7 +123,9 @@ export const updateCoupon = async (req, res) => {
 export const deleteCoupon = async (req, res) => {
     try {
         const { id } = req.params;
-        await Coupon.findByIdAndDelete(id);
+        if (!isObjectIdLike(id)) return handleResponse(res, 404, "Coupon not found");
+        const deleted = await Coupon.findByIdAndDelete(id);
+        if (!deleted) return handleResponse(res, 404, "Coupon not found");
         return handleResponse(res, 200, "Coupon deleted successfully");
     } catch (error) {
         return handleResponse(res, 500, error.message);

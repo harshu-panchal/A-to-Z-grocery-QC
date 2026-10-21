@@ -1426,10 +1426,6 @@ export async function verifyHandoffOtpAndDeliver(deliveryId, orderId, code, cash
     { new: true },
   );
 
-  if (updated) {
-    updated = await updated.populate("customer");
-  }
-
   if (!updated) {
     const delivered = await findDeliveredByRider(orderId, deliveryId);
     if (delivered) return alreadyDeliveredResult(delivered);
@@ -1439,18 +1435,22 @@ export async function verifyHandoffOtpAndDeliver(deliveryId, orderId, code, cash
     throw err;
   }
 
+  // The order is DELIVERED from here on, so nothing below may fail the
+  // request. Populating `customer` returns null when the customer's account
+  // no longer exists (deleted / test data); this used to throw "customer
+  // reference lost during update" AFTER the order was delivered: the
+  // customer saw "Delivered", the rider got an error and settlement (COD
+  // cash, rider payout) never ran. Keep the stored id and carry on.
+  const customerId = updated.customer;
+  updated = await updated.populate("customer");
   if (!updated.customer) {
-    logger.error("Customer field lost during delivery completion", {
-      scope: "ORDER_BUG",
+    logger.warn("Delivered order's customer account not found; continuing with stored id", {
+      scope: "verifyHandoffOtpAndDeliver",
       orderId,
       _id: updated._id,
+      customerId: customerId ? String(customerId) : null,
     });
-    const err = new Error(
-      "Order data integrity error: customer reference lost during update",
-    );
-    err.statusCode = 500;
-    err.code = "ORDER_DATA_CORRUPT";
-    throw err;
+    if (customerId) updated.customer = customerId;
   }
 
   let settlementWarning = null;

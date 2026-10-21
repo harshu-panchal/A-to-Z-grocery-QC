@@ -23,6 +23,17 @@ jest.unstable_mockModule("../app/utils/orderLookup.js", () => ({
 jest.unstable_mockModule("../app/services/orderSettlement.js", () => ({
   applyDeliveredSettlement: mockSettlement,
 }));
+// Real Firebase would open connections and keep Jest running.
+jest.unstable_mockModule("../app/services/firebaseService.js", () => ({
+  clearOrderTracking: jest.fn(async () => {}),
+  clearRiderPresence: jest.fn(async () => {}),
+}));
+jest.unstable_mockModule("../app/models/delivery.js", () => ({
+  default: { findById: () => ({ select: async () => null }) },
+}));
+jest.unstable_mockModule("../app/modules/notifications/notification.emitter.js", () => ({
+  emitNotificationEvent: jest.fn(),
+}));
 
 const { verifyHandoffOtpAndDeliver } = await import("../app/services/orderWorkflowService.js");
 
@@ -80,5 +91,27 @@ describe("verifyHandoffOtpAndDeliver is safe to retry", () => {
     findReturns(orderDoc({ workflowStatus: "OUT_FOR_DELIVERY", status: "out_for_delivery" }));
     mockVerifyOtpAtomic.mockResolvedValue({ valid: false, error: "OTP_MISMATCH", message: "wrong", attemptsRemaining: 2 });
     await expect(verifyHandoffOtpAndDeliver("rider-1", "ORD-1", "9999")).rejects.toMatchObject({ code: "OTP_MISMATCH", attemptsRemaining: 2 });
+  });
+
+  test("customer account missing at delivery: still a success, settlement still runs", async () => {
+    findReturns(orderDoc({ workflowStatus: "OUT_FOR_DELIVERY", status: "out_for_delivery", paymentMode: "COD" }));
+    mockVerifyOtpAtomic.mockResolvedValue({ valid: true });
+    const delivered = {
+      ...orderDoc({ workflowStatus: "DELIVERED", status: "delivered" }),
+      customer: "cust-gone",
+      async populate() {
+        this.customer = null; // populate finds no User document
+        return this;
+      },
+    };
+    mockOrderFindOneAndUpdate.mockResolvedValue(delivered);
+    mockSettlement.mockResolvedValue(undefined);
+
+    const result = await verifyHandoffOtpAndDeliver("rider-1", "ORD-1", "1234");
+
+    expect(result.orderId).toBe("ORD-1");
+    expect(result.alreadyDelivered).toBeUndefined();
+    expect(delivered.customer).toBe("cust-gone"); // stored id kept
+    expect(mockSettlement).toHaveBeenCalledWith(delivered, "ORD-1");
   });
 });

@@ -24,10 +24,29 @@
 import { getRedisClient } from "../config/redis.js";
 import logger from "../services/logger.js";
 
+// In-process fallback: without Redis the "lock" used to just run `fn`, so two
+// concurrent withdrawals could both pass the balance check. Serializing per
+// key inside this process covers single-instance deployments.
+const localLocks = new Map();
+async function withLocalLock(lockKey, fn) {
+  const previous = localLocks.get(lockKey) || Promise.resolve();
+  let release;
+  const mine = new Promise((resolve) => { release = resolve; });
+  const tail = previous.then(() => mine);
+  localLocks.set(lockKey, tail);
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (localLocks.get(lockKey) === tail) localLocks.delete(lockKey);
+  }
+}
+
 export async function withLock(lockKey, ttlMs, fn) {
   const client = getRedisClient();
   if (!client) {
-    return fn();
+    return withLocalLock(lockKey, fn);
   }
 
   const lockValue = `${process.pid}:${Date.now()}:${Math.random().toString(36).slice(2)}`;
@@ -37,11 +56,11 @@ export async function withLock(lockKey, ttlMs, fn) {
     const result = await client.set(lockKey, lockValue, "PX", ttlMs, "NX");
     acquired = result === "OK";
   } catch (error) {
-    logger.warn?.("distributedLock acquire failed, proceeding without lock", {
+    logger.warn?.("distributedLock acquire failed, falling back to in-process lock", {
       lockKey,
       error: error?.message,
     });
-    return fn();
+    return withLocalLock(lockKey, fn);
   }
 
   if (!acquired) {
