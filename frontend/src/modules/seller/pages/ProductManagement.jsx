@@ -362,7 +362,7 @@ const ProductManagement = () => {
       }
       if (
         !formData.name ||
-        formData.mrp === "" || formData.mrp === undefined ||
+        !(Number(formData.sellingPrice) > 0 || Number(formData.mrp) > 0) ||
         formData.stock === "" || formData.stock === undefined ||
         !formData.header ||
         !formData.category ||
@@ -375,13 +375,9 @@ const ProductManagement = () => {
       // Audit fix: nothing blocked a selling price above MRP — a
       // fat-fingered entry shows as a live "discount" on the customer
       // product page instead of the markup it actually is.
-      if (
-        formData.sellingPrice !== "" &&
-        formData.sellingPrice !== undefined &&
-        formData.sellingPrice !== null &&
-        Number(formData.sellingPrice) >= Number(formData.mrp)
-      ) {
-        toast.error("Selling price must be lower than the MRP");
+      // MRP is optional; compare only when one is entered.
+      if (Number(formData.mrp) > 0 && Number(formData.sellingPrice) > Number(formData.mrp)) {
+        toast.error("Selling price can't be more than the MRP");
         return;
       }
 
@@ -390,7 +386,7 @@ const ProductManagement = () => {
       data.append("slug", formData.slug);
       data.append("sku", formData.sku);
       data.append("description", formData.description);
-      data.append("mrp", Number(formData.mrp));
+      data.append("mrp", Number(formData.mrp) > 0 ? Number(formData.mrp) : Number(formData.sellingPrice) || 0);
       data.append("sellingPrice", Number(formData.sellingPrice) || 0);
       data.append("purchaseRate", Number(formData.purchaseRate) || 0);
       data.append("stock", Number(formData.stock));
@@ -1262,7 +1258,7 @@ const ProductManagement = () => {
                               }} placeholder="e.g. 1kg, 1 pack, 1 liter..." className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary/20" />
                             </div>
                             <div className="space-y-1">
-                              <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">MRP</label>
+                              <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">MRP <span className="normal-case tracking-normal font-medium">(optional)</span></label>
                               <input type="number" min="0" value={v.mrp} onChange={e => {
                                 const val = e.target.value;
                                 if (val !== '' && Number(val) < 0) return;
@@ -1272,7 +1268,7 @@ const ProductManagement = () => {
                               }} placeholder="MRP" className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary/20" />
                             </div>
                             <div className="space-y-1">
-                              <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-600">Purchase Rate</label>
+                              <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-600">Purchase Rate <span className="normal-case tracking-normal font-medium">(optional)</span></label>
                               <input type="number" min="0" value={v.purchaseRate} onChange={e => {
                                 const val = e.target.value;
                                 if (val !== '' && Number(val) < 0) return;
@@ -1282,7 +1278,7 @@ const ProductManagement = () => {
                               }} placeholder="Cost" title="Only visible to you and the admin" className="w-full rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-xs text-amber-700 outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200" />
                             </div>
                             <div className="space-y-1">
-                              <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">Selling Price</label>
+                              <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">Selling Price *</label>
                               <input type="number" min="0" value={v.sellingPrice} onChange={e => {
                                 const val = e.target.value;
                                 if (val !== '' && Number(val) < 0) return;

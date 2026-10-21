@@ -213,7 +213,8 @@ const ProductManagement = () => {
             return toast.error('Only product editing is allowed for admins');
         }
 
-        if (!formData.name || !formData.mrp || !formData.stock || !formData.header || !formData.categoryId || !formData.subcategoryId) {
+        // Selling price is required; MRP and purchase rate are optional.
+        if (!formData.name || !(Number(formData.sellingPrice) > 0 || Number(formData.mrp) > 0) || !formData.stock || !formData.header || !formData.categoryId || !formData.subcategoryId) {
             return toast.error('Please fill all required fields, including categories');
         }
 
@@ -230,7 +231,7 @@ const ProductManagement = () => {
             data.append('slug', formData.slug);
             data.append('sku', formData.sku);
             data.append('description', formData.description);
-            data.append('mrp', Number(formData.mrp));
+            data.append('mrp', Number(formData.mrp) > 0 ? Number(formData.mrp) : Number(formData.sellingPrice) || 0);
             data.append('sellingPrice', Number(formData.sellingPrice) || 0);
             data.append('purchaseRate', Number(formData.purchaseRate) || 0);
             data.append('stock', Number(formData.stock));

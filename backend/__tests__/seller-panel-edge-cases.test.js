@@ -28,6 +28,7 @@ const {
   assignUniqueSlugAndSku,
   validateProductPrices,
   validateVariantIdentity,
+  fillMissingMrp,
 } = await import("../app/controller/productController.js");
 const { updateSellerProfile, requestWithdrawal } = await import("../app/controller/sellerController.js");
 const { withLock } = await import("../app/utils/distributedLock.js");
@@ -93,6 +94,30 @@ describe("product prices", () => {
   test("update that only changes MRP is checked against the stored selling price", () => {
     expect(validateProductPrices({ mrp: 50 }, { mrp: 100, sellingPrice: 80 })).toMatch(/more than MRP/);
     expect(validateProductPrices({ stock: 5 }, { mrp: 100, sellingPrice: 80 })).toBeNull();
+  });
+});
+
+describe("MRP and purchase rate are optional", () => {
+  test("blank MRP takes the selling price; blank purchase rate is 0", () => {
+    const data = { mrp: "", sellingPrice: "120", purchaseRate: "", variants: [{ name: "1kg", mrp: "", sellingPrice: 99, purchaseRate: "" }] };
+    fillMissingMrp(data);
+    expect(data.mrp).toBe(120);
+    expect(data.purchaseRate).toBe(0);
+    expect(data.variants[0]).toMatchObject({ mrp: 99, purchaseRate: 0 });
+    expect(validateProductPrices(data)).toBeNull();
+  });
+
+  test("an entered MRP is kept and still checked against the selling price", () => {
+    const data = { variants: [{ name: "1kg", mrp: 100, sellingPrice: 120 }] };
+    fillMissingMrp(data);
+    expect(data.variants[0].mrp).toBe(100);
+    expect(validateProductPrices(data)).toMatch(/more than MRP/);
+  });
+
+  test("no selling price and no MRP is refused", () => {
+    const data = { variants: [{ name: "1kg", mrp: "", sellingPrice: "" }] };
+    fillMissingMrp(data);
+    expect(validateProductPrices(data)).toMatch(/selling price/);
   });
 });
 
