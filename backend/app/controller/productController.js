@@ -183,7 +183,7 @@ export function validateProductPrices(productData, existing = null) {
     for (const [name, v] of [["MRP", mrp], ["Selling price", sale]]) {
       if (v !== undefined && (!Number.isFinite(v) || v < 0)) return `${name} must be 0 or more${label}`;
     }
-    if (!((sale || 0) > 0 || (mrp || 0) > 0)) return `Enter an MRP or selling price above ₹0${label}`;
+    if (!((sale || 0) > 0 || (mrp || 0) > 0)) return `Enter a selling price above ₹0${label} (MRP is optional)`;
     if (mrp > 0 && sale > mrp) return `Selling price can't be more than MRP${label}`;
     return null;
   };
@@ -200,6 +200,22 @@ export function validateProductPrices(productData, existing = null) {
     return check("", productData.mrp, productData.sellingPrice, existing || {});
   }
   return null;
+}
+
+/**
+ * MRP is optional for sellers: a blank / 0 MRP takes the selling price, so the
+ * product still has the MRP the schema requires and customers see no fake
+ * "discount". Purchase rate is optional too (blank is stored as 0).
+ */
+export function fillMissingMrp(productData) {
+  const fill = (target) => {
+    if (!target || typeof target !== "object") return;
+    const sale = Number(target.sellingPrice);
+    if (!(Number(target.mrp) > 0) && sale > 0) target.mrp = sale;
+    if (target.purchaseRate === "" || target.purchaseRate === null) target.purchaseRate = 0;
+  };
+  if (Array.isArray(productData.variants)) productData.variants.forEach(fill);
+  if (productData.mrp !== undefined || productData.sellingPrice !== undefined) fill(productData);
 }
 
 /** Variant names and codes must be unique within a product (orders pick a variant by them). */
@@ -973,6 +989,7 @@ export const createProduct = async (req, res) => {
     }
 
     normalizeWholesalePrices(productData);
+    fillMissingMrp(productData);
     const identityError = validateVariantIdentity(productData);
     if (identityError) return handleResponse(res, 400, identityError);
     const priceError = validateProductPrices(productData);
@@ -1207,6 +1224,7 @@ export const updateProduct = async (req, res) => {
     }
 
     normalizeWholesalePrices(productData);
+    fillMissingMrp(productData);
     const identityError = validateVariantIdentity(productData);
     if (identityError) return handleResponse(res, 400, identityError);
     const priceError = validateProductPrices(productData, product);

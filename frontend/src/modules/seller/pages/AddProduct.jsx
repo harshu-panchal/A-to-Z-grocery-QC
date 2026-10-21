@@ -147,8 +147,17 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
     const firstVariant = formData.variants[0] || {};
     // Stock 0 is valid (marks the variant out of stock) — only a blank field is missing
     const isBlank = (v) => v === undefined || v === null || String(v).trim() === "";
-    if (!firstVariant.mrp || isBlank(firstVariant.stock)) {
-      toast.error("Main variant must have MRP and stock (0 is allowed)");
+    // Selling price is the one required price; MRP and purchase rate are optional.
+    const noPriceIndex = (formData.variants || []).findIndex(
+      (v) => !(Number(v.sellingPrice) > 0 || Number(v.mrp) > 0),
+    );
+    if (noPriceIndex !== -1) {
+      setModalTab("variants");
+      toast.error(`Enter a selling price${formData.variants.length > 1 ? ` (variant ${noPriceIndex + 1})` : ""}`);
+      return;
+    }
+    if (isBlank(firstVariant.stock)) {
+      toast.error("Main variant must have stock (0 is allowed)");
       return;
     }
     const badStockIndex = (formData.variants || []).findIndex(
@@ -167,12 +176,13 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
     // Audit fix: nothing blocked a selling price above MRP — a
     // fat-fingered entry here shows as a live "discount" on the customer
     // product page instead of the markup it actually is.
+    // Only when an MRP is entered (blank MRP = selling price on the server).
     const invalidVariantIndex = (formData.variants || []).findIndex(
-      (v) => v.sellingPrice && Number(v.sellingPrice) >= Number(v.mrp),
+      (v) => Number(v.mrp) > 0 && Number(v.sellingPrice) > Number(v.mrp),
     );
     if (invalidVariantIndex !== -1) {
       toast.error(
-        `Selling price must be lower than the MRP (variant ${invalidVariantIndex + 1})`,
+        `Selling price can't be more than the MRP (variant ${invalidVariantIndex + 1})`,
       );
       return;
     }
@@ -207,7 +217,7 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
       data.append("showExpiryDate", formData.showExpiryDate ? "true" : "false");
 
       // Map top-level price/stock from first variant for indexing/listing
-      data.append("mrp", firstVariant.mrp);
+      data.append("mrp", Number(firstVariant.mrp) > 0 ? firstVariant.mrp : firstVariant.sellingPrice);
       data.append("sellingPrice", firstVariant.sellingPrice || 0);
       data.append("purchaseRate", firstVariant.purchaseRate || 0);
       data.append("stock", totalStock);
@@ -596,7 +606,7 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                     </div>
                     <div className="col-span-6 md:col-span-2 space-y-1">
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
-                        MRP
+                        MRP <span className="normal-case tracking-normal font-medium text-slate-400">(optional)</span>
                       </label>
                       <input
                         type="number"
@@ -620,7 +630,7 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                     </div>
                     <div className="col-span-6 md:col-span-2 space-y-1">
                       <label className="text-[8px] font-bold text-amber-600 uppercase tracking-widest ml-1">
-                        Purchase Rate
+                        Purchase Rate <span className="normal-case tracking-normal font-medium">(optional)</span>
                       </label>
                       <input
                         type="number"
@@ -645,7 +655,7 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                     </div>
                     <div className="col-span-6 md:col-span-2 space-y-1">
                       <label className="text-[8px] font-bold text-primary uppercase tracking-widest ml-1">
-                        Selling Price
+                        Selling Price *
                       </label>
                       <input
                         type="number"
