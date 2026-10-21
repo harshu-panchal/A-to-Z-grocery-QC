@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@core/context/AuthContext';
 import { customerApi } from '../services/customerApi';
 import axiosInstance from '@core/api/axios';
+import { goBack } from '@core/utils/navigation';
 
 const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
@@ -61,7 +62,9 @@ const EditProfilePage = () => {
             login({ ...user, ...updatedUser });
 
             toast.success('Profile updated successfully!');
-            navigate('/profile');
+            // Back to My Profile instead of pushing it again: pushing made
+            // "back" bounce between My Profile and Edit Profile.
+            goBack(navigate, '/profile');
         } catch (error) {
             toast.error(error.response?.data?.message || 'Failed to update profile');
         } finally {
@@ -73,9 +76,14 @@ const EditProfilePage = () => {
         <div className="min-h-screen bg-slate-50 font-sans pb-10">
             {/* Header */}
             <div className="atz-page-header sticky top-0 z-30 px-4 py-3 flex items-center gap-3">
-                <Link to="/profile" className="p-2 -ml-2 rounded-full hover:bg-slate-100 transition-colors">
+                <button
+                    type="button"
+                    onClick={() => goBack(navigate, '/profile')}
+                    aria-label="Back"
+                    className="p-2 -ml-2 rounded-full hover:bg-slate-100 transition-colors"
+                >
                     <ArrowLeft size={24} className="text-slate-600" />
-                </Link>
+                </button>
                 <h1 className="text-lg font-black text-slate-800">Edit Profile</h1>
             </div>
 

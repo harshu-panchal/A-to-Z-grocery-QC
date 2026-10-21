@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import AtzIcon from '../atz/AtzIcon';
+import ProfileAvatar from '../shared/ProfileAvatar';
 import '../atz/atz.css';
 
 const navItems = [
@@ -26,7 +27,15 @@ const BottomNav = () => {
                         aria-current={isActive ? 'page' : undefined}
                         className={isActive ? 'active' : undefined}
                     >
-                        <AtzIcon name={item.icon} size={21} />
+                        {item.path === '/profile' ? (
+                            <ProfileAvatar
+                                size={22}
+                                className={isActive ? 'ring-2 ring-[var(--primary)]' : 'ring-1 ring-slate-300'}
+                                fallback={<AtzIcon name={item.icon} size={21} />}
+                            />
+                        ) : (
+                            <AtzIcon name={item.icon} size={21} />
+                        )}
                         <span>{item.label}</span>
                     </Link>
                 );

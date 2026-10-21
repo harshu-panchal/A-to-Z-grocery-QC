@@ -5,6 +5,7 @@ import {
     LogOut, ShieldCheck, Heart, HelpCircle, Info, Edit2, ChevronLeft, Bell
 } from 'lucide-react';
 import { useAuth } from '@core/context/AuthContext';
+import { goBack } from '@core/utils/navigation';
 import { useSettings } from '@core/context/SettingsContext';
 
 const ProfilePage = () => {
@@ -28,7 +29,7 @@ const ProfilePage = () => {
             <div className="min-h-screen bg-slate-50 pb-20 font-['Outfit',_sans-serif]">
             <div className="sticky top-0 z-30 atz-page-header px-4 pt-4 pb-3 mb-4 flex items-center gap-2">
                 <button
-                    onClick={() => navigate(-1)}
+                    onClick={() => goBack(navigate, '/')}
                     className="w-10 h-10 flex items-center justify-center hover:bg-slate-200/70 rounded-full transition-colors -ml-1"
                 >
                     <ChevronLeft size={22} className="text-slate-800" />
