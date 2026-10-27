@@ -307,6 +307,70 @@ function mergeAvailableOrders(v2Orders, legacyOrders, returnPickups, limit) {
   return merged;
 }
 
+/**
+ * Orders (DELIVERY_SEARCH) and return pickups this rider skipped that are
+ * still open, so they can accept them later.
+ */
+export async function fetchSkippedOrdersForDelivery({ userId, requestedLimit }) {
+  const limit = parseAvailableOrdersLimit(requestedLimit);
+  const deliveryPartner = await Delivery.findById(userId);
+  if (!deliveryPartner?.location || !Array.isArray(deliveryPartner.location.coordinates)) {
+    return { requiresLocation: true, orders: [], limit };
+  }
+  const { sellerIds } = await resolveNearbySellerIds(deliveryPartner, userId);
+  const now = new Date();
+  const [raw, returnsRaw] = await Promise.all([
+    Order.find({
+      workflowVersion: { $gte: 2 },
+      workflowStatus: WORKFLOW_STATUS.DELIVERY_SEARCH,
+      deliveryBoy: null,
+      seller: { $in: sellerIds },
+      skippedBy: userId,
+      deliverySearchExpiresAt: { $gt: now },
+    })
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(limit)
+      .populate("customer", "name phone")
+      .populate("seller", "shopName address name location serviceRadius")
+      .lean(),
+    // same open-return rules as the available list, but only skipped ones
+    Order.find({
+      skippedBy: userId,
+      returnDeliveryBoy: null,
+      $or: [
+        { returnStatus: "return_approved" },
+        {
+          returnStatus: "return_pickup_assigned",
+          $or: [
+            { returnSearchExpiresAt: { $exists: false } },
+            { returnSearchExpiresAt: null },
+            { returnSearchExpiresAt: { $gt: now } },
+          ],
+        },
+      ],
+    })
+      .sort({ createdAt: -1, _id: -1 })
+      .limit(limit)
+      .populate("customer", "name phone")
+      .populate("seller", "shopName address name location")
+      .lean(),
+  ]);
+  const [rlng, rlat] = deliveryPartner.location.coordinates;
+  const returns = returnsRaw
+    .filter((rp) => {
+      if (ignoreRiderRange()) return true;
+      const c = toLatLng(rp.address?.location);
+      if (!c) return true;
+      return distanceMeters(rlat, rlng, c.lat, c.lng) <= returnSearchRadiusM(rp);
+    })
+    .map((rp) => ({ ...rp, isReturnPickup: true }));
+  return {
+    requiresLocation: false,
+    orders: [...filterV2OrdersByRadius(raw, deliveryPartner.location.coordinates), ...returns],
+    limit,
+  };
+}
+
 export async function fetchAvailableOrdersForDelivery({
   userId,
   requestedLimit,

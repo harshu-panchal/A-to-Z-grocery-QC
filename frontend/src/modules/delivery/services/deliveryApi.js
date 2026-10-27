@@ -24,6 +24,8 @@ export const deliveryApi = {
         headers: idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {},
       },
     ),
+  // orders this rider skipped that are still open, to accept later
+  getSkippedOrders: () => axiosInstance.get("/orders/delivery/skipped"),
   skipOrder: (orderId) =>
     axiosInstance.put(`/orders/skip/${encodeURIComponent(String(orderId))}`),
   postLocation: (body, config = {}) =>

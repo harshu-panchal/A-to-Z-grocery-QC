@@ -1,3 +1,4 @@
+import { loadOrderTimeoutSettings } from "../services/orderTimeoutSettings.js";
 /**
  * Startup Orchestration Module
  * 
@@ -250,6 +251,8 @@ async function startup() {
     // Step 2: Connect to MongoDB
     const maxMongoRetries = parseInt(process.env.MONGO_MAX_RETRIES || '5', 10);
     await connectMongoDB(maxMongoRetries);
+    // admin-set order accept windows (seller / delivery / return pickup)
+    await loadOrderTimeoutSettings();
     
     // Step 3: Connect to Redis (if enabled)
     if (isRedisEnabled()) {

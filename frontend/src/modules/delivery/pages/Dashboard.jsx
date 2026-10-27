@@ -108,6 +108,47 @@ const Dashboard = () => {
     enabled: isOnline,
   });
 
+  // Orders / return pickups this rider skipped that are still waiting for a
+  // rider: they can be accepted later from here (each on its own tab)
+  const skippedQueryKey = ["delivery", "skippedOrders"];
+  const { data: skippedOrders = [] } = useQuery({
+    queryKey: skippedQueryKey,
+    queryFn: async () => {
+      const response = await deliveryApi.getSkippedOrders();
+      const list = response.data?.result || response.data?.results || [];
+      return Array.isArray(list) ? list : [];
+    },
+    enabled: isOnline,
+    refetchInterval: 15000,
+  });
+  const skippedForTab = skippedOrders.filter((o) =>
+    activeTab === "return" ? o.isReturnPickup : !o.isReturnPickup,
+  );
+  const [acceptingSkippedId, setAcceptingSkippedId] = useState(null);
+  const acceptSkippedOrder = async (order) => {
+    if (acceptingSkippedId) return;
+    setAcceptingSkippedId(order.orderId);
+    try {
+      const idem =
+        typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`;
+      if (order.isReturnPickup) {
+        await deliveryApi.acceptReturnPickup(order.orderId);
+      } else {
+        await deliveryApi.acceptOrder(order.orderId, idem);
+      }
+      toast.success(order.isReturnPickup ? "Return pickup accepted!" : "Order accepted!");
+      queryClient.invalidateQueries({ queryKey: skippedQueryKey });
+      navigate(`/delivery/order-details/${order.orderId}`);
+    } catch (error) {
+      toast.error(error.response?.data?.message || "Could not accept this order");
+      queryClient.invalidateQueries({ queryKey: skippedQueryKey });
+    } finally {
+      setAcceptingSkippedId(null);
+    }
+  };
+  const secondsLeft = (iso) => Math.max(0, Math.round((new Date(iso).getTime() - Date.now()) / 1000));
+
+
   // Returns tab: only tasks already assigned to me. Open offers are answered
   // in the fullscreen popup, so they are not listed here.
   const myId = String(user?._id || user?.id || "");
@@ -371,6 +412,47 @@ const Dashboard = () => {
             </div>
           </div>
         </Card>
+
+        {/* Skipped orders: still open, can be accepted later */}
+        {isOnline && skippedForTab.length > 0 && (
+          <div className="bg-white rounded-2xl p-4 border border-amber-200 shadow-sm space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold text-gray-800">
+                {activeTab === "return" ? "Skipped return pickups" : "Skipped orders"}
+              </h3>
+              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 px-2 py-0.5 rounded-full uppercase">
+                Still open
+              </span>
+            </div>
+            {skippedForTab.map((order) => (
+              <div key={order._id || order.orderId} className="flex items-center justify-between gap-3 rounded-xl border border-gray-100 p-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-gray-900 truncate">{order.seller?.shopName || "Store"}</p>
+                  <p className="text-xs text-gray-500 truncate">{order.address?.address || "Customer address"}</p>
+                  <p className="text-[11px] font-semibold text-gray-400 mt-0.5">
+                    #{String(order.orderId).slice(-6)}
+                    {order.isReturnPickup
+                      ? ` · ₹${order.returnDeliveryCommission ?? 0} earnings`
+                      : ` · ₹${order.paymentBreakdown?.riderPayoutTotal ?? order.riderEarnings ?? 0} earnings`}
+                    {(() => {
+                      const exp = order.isReturnPickup ? order.returnSearchExpiresAt : order.deliverySearchExpiresAt;
+                      return exp ? ` · ${secondsLeft(exp)}s left` : "";
+                    })()}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  className="shrink-0 font-black text-[10px] tracking-widest uppercase"
+                  disabled={!!acceptingSkippedId}
+                  onClick={() => acceptSkippedOrder(order)}
+                >
+                  {acceptingSkippedId === order.orderId ? "Accepting..." : "Accept"}
+                </Button>
+              </div>
+            ))}
+          </div>
+        )}
+
 
         {/* Active Order / Status */}
         <AnimatePresence mode="wait">

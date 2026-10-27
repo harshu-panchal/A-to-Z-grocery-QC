@@ -387,9 +387,10 @@ export async function deliveryAcceptAtomic(deliveryId, orderId, idempotencyKey) 
       workflowStatus: WORKFLOW_STATUS.DELIVERY_SEARCH,
       deliveryBoy: null,
       deliverySearchExpiresAt: { $gt: now },
-      skippedBy: { $nin: [deliveryOid] },
+      // a rider who skipped this order may still accept it later
     },
     {
+      $pull: { skippedBy: deliveryOid },
       $set: {
         deliveryBoy: deliveryOid,
         workflowStatus: WORKFLOW_STATUS.DELIVERY_ASSIGNED,
@@ -415,11 +416,6 @@ export async function deliveryAcceptAtomic(deliveryId, orderId, idempotencyKey) 
         "Accept window has expired. Wait for the next delivery request.";
     } else if (o.deliveryBoy) {
       msg = "Another rider already accepted this order.";
-    } else if (
-      (o.skippedBy || []).some((id) => id.toString() === deliveryOid.toString())
-    ) {
-      msg =
-        "You rejected this order earlier, so it cannot be accepted now.";
     } else if (o.workflowStatus !== WORKFLOW_STATUS.DELIVERY_SEARCH) {
       msg = "This order is no longer open for delivery.";
     }

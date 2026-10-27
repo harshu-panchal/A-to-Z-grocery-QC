@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import BottomNav from "../components/BottomNav";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
@@ -34,6 +35,7 @@ function secondsLeftUntilDeliveryExpiry(expiresAt) {
 const DeliveryLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const { user } = useAuth();
 
   const [activeOrder, setActiveOrder] = useState(null);
@@ -771,7 +773,8 @@ const DeliveryLayout = () => {
     setActiveOrder(null);
   }, []);
 
-  const skipOrder = useCallback(async () => {
+  // opts.timedOut: the timer ran out (caller shows its own toast)
+  const skipOrder = useCallback(async (opts) => {
     const current = activeOrderRef.current;
     if (!current || acceptInFlightRef.current) return;
     try {
@@ -782,13 +785,23 @@ const DeliveryLayout = () => {
         await deliveryApi.skipOrder(current.id);
       }
       dismissIncomingOrder(current);
-      toast.info("Order skipped");
+      if (opts?.timedOut) {
+        queryClient.invalidateQueries({ queryKey: ["delivery", "skippedOrders"] });
+      } else {
+        // still open for a while: listed under "Skipped orders" on the dashboard
+        queryClient.invalidateQueries({ queryKey: ["delivery", "skippedOrders"] });
+        toast.info(
+          current.isReturnPickup
+            ? "Moved to Skipped return pickups — you can still accept it from the Returns tab"
+            : "Moved to Skipped orders — you can still accept it from your dashboard",
+        );
+      }
     } catch (error) {
       // Usually the offer already expired / was taken — still never show it again
       console.error("Delivery Alert - Skip failed:", error);
       dismissIncomingOrder(current);
     }
-  }, [dismissIncomingOrder]);
+  }, [dismissIncomingOrder, queryClient]);
 
   // Countdown from server deadline (same idea as seller panel)
   useEffect(() => {
@@ -796,7 +809,7 @@ const DeliveryLayout = () => {
     const left = secondsLeftUntilDeliveryExpiry(activeOrder.expiresAt);
     if (left <= 0) {
       if (!acceptInFlightRef.current) {
-        skipOrder();
+        skipOrder({ timedOut: true });
         toast.error("Order request timed out");
       }
       return undefined;
@@ -809,7 +822,7 @@ const DeliveryLayout = () => {
       if (next <= 0) {
         clearInterval(timer);
         if (!acceptInFlightRef.current) {
-          skipOrder();
+          skipOrder({ timedOut: true });
           toast.error("Order request timed out");
         }
       }
@@ -886,10 +899,12 @@ const DeliveryLayout = () => {
                 >
                   <button
                     type="button"
-                    onClick={() => setOfferMinimized(true)}
+                    // X moves the offer to the dashboard's skipped list (orders tab or
+                    // returns tab), where it can still be accepted while open
+                    onClick={() => skipOrder()}
                     disabled={isAcceptingOrder}
-                    aria-label="Close (the request stays open until the timer ends)"
-                    title="Close — you can reopen it from the bar below"
+                    aria-label="Close (moves to Skipped)"
+                    title="Close — accept it later from the Skipped list"
                     className="absolute top-3 right-3 h-9 w-9 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200 active:scale-95 disabled:opacity-40"
                   >
                     <X className="h-4 w-4" />

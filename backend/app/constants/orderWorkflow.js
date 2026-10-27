@@ -1,3 +1,5 @@
+import { getOrderTimeoutMs } from "../services/orderTimeoutSettings.js";
+
 /**
  * Canonical workflow statuses for Quick Commerce orders (v2).
  * Legacy `status` on Order is kept in sync for admin / older UIs.
@@ -14,10 +16,15 @@ export const WORKFLOW_STATUS = {
   CANCELLED: "CANCELLED",
 };
 
-/** Milliseconds — override via env in services */
+/**
+ * Milliseconds. The admin sets these in Fees & Charges → Order timers
+ * (see services/orderTimeoutSettings.js); env vars are the fallback.
+ */
 export const DEFAULT_SELLER_TIMEOUT_MS = () =>
+  getOrderTimeoutMs("sellerAcceptTimeoutSec") ??
   parseInt(process.env.SELLER_TIMEOUT_MS || "60000", 10);
 export const DEFAULT_DELIVERY_TIMEOUT_MS = () =>
+  getOrderTimeoutMs("deliveryAcceptTimeoutSec") ??
   parseInt(process.env.DELIVERY_TIMEOUT_MS || "60000", 10);
 
 /**
@@ -26,6 +33,7 @@ export const DEFAULT_DELIVERY_TIMEOUT_MS = () =>
  * scheduler / radius-expansion / give-up semantics.
  */
 export const DEFAULT_RETURN_PICKUP_TIMEOUT_MS = () =>
+  getOrderTimeoutMs("returnPickupAcceptTimeoutSec") ??
   parseInt(process.env.RETURN_PICKUP_TIMEOUT_MS || "60000", 10);
 export const RETURN_PICKUP_SEARCH_MAX_ATTEMPTS = () =>
   parseInt(process.env.RETURN_PICKUP_MAX_ATTEMPTS || "3", 10);
