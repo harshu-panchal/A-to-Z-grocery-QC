@@ -462,7 +462,8 @@ const Dashboard = () => {
                     <div className="flex justify-between items-start mb-4">
                       <div>
                         <span className="text-[10px] font-black text-primary/60 uppercase tracking-widest mb-1 block">Return Task</span>
-                        <h4 className="font-bold text-gray-900">#{order.orderId}</h4>
+                        <h4 className="font-bold text-gray-900">{order.customer?.name || order.address?.name || `#${order.orderId}`}</h4>
+                        <span className="text-[10px] text-gray-400 font-semibold">#{order.orderId}</span>
                       </div>
                       <div className="text-right">
                         <span className="block font-black text-brand-600 text-lg">₹{order.returnDeliveryCommission || 0}</span>

@@ -661,6 +661,11 @@ const OrderDetails = () => {
 
   const orderShortId =
     typeof order.orderId === "string" ? order.orderId.slice(-8) : order.orderId;
+  const customerName =
+    order.customer?.name ||
+    order.address?.name ||
+    order.addressSnapshot?.name ||
+    `Order #${orderShortId}`;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white pb-28 font-sans">
@@ -675,7 +680,14 @@ const OrderDetails = () => {
           >
             <ChevronDown className="rotate-90 text-slate-800" size={24} />
           </Button>
-          <h1 className="text-base font-bold text-slate-800">Order #{orderShortId}</h1>
+          <div>
+            <h1 className="text-base font-bold text-slate-800 leading-tight">
+              {customerName}
+            </h1>
+            <p className="text-[11px] font-semibold text-slate-400">
+              Order #{orderShortId}
+            </p>
+          </div>
         </div>
         <div className="flex flex-col items-end">
           <span
@@ -992,7 +1004,7 @@ const OrderDetails = () => {
                 <div className="p-4">
                   <h3 className="font-bold text-lg mb-1">
                     {isReturn
-                      ? order.address?.name || "Customer"
+                      ? customerName
                       : order.seller?.shopName || "Seller Store"}
                   </h3>
                   <p className="text-gray-500 text-sm mb-4 leading-relaxed">
@@ -1078,7 +1090,7 @@ const OrderDetails = () => {
                   <h3 className="font-bold text-lg mb-1">
                     {isReturn
                       ? order.seller?.shopName || "Seller Store"
-                      : order.address?.name || "Customer"}
+                      : customerName}
                   </h3>
                   <p className="text-gray-500 text-sm mb-1">
                     {isReturn ? order.seller?.address : order.address?.address}

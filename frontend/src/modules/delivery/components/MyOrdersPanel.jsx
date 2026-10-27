@@ -18,6 +18,12 @@ const fetchTasks = async (status) => {
 const TaskRow = ({ row, onOpen }) => {
   const { order, task } = row;
   const Icon = task.kind === "return" ? Undo2 : Truck;
+  const customerName =
+    order.customer?.name ||
+    order.address?.name ||
+    order.addressSnapshot?.name ||
+    `Order #${order.orderId}`;
+
   return (
     <button
       type="button"
@@ -33,8 +39,12 @@ const TaskRow = ({ row, onOpen }) => {
         <Icon size={17} aria-hidden="true" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-bold text-gray-900">#{order.orderId}</span>
+        <span className="block truncate text-sm font-bold text-gray-900">{customerName}</span>
         <span className="mt-0.5 flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-semibold text-gray-400">
+            #{order.orderId}
+          </span>
+          <span className="text-gray-300">•</span>
           <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
             {TASK_KIND_LABEL[task.kind]}
           </span>

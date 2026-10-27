@@ -505,14 +505,6 @@ export async function buildCheckoutPricingSnapshot({
     applyFreeDeliveryToSellerBreakdowns(sellerBreakdownEntries);
   }
   allocateCheckoutTipToSellerBreakdowns(sellerBreakdownEntries, normalizedTipAmount);
-  // Audit Phase 5 (H-6): free-delivery rebate must run AFTER handling
-  // (so `grossTotal` is final on the delivery axis) and BEFORE tip /
-  // wallet allocation (so they clamp against the post-rebate grandTotal,
-  // matching the frontend math).
-  if (applyFreeDelivery) {
-    applyFreeDeliveryToSellerBreakdowns(sellerBreakdownEntries);
-  }
-  allocateCheckoutTipToSellerBreakdowns(sellerBreakdownEntries, tipAmount);
   // Audit Phase 4 (C-1): subtract wallet redemption from each seller's
   // grandTotal proportionate to their share. No-op when the flag is off.
   applyWalletAllocationToSellerBreakdowns(sellerBreakdownEntries, walletAmount);
@@ -539,13 +531,6 @@ export async function buildCheckoutPricingSnapshot({
     aggregateBreakdown,
     sellerCount: sellerBreakdownEntries.length,
     itemCount: hydratedItems.reduce((sum, item) => sum + Number(item.quantity || 0), 0),
-    // Audit Phase 5 (C-2 + H-6): `null` when the flag is off OR no
-    // coupon was supplied. When present, callers persist this on every
-    // Order document so per-user usage counts and audits replay
-    // deterministically against the rule that was in effect.
-    couponSnapshot: resolvedCouponSnapshot,
-    coupon: resolvedCoupon,
-    freeDeliveryApplied: applyFreeDelivery,
     // Audit Phase 5 (C-2 + H-6): `null` when the flag is off OR no
     // coupon was supplied. When present, callers persist this on every
     // Order document so per-user usage counts and audits replay

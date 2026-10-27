@@ -147,9 +147,20 @@ export function buildReceiptLines(order, settings = {}) {
   if (shop && shop.toLowerCase() !== String(settings.appName || "").toLowerCase()) add(center(`Sold by: ${shop}`));
   add(DOUBLE);
 
-  const phone = order?.address?.phone || order?.customer?.phone || "-";
-  add(leftRight(`Bill No: #${getInvoiceNumber(order)}`, `Date: ${date}`));
-  add(leftRight(`Cust Ph: ${phone}`, `Time: ${time}`));
+  const phone = order?.address?.phone || order?.customer?.phone || "";
+  const invoiceNum = getInvoiceNumber(order);
+  const billLabel = invoiceNum ? `Bill No: #${invoiceNum}` : "";
+  const dateLabel = `Date: ${date}`;
+  const phoneLabel = phone && phone !== "-" ? `Cust Ph: ${phone}` : "";
+
+  if (billLabel && billLabel.length + dateLabel.length + 2 <= RECEIPT_WIDTH) {
+    add(leftRight(billLabel, dateLabel));
+    if (phoneLabel) add(phoneLabel);
+  } else {
+    if (billLabel) add(billLabel);
+    add(dateLabel);
+    if (phoneLabel) add(phoneLabel);
+  }
   add(DOUBLE);
 
   // Items
@@ -238,9 +249,9 @@ export function buildReceiptLines(order, settings = {}) {
 // ---------------------------------------------------------------- PDF
 
 const PAGE_W = 80; // mm, standard thermal roll
-const FONT_PT = 7.5; // 48 Courier chars ≈ 76mm
+const FONT_PT = 7.0; // 48 Courier chars ≈ 71.1mm (fits comfortably inside 80mm roll)
 const LINE_H = 3.6; // mm
-const MARGIN = 2; // mm
+const MARGIN = 4.4; // mm, balances the 71.1mm text block inside the 80mm roll
 
 export function buildInvoicePdf(order, settings, { jsPDF }) {
   const rows = buildReceiptLines(order, settings);

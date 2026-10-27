@@ -402,7 +402,7 @@ const Orders = () => {
                     </span>
                     <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 mt-1">
                         <HiOutlineCalendarDays className="h-3 w-3" />
-                        {order.date} • {order.time}
+                        {order.date}
                     </div>
                 </div>
             ),
@@ -802,17 +802,10 @@ const Orders = () => {
                                                     <Badge variant={getStatusColor(selectedOrder.status)}>{selectedOrder.status}</Badge>
                                                     <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">#{selectedOrder.id}</span>
                                                 </div>
-                                                {(selectedOrder.date || selectedOrder.time) && (
+                                                {selectedOrder.date && (
                                                     <p className="text-[11px] font-bold text-slate-400 mt-1.5 flex items-center gap-1.5">
                                                         <HiOutlineCalendarDays className="h-3.5 w-3.5" />
                                                         {selectedOrder.date}
-                                                        {selectedOrder.time && (
-                                                            <>
-                                                                <span className="text-slate-300">•</span>
-                                                                <HiOutlineClock className="h-3.5 w-3.5" />
-                                                                {selectedOrder.time}
-                                                            </>
-                                                        )}
                                                     </p>
                                                 )}
                                             </div>
