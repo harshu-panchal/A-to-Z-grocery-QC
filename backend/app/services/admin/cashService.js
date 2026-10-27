@@ -2,6 +2,12 @@ import mongoose from "mongoose";
 import Delivery from "../../models/delivery.js";
 import Transaction from "../../models/transaction.js";
 import Notification from "../../models/notification.js";
+import Order from "../../models/order.js";
+import { reconcileCodCash } from "../finance/orderFinanceService.js";
+import { updateCashInHand } from "../finance/walletService.js";
+import { roundCurrency } from "../../utils/money.js";
+import { invalidate, buildKey } from "../cacheService.js";
+import { emitToDelivery } from "../orderSocketEmitter.js";
 import { withLock } from "../../utils/distributedLock.js";
 
 export async function getDeliveryCashBalancesData({ page, limit, skip }) {
@@ -200,35 +206,135 @@ export async function settleRiderCashEntry({ riderId, amount, method }) {
 
   // One settlement per rider at a time: a double click used to settle twice.
   return withLock(`cash-settle:${riderId}`, 10_000, async () => {
-  const currentCash = await computeRiderCurrentCash(riderId);
-  if (settleAmount > currentCash + 0.01) {
-    const err = new Error(
-      `Cannot settle more than pending cash balance (\u20B9${currentCash})`,
-    );
-    err.statusCode = 400;
-    throw err;
-  }
+    const currentCash = await computeRiderCurrentCash(riderId);
+    if (settleAmount > currentCash + 0.01) {
+      const err = new Error(
+        `Cannot settle more than pending cash balance (\u20B9${currentCash})`,
+      );
+      err.statusCode = 400;
+      throw err;
+    }
 
-  const settlement = await Transaction.create({
-    user: riderId,
-    userModel: "Delivery",
-    type: "Cash Settlement",
-    amount: -Math.abs(settleAmount),
-    status: "Settled",
-    reference: `CSH-SET-${Date.now()}`,
-    notes: `Method: ${method || "Cash"}`,
-  });
+    const riderOid = new mongoose.Types.ObjectId(String(riderId));
+    let remainingToSettle = settleAmount;
+    const settledOrderIds = [];
 
-  await Notification.create({
-    recipient: riderId,
-    recipientModel: "Delivery",
-    title: "Cash Settled",
-    message: `Admin has collected \u20B9${settleAmount} cash from you. Your balance is updated.`,
-    type: "payment",
-    data: { transactionId: settlement._id },
-  });
+    const isDbConnected = mongoose.connection?.readyState === 1;
 
-  return settlement;
+    // 1. Reconcile rider's collected COD orders FIFO
+    if (isDbConnected && typeof Order?.find === "function") {
+      try {
+        const pendingOrders = await Order.find({
+          deliveryBoy: riderOid,
+          paymentMode: "COD",
+          status: { $ne: "cancelled" },
+          orderStatus: { $ne: "cancelled" },
+          "financeFlags.codMarkedCollected": true,
+          "paymentBreakdown.codPendingAmount": { $gt: 0 },
+        }).sort({ createdAt: 1 });
+
+        if (Array.isArray(pendingOrders)) {
+          for (const order of pendingOrders) {
+            if (remainingToSettle <= 0) break;
+            const orderPending = roundCurrency(
+              order?.paymentBreakdown?.codPendingAmount || 0,
+            );
+            if (orderPending <= 0) continue;
+            const thisOrderSettle = roundCurrency(
+              Math.min(orderPending, remainingToSettle),
+            );
+
+            try {
+              if (typeof reconcileCodCash === "function") {
+                await reconcileCodCash(order._id, thisOrderSettle, riderOid, {
+                  actorId: null,
+                  metadata: {
+                    source: "admin_cash_collection_page",
+                    initiatedBy: "admin",
+                    method: method || "Cash submission",
+                  },
+                });
+              }
+              remainingToSettle = roundCurrency(
+                remainingToSettle - thisOrderSettle,
+              );
+              settledOrderIds.push(order.orderId);
+            } catch (e) {
+              console.warn(
+                `[settleRiderCashEntry] Failed to reconcile order ${order.orderId}:`,
+                e.message,
+              );
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[settleRiderCashEntry] Order lookup error:", err.message);
+      }
+    }
+
+    // 2. Deduct any remaining settle amount (or full amount if no orders) from rider's Wallet.cashInHand
+    if (isDbConnected && remainingToSettle > 0 && typeof updateCashInHand === "function") {
+      try {
+        await updateCashInHand({
+          ownerType: "DELIVERY_PARTNER",
+          ownerId: riderOid,
+          deltaAmount: -remainingToSettle,
+        });
+      } catch (err) {
+        console.warn("[settleRiderCashEntry] updateCashInHand error:", err.message);
+      }
+    }
+
+    const settlement = await Transaction.create({
+      user: riderId,
+      userModel: "Delivery",
+      type: "Cash Settlement",
+      amount: -Math.abs(settleAmount),
+      status: "Settled",
+      reference: `CSH-SET-${Date.now()}`,
+      notes: `Method: ${method || "Cash"}`,
+      meta: {
+        source: "admin_cash_collection_page",
+        orders: settledOrderIds,
+      },
+    });
+
+    // Invalidate delivery caches so delivery app reflects updated balance immediately
+    try {
+      if (typeof invalidate === "function" && typeof buildKey === "function") {
+        await invalidate(buildKey("delivery", "codSummary", String(riderId)));
+        await invalidate(buildKey("delivery", "stats", String(riderId)));
+        await invalidate(buildKey("delivery", "earnings", String(riderId)));
+      }
+    } catch (e) {
+      console.warn("[settleRiderCashEntry] Cache invalidate skipped:", e.message);
+    }
+
+    // Emit live socket event to delivery app
+    try {
+      if (typeof emitToDelivery === "function") {
+        emitToDelivery(riderId, {
+          event: "delivery:cash:settled",
+          payload: {
+            settleAmount,
+            transactionId: settlement._id,
+          },
+        });
+      }
+    } catch {
+      /* socket emission optional */
+    }
+
+    await Notification.create({
+      recipient: riderId,
+      recipientModel: "Delivery",
+      title: "Cash Settled",
+      message: `Admin has collected \u20B9${settleAmount} cash from you. Your balance is updated.`,
+      type: "payment",
+      data: { transactionId: settlement._id },
+    });
+
+    return settlement;
   });
 }
 

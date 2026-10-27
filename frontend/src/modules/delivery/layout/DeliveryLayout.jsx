@@ -163,9 +163,18 @@ const DeliveryLayout = () => {
     const total = typeof p.total === "number" ? p.total : Number(p.total) || 0;
     const dropLabel = typeof p.drop === "string" ? p.drop : String(p.drop);
     const earnings = typeof p.earnings === "number" ? p.earnings : (payload.paymentBreakdown?.riderPayoutTotal ?? Math.round(total * 0.1));
+    const customerName =
+      payload.customerName ||
+      p.customerName ||
+      payload.customer?.name ||
+      p.customer ||
+      payload.address?.name ||
+      p.address?.name ||
+      "";
     setActiveOrder({
       id: payload.orderId,
       mongoId: undefined,
+      customerName,
       pickup: p.pickup,
       drop: dropLabel,
       distance: "Nearby",
@@ -202,9 +211,15 @@ const DeliveryLayout = () => {
     shownOrderIdsRef.current = new Set(shownOrderIdsRef.current).add(offerKey);
     const total = newOrder.pricing?.total || 0;
     const earnings = newOrder.paymentBreakdown?.riderPayoutTotal ?? newOrder.riderEarnings ?? Math.round(total * 0.1);
+    const customerName =
+      newOrder.customer?.name ||
+      newOrder.address?.name ||
+      newOrder.addressSnapshot?.name ||
+      "";
     setActiveOrder({
       id: newOrder.orderId,
       mongoId: newOrder._id,
+      customerName,
       pickup: isReturnPickup
         ? newOrder.address?.address || "Customer Address"
         : newOrder.seller?.shopName || "Seller",
@@ -825,7 +840,11 @@ const DeliveryLayout = () => {
       } else {
         await deliveryApi.acceptOrder(activeOrder.id, idem);
       }
-      toast.success("Order accepted!");
+      toast.success(
+        activeOrder.customerName
+          ? `Order accepted for ${activeOrder.customerName}!`
+          : "Order accepted!"
+      );
       const orderId = activeOrder.id;
       dismissIncomingOrder(activeOrder);
       navigate(`/delivery/order-details/${orderId}`);
@@ -882,12 +901,12 @@ const DeliveryLayout = () => {
 
                     <h2
                       id="delivery-order-alert-title"
-                      className="text-xl font-black text-slate-900 mb-1"
+                      className="text-xl font-black text-slate-900 mb-1 text-center"
                     >
-                      {activeOrder.isReturnPickup ? "Return pickup request" : "New order request"}
+                      {activeOrder.customerName || (activeOrder.isReturnPickup ? "Return pickup request" : "New order request")}
                     </h2>
-                    <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-4">
-                      {activeOrder.isReturnPickup ? "Collect return item" : "Accept or reject"}
+                    <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-4 text-center">
+                      {activeOrder.isReturnPickup ? "Return pickup request" : "New order request"} · #{activeOrder.id}
                     </p>
                     <div className="flex items-center gap-2 mb-6">
                       <span className="text-2xl font-black text-brand-600">₹{activeOrder.earnings}</span>
@@ -956,7 +975,10 @@ const DeliveryLayout = () => {
                           <p className="text-[10px] font-bold text-slate-400 uppercase">
                             {activeOrder.isReturnPickup ? "Return To Seller" : "Drop"}
                           </p>
-                          <p className="text-sm font-bold text-slate-900 line-clamp-2">{activeOrder.drop}</p>
+                          {activeOrder.customerName && (
+                            <p className="text-xs font-bold text-slate-800 mb-0.5">{activeOrder.customerName}</p>
+                          )}
+                          <p className="text-sm font-medium text-slate-800 line-clamp-2">{activeOrder.drop}</p>
                         </div>
                       </div>
                     </div>
@@ -1017,7 +1039,7 @@ const DeliveryLayout = () => {
               <BellRing className="h-5 w-5 shrink-0 text-primary" />
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-black truncate">
-                  {activeOrder.isReturnPickup ? "Return pickup request" : "New order request"} · ₹{activeOrder.earnings}
+                  {activeOrder.customerName || (activeOrder.isReturnPickup ? "Return pickup request" : "New order request")} · ₹{activeOrder.earnings}
                 </span>
                 <span className={`block text-[11px] font-bold ${timeLeft < 10 ? "text-rose-300" : "text-slate-300"}`}>
                   {timeLeft}s left · tap to accept or reject

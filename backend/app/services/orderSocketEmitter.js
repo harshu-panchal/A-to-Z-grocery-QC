@@ -5,6 +5,8 @@
 import mongoose from "mongoose";
 import Notification from "../models/notification.js";
 import Order from "../models/order.js";
+import Wallet from "../models/wallet.js";
+import Delivery from "../models/delivery.js";
 import { 
   getDeliveryPartnerIdsWithinSellerRadius,
   getDeliveryPartnerIdsWithinCustomerRadius
@@ -159,7 +161,57 @@ export async function emitDeliveryBroadcastForSeller(sellerId, payload) {
     sid,
     payload.radiusMeters,
   );
-  if (!ids.length) {
+
+  // If the order is COD, filter out riders who reached their safety cash limit (default ₹5,000)
+  const isCod =
+    payload.paymentMode === "COD" ||
+    payload.preview?.paymentMode === "COD" ||
+    payload.preview?.paymentMethod === "cod" ||
+    payload.preview?.paymentMethod === "cash";
+
+  let eligibleIds = ids;
+  if (isCod && ids.length > 0 && mongoose.connection?.readyState === 1) {
+    try {
+      const riderObjectIds = ids
+        .filter((id) => mongoose.isValidObjectId(id))
+        .map((id) => new mongoose.Types.ObjectId(String(id)));
+
+      if (riderObjectIds.length > 0) {
+        const [wallets, riders] = await Promise.all([
+          Wallet.find({
+            ownerType: "DELIVERY_PARTNER",
+            ownerId: { $in: riderObjectIds },
+          })
+            .select("ownerId cashInHand")
+            .lean(),
+          Delivery.find({
+            _id: { $in: riderObjectIds },
+          })
+            .select("_id limit")
+            .lean(),
+        ]);
+
+        const limitMap = new Map();
+        for (const r of (riders || [])) {
+          limitMap.set(String(r._id), Number(r.limit || 5000));
+        }
+        const cashMap = new Map();
+        for (const w of (wallets || [])) {
+          cashMap.set(String(w.ownerId), Number(w.cashInHand || 0));
+        }
+
+        eligibleIds = ids.filter((id) => {
+          const cash = cashMap.get(String(id)) || 0;
+          const limit = limitMap.get(String(id)) || 5000;
+          return cash < limit;
+        });
+      }
+    } catch (e) {
+      console.warn("[emitDeliveryBroadcastForSeller] limit filter error:", e.message);
+    }
+  }
+
+  if (!eligibleIds.length) {
     if (ignoreRiderRange() && s) {
       s.to("delivery:online").emit("delivery:broadcast", {
         ...payload,
@@ -173,16 +225,16 @@ export async function emitDeliveryBroadcastForSeller(sellerId, payload) {
   const body = { ...payload, at: new Date().toISOString() };
 
   if (s) {
-    for (const id of ids) {
+    for (const id of eligibleIds) {
       s.to(`delivery:${id}`).emit("delivery:broadcast", body);
     }
   }
 
   // Trigger Push Notifications for nearby riders
-  if (ids.length > 0 && !payload.retryAttempt) {
+  if (eligibleIds.length > 0 && !payload.retryAttempt) {
     emitNotificationEvent(NOTIFICATION_EVENTS.NEW_DELIVERY_BROADCAST, {
       orderId: payload.orderId,
-      deliveryIds: ids,
+      deliveryIds: eligibleIds,
     });
   }
 
@@ -190,7 +242,7 @@ export async function emitDeliveryBroadcastForSeller(sellerId, payload) {
   if (!payload.retryAttempt) {
     try {
       await Notification.insertMany(
-        ids.map((id) => ({
+        eligibleIds.map((id) => ({
           recipient: new mongoose.Types.ObjectId(id),
           recipientModel: "Delivery",
           title: "New delivery order",
