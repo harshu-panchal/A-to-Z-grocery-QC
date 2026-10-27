@@ -147,7 +147,10 @@ const OrderHistory = () => {
                     <div className="flex flex-col gap-2 sm:flex-row sm:justify-between sm:items-start mb-3">
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 mb-1 min-w-0 flex-wrap">
-                          <span className="font-bold text-gray-900 text-sm group-hover:text-primary transition-colors break-all">
+                          <span className="font-bold text-gray-900 text-sm group-hover:text-primary transition-colors">
+                            {order.customer?.name || order.address?.name || `#${order.orderId}`}
+                          </span>
+                          <span className="text-xs text-gray-400 font-normal">
                             #{order.orderId}
                           </span>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${TASK_STATE_STYLE[task.state]}`}>

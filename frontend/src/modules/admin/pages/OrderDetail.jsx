@@ -1,14 +1,13 @@
 // Ultimate Order Intelligence Dossier
-import { useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import html2canvas from 'html2canvas';
-import { jsPDF } from 'jspdf';
 import { useSettings } from '@core/context/SettingsContext';
 import { useParams, useNavigate } from 'react-router-dom';
 import Card from '@shared/components/ui/Card';
 import Badge from '@shared/components/ui/Badge';
 import Button from '@shared/components/ui/Button';
 import DataTable from '@shared/components/ui/DataTable';
+import AdminInvoiceModal from '../components/AdminInvoiceModal';
 import { adminApi } from '../services/adminApi';
 import {
     ChevronLeft,
@@ -41,7 +40,7 @@ const OrderDetail = () => {
     const { showToast } = useToast();
     const { settings } = useSettings();
     const queryClient = useQueryClient();
-    const invoiceRef = useRef(null);
+    const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
     const statusConfirm = useConfirmDialog();
 
     // Perf audit Phase 8: migrated to React Query — same fetch-on-orderId
@@ -116,63 +115,6 @@ const OrderDetail = () => {
         showToast(`${label} copied to internal clipboard`, 'success');
     };
 
-    const handlePrintInvoice = async () => {
-        const element = invoiceRef.current;
-        if (!element) return;
-
-        showToast("Generating PDF Invoice...", "info");
-
-        try {
-            const canvas = await html2canvas(element, {
-                scale: 2,
-                useCORS: true,
-                logging: false,
-                allowTaint: true,
-                backgroundColor: "#ffffff",
-                onclone: (clonedDoc) => {
-                    // Forcefully remove any elements or styles that might use oklch
-                    // html2canvas crashes when it encounters oklch color functions in stylesheets
-                    const styleSheets = clonedDoc.styleSheets;
-                    for (let i = 0; i < styleSheets.length; i++) {
-                        try {
-                            const rules = styleSheets[i].cssRules || styleSheets[i].rules;
-                            for (let j = rules.length - 1; j >= 0; j--) {
-                                if (rules[j].cssText && rules[j].cssText.includes('oklch')) {
-                                    styleSheets[i].deleteRule(j);
-                                }
-                            }
-                        } catch (e) {
-                            // Skip cross-origin stylesheets that we can't access
-                        }
-                    }
-
-                    // Also explicitly reset root variables just in case
-                    const style = clonedDoc.createElement('style');
-                    style.innerHTML = `
-                        :root {
-                            --primary: var(--primary) !important;
-                            --secondary: #64748b !important;
-                            --background: #ffffff !important;
-                            --foreground: #0f172a !important;
-                        }
-                    `;
-                    clonedDoc.head.appendChild(style);
-                }
-            });
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-            pdf.save(`Invoice_${order.orderId}.pdf`);
-            showToast("Invoice downloaded successfully", "success");
-        } catch (error) {
-            console.error("PDF generation failed:", error);
-            showToast("Failed to generate PDF", "error");
-        }
-    };
-
     if (isLoading) {
         return (
             <div className="flex min-h-[400px] flex-col items-center justify-center gap-4">
@@ -239,13 +181,13 @@ const OrderDetail = () => {
                         </div>
                         <p className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">
                             <Calendar className="h-3.5 w-3.5" />
-                            {new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })} • <Clock className="ml-1 h-3.5 w-3.5" /> {new Date(order.createdAt).toLocaleTimeString()}
+                            {new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
                         </p>
                     </div>
                 </div>
-                <Button variant="outline" onClick={handlePrintInvoice}>
+                <Button variant="outline" onClick={() => setIsInvoiceModalOpen(true)}>
                     <Printer className="h-4 w-4" />
-                    Print Invoice
+                    Invoice
                 </Button>
             </div>
 
@@ -524,156 +466,12 @@ const OrderDetail = () => {
                 </div>
             </div>
 
-            {/* Hidden Printable Invoice Template */}
-            <div className="fixed -left-[9999px] top-0">
-                <div
-                    ref={invoiceRef}
-                    className="w-[800px] bg-white p-1"
-                    style={{ backgroundColor: "#f8fafc" }}
-                >
-                    {/* Inner Paper with Border */}
-                    <div style={{
-                        backgroundColor: "#ffffff",
-                        margin: "40px",
-                        padding: "65px",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: "2px",
-                        boxShadow: "0 0 10px rgba(0,0,0,0.02)",
-                        fontFamily: "'Inter', system-ui, sans-serif",
-                        color: "#1e293b",
-                        minHeight: "1050px"
-                    }}>
-                        {/* Header: Centered Brand */}
-                        <div style={{ textAlign: "center", marginBottom: "50px" }}>
-                            {settings?.logoUrl ? (
-                                <img src={settings.logoUrl} alt="Logo" width="130" style={{ display: "inline-block", marginBottom: "16px" }} crossOrigin="anonymous" />
-                            ) : (
-                                <div style={{ fontSize: "26px", fontWeight: "900", color: "#0f172a", marginBottom: "4px" }}>{settings?.appName || 'A to Z Grocery'}</div>
-                            )}
-                            <div style={{ fontSize: "10px", color: "#64748b", fontWeight: "800", textTransform: "uppercase", letterSpacing: "3px" }}>Official Tax Invoice</div>
-                        </div>
+            <AdminInvoiceModal
+                isOpen={isInvoiceModalOpen}
+                onClose={() => setIsInvoiceModalOpen(false)}
+                order={order}
+            />
 
-                        {/* Top Meta Details */}
-                        <table width="100%" cellPadding="0" cellSpacing="0" style={{ marginBottom: "50px", borderBottom: "1px solid #f1f5f9", paddingBottom: "25px" }}>
-                            <tbody>
-                            <tr>
-                                <td width="50%" style={{ verticalAlign: "bottom" }}>
-                                    <div style={{ fontSize: "28px", fontWeight: "900", color: "#0f172a" }}>INVOICE</div>
-                                </td>
-                                <td width="50%" align="right" style={{ verticalAlign: "bottom" }}>
-                                    <div style={{ fontSize: "12px", fontWeight: "700", marginBottom: "4px" }}>Reference: <span style={{ color: "#2563eb" }}>#{order.orderId}</span></div>
-                                    <div style={{ fontSize: "10px", color: "#64748b", fontWeight: "700" }}>Issued: {new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
-                                </td>
-                            </tr>
-                        </tbody>
-                        </table>
-
-                        {/* Address Grid */}
-                        <table width="100%" cellPadding="0" cellSpacing="0" style={{ marginBottom: "55px" }}>
-                            <tbody>
-                            <tr>
-                                <td width="48%" style={{ verticalAlign: "top", paddingRight: "25px" }}>
-                                    <div style={{ fontSize: "9px", fontWeight: "900", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: "12px" }}>Billed To</div>
-                                    <div style={{ fontSize: "16px", fontWeight: "800", color: "#0f172a", marginBottom: "8px" }}>{order.customer?.name}</div>
-                                    <div style={{ fontSize: "12px", color: "#475569", lineHeight: "1.7" }}>
-                                        {order.address?.address},<br />
-                                        {order.address?.landmark && `${order.address.landmark}, `}{order.address?.city}
-                                    </div>
-                                    <div style={{ fontSize: "11px", fontWeight: "700", color: "#64748b", marginTop: "15px" }}>Contact: {order.customer?.phone}</div>
-                                </td>
-                                <td width="4%" style={{ borderLeft: "1px solid #f1f5f9" }}></td>
-                                <td width="48%" style={{ verticalAlign: "top", paddingLeft: "25px" }}>
-                                    <div style={{ fontSize: "9px", fontWeight: "900", color: "#94a3b8", textTransform: "uppercase", letterSpacing: "1.5px", marginBottom: "12px" }}>Shipped From</div>
-                                    <div style={{ fontSize: "16px", fontWeight: "800", color: "#0f172a", marginBottom: "8px" }}>{order.seller?.shopName || 'Partner Merchant'}</div>
-                                    <div style={{ fontSize: "12px", color: "#475569", lineHeight: "1.7" }}>
-                                        {settings?.address || 'Verified Business Location'}<br />
-                                        Inventory Fulfillment Center
-                                    </div>
-                                    <div style={{ fontSize: "11px", fontWeight: "800", color: "#2563eb", marginTop: "15px" }}>{settings?.taxId ? `GSTIN: ${settings.taxId}` : 'Tax Verified Partner'}</div>
-                                </td>
-                            </tr>
-                        </tbody>
-                        </table>
-
-                        {/* Manifest Table */}
-                        <div style={{ marginBottom: "50px" }}>
-                            <table width="100%" cellPadding="0" cellSpacing="0" style={{ borderCollapse: "collapse" }}>
-                                <thead>
-                                    <tr style={{ backgroundColor: "#f8fafc", borderTop: "1px solid #e2e8f0", borderBottom: "1px solid #e2e8f0" }}>
-                                        <th align="left" style={{ padding: "16px 20px", fontSize: "11px", fontWeight: "900", color: "#475569", textTransform: "uppercase" }}>Description</th>
-                                        <th align="center" style={{ padding: "16px 20px", fontSize: "11px", fontWeight: "900", color: "#475569", textTransform: "uppercase" }}>Unit Rate</th>
-                                        <th align="center" style={{ padding: "16px 20px", fontSize: "11px", fontWeight: "900", color: "#475569", textTransform: "uppercase" }}>Qty</th>
-                                        <th align="right" style={{ padding: "16px 20px", fontSize: "11px", fontWeight: "900", color: "#475569", textTransform: "uppercase" }}>Total</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {order.items.map((item, idx) => (
-                                        <tr key={idx} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                                            <td style={{ padding: "18px 20px" }}>
-                                                <div style={{ fontSize: "13px", fontWeight: "700", color: "#0f172a" }}>{item.name}</div>
-                                                <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "4px" }}>Item Ref: {item.product?._id?.slice(-8).toUpperCase() || item._id?.slice(-8).toUpperCase()}</div>
-                                            </td>
-                                            <td align="center" style={{ padding: "18px 20px", fontSize: "13px", color: "#475569", fontWeight: "700" }}>₹{item.price}</td>
-                                            <td align="center" style={{ padding: "18px 20px", fontSize: "13px", color: "#475569", fontWeight: "800" }}>{item.quantity}</td>
-                                            <td align="right" style={{ padding: "18px 20px", fontSize: "14px", fontWeight: "900", color: "#0f172a" }}>₹{item.price * item.quantity}</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-
-                        {/* Totals Summary */}
-                        <table width="100%" cellPadding="0" cellSpacing="0" style={{ marginBottom: "60px" }}>
-                            <tbody>
-                            <tr>
-                                <td width="50%" style={{ verticalAlign: "top" }}>
-                                    <div style={{ backgroundColor: "#f8fafc", padding: "25px", borderRadius: "8px", border: "1px solid #f1f5f9" }}>
-                                        <div style={{ fontSize: "10px", color: "#94a3b8", fontWeight: "900", textTransform: "uppercase", marginBottom: "12px", letterSpacing: "1.5px" }}>Transaction Detail</div>
-                                        <div style={{ fontSize: "12px", color: "#475569", marginBottom: "8px" }}>Method: <b style={{ color: "#0f172a" }}>{order.paymentMode || order.payment?.method || 'CASH'}</b></div>
-                                        <div style={{ fontSize: "12px", color: "#475569" }}>Status: <b style={{ color: "#0f172a", textTransform: "uppercase" }}>{order.paymentStatus || order.payment?.status || 'PENDING'}</b></div>
-                                    </div>
-                                </td>
-                                <td width="10%"></td>
-                                <td width="40%" style={{ verticalAlign: "top" }}>
-                                    <table width="100%" cellPadding="8" cellSpacing="0">
-                                        <tbody>
-                                        <tr>
-                                            <td align="left" style={{ fontSize: "12px", color: "#64748b", fontWeight: "700" }}>Subtotal Aggregate</td>
-                                            <td align="right" style={{ fontSize: "13px", fontWeight: "800", color: "#0f172a" }}>₹{order.pricing?.subtotal || 0}</td>
-                                        </tr>
-                                        <tr>
-                                            <td align="left" style={{ fontSize: "12px", color: "#64748b", fontWeight: "700" }}>Logistics Cost</td>
-                                            <td align="right" style={{ fontSize: "13px", fontWeight: "800", color: "#2563eb" }}>+ ₹{order.pricing?.deliveryFee || 0}</td>
-                                        </tr>
-                                        <tr>
-                                            <td colSpan="2" style={{ padding: "12px 0" }}><div style={{ height: "1px", backgroundColor: "#e2e8f0" }}></div></td>
-                                        </tr>
-                                        <tr>
-                                            <td align="left" style={{ fontSize: "15px", fontWeight: "900", color: "#0f172a" }}>Grand Total</td>
-                                            <td align="right" style={{ fontSize: "24px", fontWeight: "900", color: "#2563eb" }}>₹{order.pricing?.total || 0}</td>
-                                        </tr>
-                                    </tbody>
-                                    </table>
-                                </td>
-                            </tr>
-                        </tbody>
-                        </table>
-
-                        {/* Footer: Centered Verification */}
-                        <div style={{ marginTop: "auto", paddingTop: "40px", borderTop: "1px solid #f1f5f9", textAlign: "center" }}>
-                            <div style={{ fontSize: "12px", color: "#64748b", fontWeight: "800", textTransform: "uppercase", letterSpacing: "3px" }}>
-                                Thank you for your business
-                            </div>
-                            <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "10px", fontWeight: "600" }}>
-                                This is a system-generated commercial invoice. No physical signature required.
-                            </div>
-                            <div style={{ fontSize: "10px", color: "#94a3b8", marginTop: "5px" }}>
-                                {settings?.appName || 'A to Z Grocery'} • Customer Support: {settings?.supportEmail || 'support@atozgrocery.com'}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
             <ConfirmDialog
                 isOpen={statusConfirm.isOpen}
                 title={statusConfirm.title}
