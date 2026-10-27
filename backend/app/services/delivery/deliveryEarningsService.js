@@ -106,6 +106,47 @@ async function computeDeliveryStats(deliveryBoyId) {
 }
 
 /**
+ * What a rider can withdraw: settled sum (withdrawals are negative) minus
+ * withdrawals still waiting to be paid. Summed in Mongo over all of the
+ * rider's transactions. Uncached: requestWithdrawal checks against it.
+ */
+export async function getDeliveryWithdrawableBalance(rawId) {
+  const deliveryBoyId = toDeliveryBoyId(rawId);
+  const [agg] = await Transaction.aggregate([
+    { $match: { user: deliveryBoyId, userModel: "Delivery" } },
+    {
+      $group: {
+        _id: null,
+        settled: {
+          $sum: { $cond: [{ $eq: ["$status", "Settled"] }, "$amount", 0] },
+        },
+        pending: {
+          $sum: {
+            $cond: [
+              {
+                $and: [
+                  { $eq: ["$type", "Withdrawal"] },
+                  { $in: ["$status", ["Pending", "Processing"]] },
+                ],
+              },
+              { $abs: "$amount" },
+              0,
+            ],
+          },
+        },
+      },
+    },
+  ]);
+  const pendingWithdrawals = roundCurrency(agg?.pending || 0);
+  return {
+    availableBalance: roundCurrency(
+      Math.max((agg?.settled || 0) - pendingWithdrawals, 0),
+    ),
+    pendingWithdrawals,
+  };
+}
+
+/**
  * Earnings page payload: totals, 7-day chart, latest 20 transactions.
  * Cached for ~30s (`deliveryEarnings` TTL) to absorb dashboard polling.
  */
@@ -173,6 +214,8 @@ async function computeDeliveryEarnings(deliveryBoyId) {
     .reduce((acc, t) => acc + t.amount, 0);
 
   const cashCollected = roundCurrency(wallet?.cashInHand || 0);
+  const { availableBalance, pendingWithdrawals } =
+    await getDeliveryWithdrawableBalance(deliveryBoyId);
 
   const sevenDaysAgo = new Date();
   sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
@@ -215,6 +258,8 @@ async function computeDeliveryEarnings(deliveryBoyId) {
     incentives,
     tipsReceived,
     cashCollected,
+    availableBalance,
+    pendingWithdrawals,
     chartData,
     transactions: transactions.slice(0, 20),
   };
@@ -318,5 +363,6 @@ async function computeDeliveryCodCashSummary(deliveryBoyId) {
 export default {
   getDeliveryStats,
   getDeliveryEarnings,
+  getDeliveryWithdrawableBalance,
   getDeliveryCodCashSummary,
 };
