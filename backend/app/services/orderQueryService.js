@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import Order from "../models/order.js";
 import Delivery from "../models/delivery.js";
+import Wallet from "../models/wallet.js";
 import Seller from "../models/seller.js";
 import CheckoutGroup from "../models/checkoutGroup.js";
 import { WORKFLOW_STATUS, PENDING_ORDER_QUERY } from "../constants/orderWorkflow.js";
@@ -321,7 +322,7 @@ export async function fetchAvailableOrdersForDelivery({
   // independent of each other (neither reads the other's result), so they
   // run concurrently instead of as two sequential round-trips. Output is
   // identical â€” only the timing changes.
-  const [assignedReturnPickupsRaw, deliveryPartner] = await Promise.all([
+  const [assignedReturnPickupsRaw, deliveryPartner, riderWallet] = await Promise.all([
     showReturns
       ? Order.find({
           returnStatus: "return_pickup_assigned",
@@ -335,6 +336,11 @@ export async function fetchAvailableOrdersForDelivery({
           .lean()
       : Promise.resolve([]),
     Delivery.findById(userId),
+    mongoose.connection?.readyState === 1
+      ? Wallet.findOne({ ownerType: "DELIVERY_PARTNER", ownerId: userId })
+          .select("cashInHand")
+          .lean()
+      : Promise.resolve(null),
   ]);
 
   const assignedReturnPickups = assignedReturnPickupsRaw.map((rp) => ({
@@ -458,9 +464,25 @@ export async function fetchAvailableOrdersForDelivery({
       isReturnPickup: true,
     }));
 
+  const currentCashInHand = Number(riderWallet?.cashInHand || 0);
+  const riderLimit = Number(deliveryPartner?.limit || 5000);
+  const isOverCashLimit = currentCashInHand >= riderLimit;
+
+  const isCodOrder = (o) =>
+    o.paymentMode === "COD" ||
+    o.payment?.method === "cod" ||
+    o.payment?.method === "cash";
+
+  const eligibleV2Orders = isOverCashLimit
+    ? v2Orders.filter((o) => !isCodOrder(o))
+    : v2Orders;
+  const eligibleLegacyOrders = isOverCashLimit
+    ? legacyOrders.filter((o) => !isCodOrder(o))
+    : legacyOrders;
+
   const orders = mergeAvailableOrders(
-    v2Orders,
-    legacyOrders,
+    eligibleV2Orders,
+    eligibleLegacyOrders,
     [...assignedReturnPickups, ...returnPickups],
     limit,
   );

@@ -11,12 +11,15 @@ import DataTable from '@shared/components/ui/DataTable';
 import EmptyState from '@shared/components/ui/EmptyState';
 import { SkeletonStatCard } from '@shared/components/ui/Skeleton';
 import Pagination from '@shared/components/ui/Pagination';
+import AdminInvoiceModal from '../components/AdminInvoiceModal';
 import { adminApi } from '../services/adminApi';
 import {
     Search,
     Filter,
     Truck,
     Eye,
+    Printer,
+    Loader2,
     Download,
     Calendar,
     Package,
@@ -120,6 +123,31 @@ const OrdersList = () => {
     const [isDateMenuOpen, setIsDateMenuOpen] = useState(false);
     const [isFilterMenuOpen, setIsFilterMenuOpen] = useState(false);
     const [paymentFilter, setPaymentFilter] = useState('All');
+    const [selectedInvoiceOrder, setSelectedInvoiceOrder] = useState(null);
+    const [invoiceLoadingId, setInvoiceLoadingId] = useState(null);
+
+    const handleOpenInvoice = async (orderItem) => {
+        if (!orderItem) return;
+        if (orderItem.items && orderItem.items.length && orderItem.pricing) {
+            setSelectedInvoiceOrder(orderItem);
+            return;
+        }
+        const targetId = orderItem.id || orderItem._id;
+        setInvoiceLoadingId(targetId);
+        try {
+            const res = await adminApi.getOrderDetails(targetId);
+            if (res?.data?.success && res?.data?.result) {
+                setSelectedInvoiceOrder(res.data.result);
+            } else {
+                showToast('Could not load invoice details', 'error');
+            }
+        } catch (err) {
+            console.error('Failed to load invoice:', err);
+            showToast('Failed to load invoice details', 'error');
+        } finally {
+            setInvoiceLoadingId(null);
+        }
+    };
 
     // Perf audit Phase 8: migrated to React Query — same 500ms debounce
     // before a filter/search change triggers a refetch, same "any filter
@@ -347,6 +375,18 @@ const OrdersList = () => {
                         </button>
                     )}
                     <button
+                        onClick={(e) => { e.stopPropagation(); handleOpenInvoice(order); }}
+                        disabled={invoiceLoadingId === (order.id || order._id)}
+                        className="rounded-lg p-2 text-slate-500 transition-all hover:bg-primary/10 hover:text-primary disabled:opacity-50"
+                        title="Invoice (Print / Download)"
+                    >
+                        {invoiceLoadingId === (order.id || order._id) ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        ) : (
+                            <Printer className="h-4 w-4" />
+                        )}
+                    </button>
+                    <button
                         onClick={(e) => { e.stopPropagation(); navigate(`/admin/orders/view/${order.id}`); }}
                         className="rounded-lg p-2 text-slate-500 transition-all hover:bg-primary/10 hover:text-primary"
                         title="View Details"
@@ -494,6 +534,12 @@ const OrdersList = () => {
                         description="We couldn't find any orders matching your search."
                     />
                 }
+            />
+
+            <AdminInvoiceModal
+                isOpen={!!selectedInvoiceOrder}
+                onClose={() => setSelectedInvoiceOrder(null)}
+                order={selectedInvoiceOrder}
             />
 
             <Pagination

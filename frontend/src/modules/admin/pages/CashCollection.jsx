@@ -217,6 +217,10 @@ const CashCollection = () => {
     };
 
     const handleSettlement = (rider) => {
+        if (!rider?.currentCash || rider.currentCash <= 0) {
+            toast.info(`${rider?.name || 'Rider'} has no pending cash to settle.`);
+            return;
+        }
         setSettlementData({ rider, amount: rider.currentCash });
         setIsSettleModalOpen(true);
     };
@@ -232,8 +236,9 @@ const CashCollection = () => {
         }
         try {
             setIsProcessing(true);
+            const riderId = settlementData.rider?.id || settlementData.rider?._id;
             const response = await adminApi.settleRiderCash({
-                riderId: settlementData.rider.id,
+                riderId,
                 amount: Number(settlementData.amount),
                 method: 'Cash submission'
             });
@@ -273,23 +278,36 @@ const CashCollection = () => {
             ),
         },
         {
-            header: 'Cash Statistics',
+            header: 'Amount to Settle',
             key: 'cash',
-            cell: (rider) => (
-                <div className="max-w-[180px] space-y-1.5">
-                    <div className="flex items-end justify-between">
-                        <span className="text-base font-black text-slate-900">₹{rider.currentCash.toLocaleString()}</span>
-                        <span className="text-[10px] font-medium text-slate-400">Limit: ₹{rider.limit}</span>
+            cell: (rider) => {
+                const amount = Number(rider.currentCash || 0);
+                return (
+                    <div className="max-w-[190px] space-y-1.5">
+                        <div className="flex items-baseline justify-between gap-2">
+                            <span className={cn("text-base font-black tracking-tight", amount > 0 ? "text-slate-900" : "text-slate-400")}>
+                                ₹{amount.toLocaleString()}
+                            </span>
+                            <span className="text-[10px] font-medium text-slate-400">
+                                Limit: ₹{rider.limit || 5000}
+                            </span>
+                        </div>
+                        <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+                            <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${Math.min((amount / (rider.limit || 5000)) * 100, 100)}%` }}
+                                className={cn(
+                                    "h-full rounded-full",
+                                    amount === 0 ? "bg-slate-300" : rider.status === 'safe' ? "bg-success" : rider.status === 'warning' ? "bg-warning" : "bg-danger"
+                                )}
+                            />
+                        </div>
+                        <p className="text-[10px] font-semibold text-slate-400">
+                            {amount > 0 ? "Cash in hand to deposit" : "All settled • No pending cash"}
+                        </p>
                     </div>
-                    <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
-                        <motion.div
-                            initial={{ width: 0 }}
-                            animate={{ width: `${Math.min((rider.currentCash / rider.limit) * 100, 100)}%` }}
-                            className={cn("h-full rounded-full", rider.status === 'safe' ? "bg-success" : rider.status === 'warning' ? "bg-warning" : "bg-danger")}
-                        />
-                    </div>
-                </div>
-            ),
+                );
+            },
         },
         {
             header: 'Safety Status',
@@ -319,16 +337,30 @@ const CashCollection = () => {
             header: 'Management',
             key: 'actions',
             align: 'right',
-            cell: (rider) => (
-                <div className="flex items-center justify-end gap-1.5">
-                    <button onClick={() => handleSettlement(rider)} className="rounded-lg bg-primary/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wide text-primary transition-all hover:bg-primary hover:text-white">
-                        Settle
-                    </button>
-                    <button onClick={() => setSelectedRider(rider)} className="rounded-lg p-2 text-slate-400 transition-all hover:bg-slate-900 hover:text-white">
-                        <Eye className="h-4 w-4" />
-                    </button>
-                </div>
-            ),
+            cell: (rider) => {
+                const amount = Number(rider.currentCash || 0);
+                const canSettle = amount > 0;
+                return (
+                    <div className="flex items-center justify-end gap-1.5">
+                        <button
+                            onClick={() => handleSettlement(rider)}
+                            disabled={!canSettle}
+                            title={canSettle ? `Settle ₹${amount.toLocaleString()} from ${rider.name}` : `${rider.name} has no pending cash`}
+                            className={cn(
+                                "rounded-lg px-3 py-1.5 text-xs font-bold transition-all flex items-center gap-1",
+                                canSettle
+                                    ? "bg-emerald-600 text-white shadow-sm hover:bg-emerald-700 active:scale-95"
+                                    : "bg-slate-100 text-slate-400 cursor-not-allowed opacity-60"
+                            )}
+                        >
+                            {canSettle ? `Settle ₹${amount.toLocaleString()}` : "Settled"}
+                        </button>
+                        <button onClick={() => setSelectedRider(rider)} className="rounded-lg p-2 text-slate-400 transition-all hover:bg-slate-900 hover:text-white" title="View Details">
+                            <Eye className="h-4 w-4" />
+                        </button>
+                    </div>
+                );
+            },
         },
     ];
 
@@ -502,8 +534,12 @@ const CashCollection = () => {
                         </div>
 
                         <div className="flex gap-3 pt-1">
-                            <Button className="flex-1" onClick={() => { setSelectedRider(null); handleSettlement(selectedRider); }}>
-                                Trigger Settlement
+                            <Button
+                                className="flex-1"
+                                disabled={Number(selectedRider.currentCash || 0) <= 0}
+                                onClick={() => { setSelectedRider(null); handleSettlement(selectedRider); }}
+                            >
+                                {Number(selectedRider.currentCash || 0) > 0 ? "Trigger Settlement" : "All Settled"}
                             </Button>
                         </div>
                     </div>
@@ -526,24 +562,57 @@ const CashCollection = () => {
                             </div>
                         </div>
 
-                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-5">
-                            <p className="mb-2 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">Total Amount to Settle</p>
-                            <div className="flex items-center justify-center gap-2">
-                                <span className="text-lg font-black text-slate-900">₹</span>
-                                <input
-                                    type="number"
-                                    min="0"
-                                    max={settlementData.rider.currentCash}
-                                    value={settlementData.amount}
-                                    onChange={(e) => {
-                                        let val = parseFloat(e.target.value) || 0;
-                                        if (val < 0) val = 0;
-                                        if (val > settlementData.rider.currentCash) val = settlementData.rider.currentCash;
-                                        setSettlementData({ ...settlementData, amount: val });
-                                    }}
-                                    className="w-32 bg-transparent text-center text-2xl font-black text-slate-900 outline-none"
-                                />
+                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-5 space-y-3">
+                            <div className="flex items-center justify-between text-xs text-slate-500 font-semibold border-b border-slate-200/60 pb-2">
+                                <span>Pending Driver Cash</span>
+                                <span className="font-bold text-slate-900">₹{settlementData.rider.currentCash.toLocaleString()}</span>
                             </div>
+
+                            <div>
+                                <p className="mb-2 text-center text-[10px] font-bold uppercase tracking-widest text-slate-400">Total Amount to Settle</p>
+                                <div className="flex items-center justify-center gap-2">
+                                    <span className="text-xl font-black text-slate-900">₹</span>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        max={settlementData.rider.currentCash}
+                                        value={settlementData.amount}
+                                        onChange={(e) => {
+                                            let val = parseFloat(e.target.value) || 0;
+                                            if (val < 0) val = 0;
+                                            if (val > settlementData.rider.currentCash) val = settlementData.rider.currentCash;
+                                            setSettlementData({ ...settlementData, amount: val });
+                                        }}
+                                        className="w-40 bg-white border border-slate-200 rounded-lg px-3 py-1.5 text-center text-2xl font-black text-slate-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-200"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Quick fill buttons */}
+                            {settlementData.rider.currentCash > 0 && (
+                                <div className="flex items-center justify-center gap-2 pt-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSettlementData({ ...settlementData, amount: settlementData.rider.currentCash })}
+                                        className="rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-3 py-1 text-[11px] font-bold hover:bg-emerald-100 transition-all"
+                                    >
+                                        Full Settle (₹{settlementData.rider.currentCash.toLocaleString()})
+                                    </button>
+                                    {settlementData.rider.currentCash >= 200 && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setSettlementData({ ...settlementData, amount: Math.round(settlementData.rider.currentCash / 2) })}
+                                            className="rounded-full bg-slate-100 text-slate-600 border border-slate-200 px-3 py-1 text-[11px] font-semibold hover:bg-slate-200 transition-all"
+                                        >
+                                            50% (₹{Math.round(settlementData.rider.currentCash / 2).toLocaleString()})
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            <p className="text-center text-[11px] text-slate-400">
+                                Pre-filled with full pending cash. You can adjust the amount if needed.
+                            </p>
                         </div>
 
                         <div className="space-y-2 pt-1">

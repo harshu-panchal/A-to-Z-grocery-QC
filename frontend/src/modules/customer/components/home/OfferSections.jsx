@@ -63,6 +63,10 @@ const OfferSections = ({ sections, noServiceData, design }) => {
             );
           }
 
+          if (sectionProducts.length === 0 && sectionSellers.length === 0) {
+            return null;
+          }
+
           return (
             <motion.div
               key={section._id}
