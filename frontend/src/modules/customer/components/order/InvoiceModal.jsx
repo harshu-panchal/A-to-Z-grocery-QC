@@ -75,7 +75,15 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                         <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                             <div className="min-w-0">
                                 <h2 className="text-lg font-black text-slate-800">Invoice</h2>
-                                <p className="text-xs text-slate-500 font-medium truncate">#{getInvoiceNumber(order)}</p>
+                                <p className="text-xs text-slate-500 font-medium flex flex-wrap items-center gap-1.5">
+                                    <span>#{getInvoiceNumber(order)}</span>
+                                    {order.createdAt && (
+                                        <>
+                                            <span className="text-slate-300">•</span>
+                                            <span>Date: {new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</span>
+                                        </>
+                                    )}
+                                </p>
                             </div>
                             <button onClick={onClose} aria-label="Close invoice" className="p-2 bg-white rounded-full hover:bg-slate-200 transition-colors shadow-sm border border-slate-100">
                                 <X size={20} className="text-slate-500" />
@@ -99,6 +107,11 @@ const InvoiceModal = ({ isOpen, onClose, order }) => {
                                         {billName}
                                         {billPhone && <><br />{billPhone}</>}
                                     </p>
+                                    {order.createdAt && (
+                                        <p className="text-xs font-semibold text-slate-600 mt-2">
+                                            Date: {new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                                        </p>
+                                    )}
                                 </div>
                             </div>
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
     IndianRupee,
     Clock,
@@ -18,55 +18,41 @@ import Button from "@/shared/components/ui/Button";
 import Card from "@/shared/components/ui/Card";
 import { deliveryApi } from "../../services/deliveryApi";
 
+const DEFAULT_STATS = {
+    availableBalance: 0,
+    pendingWithdrawals: 0,
+    history: []
+};
+
+// Balance and pending come from the server (same formula it checks a
+// request against), so they drop as soon as a request is submitted.
+const fetchStats = async () => {
+    const res = await deliveryApi.getEarnings();
+    if (!res.data.success) return DEFAULT_STATS;
+    const result = res.data.result || {};
+    return {
+        availableBalance: result.availableBalance || 0,
+        pendingWithdrawals: result.pendingWithdrawals || 0,
+        history: (result.transactions || [])
+            .filter(t => t.type === 'Withdrawal')
+            .map(t => ({
+                id: t.reference || t._id,
+                amount: t.amount,
+                status: t.status,
+                date: t.createdAt || t.date,
+            })),
+    };
+};
+
 const Withdrawals = () => {
     const navigate = useNavigate();
-    const queryClient = useQueryClient();
     const [amount, setAmount] = useState("");
     const [loading, setLoading] = useState(false);
 
-    const statsQueryKey = ["delivery", "withdrawalStats"];
-    const DEFAULT_STATS = {
-        availableBalance: 0,
-        pendingWithdrawals: 0,
-        history: []
-    };
-
-    // Perf audit Phase 8: migrated to React Query. Original silently fell
-    // back to mock demo data if the API call failed — preserved exactly.
-    const { data: stats = DEFAULT_STATS, isFetching: fetching } = useQuery({
-        queryKey: statsQueryKey,
-        queryFn: async () => {
-            try {
-                const res = await deliveryApi.getEarnings();
-                if (res.data.success) {
-                    return {
-                        availableBalance: res.data.result.totalEarnings || 0,
-                        pendingWithdrawals: (res.data.result.recentTransactions || [])
-                            .filter(t => t.type.includes('Withdrawal') && (t.status === 'Pending' || t.status === 'Processing'))
-                            .reduce((acc, t) => acc + Math.abs(t.amount), 0),
-                        history: (res.data.result.recentTransactions || [])
-                            .filter(t => t.type.includes('Withdrawal'))
-                    };
-                }
-                return DEFAULT_STATS;
-            } catch (error) {
-                console.error("Fetch Error:", error);
-                // Fallback with mock data for frontend demo if API fails
-                return {
-                    availableBalance: 1250,
-                    pendingWithdrawals: 0,
-                    history: [
-                        { id: 'WDR123', amount: 500, status: 'Settled', date: '2024-03-20', type: 'Withdrawal' },
-                        { id: 'WDR124', amount: 300, status: 'Pending', date: '2024-03-21', type: 'Withdrawal' }
-                    ]
-                };
-            }
-        },
+    const { data: stats = DEFAULT_STATS, isFetching: fetching, refetch: fetchData } = useQuery({
+        queryKey: ["delivery", "withdrawalStats"],
+        queryFn: fetchStats,
     });
-
-    const fetchData = () => {
-        queryClient.invalidateQueries({ queryKey: statsQueryKey });
-    };
 
     const handleRequest = async () => {
         if (!amount || isNaN(amount) || Number(amount) <= 0) {
@@ -182,7 +168,7 @@ const Withdrawals = () => {
                             Transfer History
                         </h3>
                         <button
-                            onClick={fetchData}
+                            onClick={() => fetchData()}
                             className="text-primary text-[10px] font-bold flex items-center gap-1 uppercase"
                         >
                             <RotateCw size={12} className={fetching ? "animate-spin" : ""} />

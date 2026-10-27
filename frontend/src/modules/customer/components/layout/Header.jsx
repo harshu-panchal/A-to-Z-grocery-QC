@@ -6,6 +6,7 @@ import { useCart } from '../../context/CartContext';
 import { useLocation as useAppLocation } from "../../context/LocationContext";
 import { useSettings } from '@core/context/SettingsContext';
 import LocationDrawer from '../shared/LocationDrawer';
+import ProfileAvatar from '../shared/ProfileAvatar';
 
 const Header = () => {
     const { settings } = useSettings();
@@ -174,8 +175,12 @@ const Header = () => {
                             )}
                         </Link>
 
-                        <Link to="/profile" className="flex items-center justify-center">
-                            <User className="h-6 w-6 text-slate-600 hover:text-[var(--primary)] transition-colors" />
+                        <Link to="/profile" className="flex items-center justify-center" aria-label="My profile">
+                            <ProfileAvatar
+                                size={28}
+                                className="ring-2 ring-slate-200 hover:ring-[var(--primary)] transition-shadow"
+                                fallback={<User className="h-6 w-6 text-slate-600 hover:text-[var(--primary)] transition-colors" />}
+                            />
                         </Link>
                     </div>
                 </div>

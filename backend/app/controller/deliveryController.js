@@ -12,11 +12,13 @@ import {
   appendTrailPoint,
 } from "../services/firebaseService.js";
 import { withLock } from "../utils/distributedLock.js";
+import { buildKey, invalidate } from "../services/cacheService.js";
 import { roundCurrency } from "../utils/money.js";
 import { shouldThrottle as throttleLocationUpdate } from "../services/delivery/locationThrottleService.js";
 import {
   getDeliveryStats as getDeliveryStatsFromService,
   getDeliveryEarnings as getDeliveryEarningsFromService,
+  getDeliveryWithdrawableBalance,
   getDeliveryCodCashSummary as getDeliveryCodCashSummaryFromService,
 } from "../services/delivery/deliveryEarningsService.js";
 
@@ -391,17 +393,7 @@ export const requestWithdrawal = async (req, res) => {
             10_000,
             async () => {
                 // 1. Calculate current available balance
-                const transactions = await Transaction.find({ user: deliveryBoyId, userModel: 'Delivery' });
-
-                const settledBalance = transactions
-                    .filter(t => t.status === 'Settled')
-                    .reduce((acc, t) => acc + t.amount, 0);
-
-                const pendingPayouts = transactions
-                    .filter(t => (t.status === 'Pending' || t.status === 'Processing') && t.type === 'Withdrawal')
-                    .reduce((acc, t) => acc + Math.abs(t.amount), 0);
-
-                const availableBalance = settledBalance - pendingPayouts;
+                const { availableBalance } = await getDeliveryWithdrawableBalance(deliveryBoyId);
 
                 if (requestAmount > availableBalance) {
                     const err = new Error(`Insufficient balance. Available: ₹${availableBalance}`);
@@ -420,6 +412,9 @@ export const requestWithdrawal = async (req, res) => {
                 });
             },
         );
+
+        // Drop the cached earnings so the balance reflects this request now.
+        await invalidate(buildKey("delivery", "earnings", String(deliveryBoyId)));
 
         return handleResponse(res, 201, "Withdrawal request submitted successfully", withdrawal);
     } catch (error) {

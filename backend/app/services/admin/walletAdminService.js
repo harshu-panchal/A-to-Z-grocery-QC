@@ -2,6 +2,7 @@ import Transaction from "../../models/transaction.js";
 import Notification from "../../models/notification.js";
 import { getAdminFinanceSummary } from "../finance/walletService.js";
 import { getLedgerEntries } from "../finance/ledgerService.js";
+import { buildKey, invalidate } from "../cacheService.js";
 
 export async function getAdminWalletOverview({ page, limit }) {
   const stats = await getAdminFinanceSummary();
@@ -162,7 +163,13 @@ export async function updateWithdrawalStatusById({ id, status, reason }) {
     { $set: set },
     { new: true },
   ).populate("user", "name");
-  if (transaction) return transaction;
+  if (transaction) {
+    if (transaction.userModel === "Delivery") {
+      const riderId = transaction.user?._id || transaction.user;
+      await invalidate(buildKey("delivery", "earnings", String(riderId)));
+    }
+    return transaction;
+  }
 
   const existing = await Transaction.findById(id).select("type status").lean();
   if (!existing) return null;
