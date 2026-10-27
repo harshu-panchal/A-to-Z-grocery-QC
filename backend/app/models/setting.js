@@ -158,6 +158,11 @@ const settingSchema = new mongoose.Schema(
             type: Boolean,
             default: true,
         },
+        // Accept windows in seconds (Admin → Fees & Charges → Order timers).
+        // When one runs out the order is cancelled / the offer moves on.
+        sellerAcceptTimeoutSec: { type: Number, default: 60, min: 15, max: 600 },
+        deliveryAcceptTimeoutSec: { type: Number, default: 60, min: 15, max: 600 },
+        returnPickupAcceptTimeoutSec: { type: Number, default: 60, min: 15, max: 600 },
         productApproval: {
             sellerCreateRequiresApproval: {
                 type: Boolean,

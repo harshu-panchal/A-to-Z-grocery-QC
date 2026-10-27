@@ -32,6 +32,7 @@ import {
 import { distanceMeters } from "../utils/geoUtils.js";
 import {
   fetchAvailableOrdersForDelivery,
+  fetchSkippedOrdersForDelivery,
   fetchSellerOrdersPage,
   getCustomerOrders,
   getOrderWithAccess,
@@ -1044,6 +1045,9 @@ export const acceptReturnPickup = async (req, res) => {
         {
           $set: { returnDeliveryBoy: userId, returnStatus: "return_pickup_assigned" },
           $unset: { returnSearchExpiresAt: 1 },
+          // accepted from "Skipped orders": drop the skip, else the pickup is
+          // hidden from this rider's own task list
+          $pull: { skippedBy: userId },
         },
         { new: true },
       );
@@ -1593,6 +1597,24 @@ export const acceptOrder = async (req, res) => {
     });
 
     return handleResponse(res, 200, "Order accepted successfully", order);
+  } catch (error) {
+    return handleResponse(res, 500, error.message);
+  }
+};
+
+/* ===============================
+   SKIPPED ORDERS (Delivery): accept later
+================================ */
+export const getSkippedOrders = async (req, res) => {
+  try {
+    const { requiresLocation, orders } = await fetchSkippedOrdersForDelivery({
+      userId: req.user.id,
+      requestedLimit: req.query.limit,
+    });
+    if (requiresLocation) {
+      return handleResponse(res, 200, "Update your location to see skipped orders", []);
+    }
+    return handleResponse(res, 200, "Skipped orders fetched", orders);
   } catch (error) {
     return handleResponse(res, 500, error.message);
   }

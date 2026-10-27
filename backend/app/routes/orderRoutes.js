@@ -9,6 +9,7 @@ import {
   getAvailableOrders,
   acceptOrder,
   skipOrder,
+  getSkippedOrders,
   requestReturn,
   getReturnDetails,
   getSellerReturns,
@@ -158,6 +159,12 @@ router.get(
   verifyToken,
   allowRoles("admin", "delivery"),
   getAvailableOrders,
+);
+router.get(
+  "/delivery/skipped",
+  verifyToken,
+  allowRoles("delivery"),
+  getSkippedOrders,
 );
 router.put(
   "/accept/:orderId",

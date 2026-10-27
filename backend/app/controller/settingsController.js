@@ -3,6 +3,7 @@ import Setting from "../models/setting.js";
 import handleResponse from "../utils/helper.js";
 import { buildKey, getOrSet, getTTL, invalidate } from "../services/cacheService.js";
 import { replaceMedia } from "../services/mediaService.js";
+import { applyOrderTimeoutSettings } from "../services/orderTimeoutSettings.js";
 import {
   DEFAULT_PRODUCT_APPROVAL_CONFIG,
   normalizeProductApprovalConfig,
@@ -50,6 +51,9 @@ const ALLOWED_KEYS = [
   "codEnabled",
   "onlineEnabled",
   "lowStockAlertsEnabled",
+  "sellerAcceptTimeoutSec",
+  "deliveryAcceptTimeoutSec",
+  "returnPickupAcceptTimeoutSec",
   "productApproval",
 ];
 
@@ -125,6 +129,9 @@ const updateSettingsSchema = Joi.object({
   codEnabled: Joi.boolean(),
   onlineEnabled: Joi.boolean(),
   lowStockAlertsEnabled: Joi.boolean(),
+  sellerAcceptTimeoutSec: Joi.number().integer().min(15).max(600),
+  deliveryAcceptTimeoutSec: Joi.number().integer().min(15).max(600),
+  returnPickupAcceptTimeoutSec: Joi.number().integer().min(15).max(600),
   productApproval: Joi.object({
     sellerCreateRequiresApproval: Joi.boolean(),
     sellerEditRequiresApproval: Joi.boolean(),
@@ -149,7 +156,7 @@ export const getPublicSettings = async (req, res) => {
       async () => {
         const existing = await Setting.findOne(filter)
           .select(
-            "appName supportEmail supportPhone currencySymbol currencyCode timezone estimatedDeliveryTime logoUrl faviconUrl primaryColor secondaryColor returnDeliveryCommission deliveryPricingMode pricingMode customerBaseDeliveryFee riderBasePayout baseDeliveryCharge baseDistanceCapacityKm incrementalKmSurcharge deliveryPartnerRatePerKm fleetCommissionRatePerKm fixedDeliveryFee handlingFeeStrategy codEnabled onlineEnabled lowStockAlertsEnabled productApproval createdAt",
+            "appName supportEmail supportPhone currencySymbol currencyCode timezone estimatedDeliveryTime logoUrl faviconUrl primaryColor secondaryColor returnDeliveryCommission deliveryPricingMode pricingMode customerBaseDeliveryFee riderBasePayout baseDeliveryCharge baseDistanceCapacityKm incrementalKmSurcharge deliveryPartnerRatePerKm fleetCommissionRatePerKm fixedDeliveryFee handlingFeeStrategy codEnabled onlineEnabled lowStockAlertsEnabled productApproval sellerAcceptTimeoutSec deliveryAcceptTimeoutSec returnPickupAcceptTimeoutSec createdAt",
           )
           .lean();
         return existing || null;
@@ -224,6 +231,8 @@ export const updateSettings = async (req, res) => {
     } else {
       result.productApproval = normalizeProductApprovalConfig(result);
     }
+    // new order timers take effect at once in this process (others within 30s)
+    applyOrderTimeoutSettings(result);
 
     return handleResponse(res, 200, "Settings updated successfully", result);
   } catch (err) {

@@ -14,6 +14,8 @@ import {
 import customerPin from "@/assets/customer-pin.png";
 import deliveryIcon from "@/assets/deliveryIcon.png";
 import storePin from "@/assets/store-pin.png";
+import { useSettings } from "@core/context/SettingsContext";
+import { sellerAcceptWindowText } from "@/shared/utils/orderTimers";
 
 const libraries = ["geometry"];
 
@@ -60,6 +62,8 @@ const LiveTrackingMap = memo(({
   routePolyline,
   onOpenInMaps,
 }) => {
+  const { settings } = useSettings();
+  const acceptWindow = sellerAcceptWindowText(settings);
   const mapRef = useRef(null);
   const [mapInstance, setMapInstance] = useState(null);
   const isSearching = SEARCHING_STATUSES.includes(status?.toLowerCase());
@@ -255,7 +259,7 @@ const LiveTrackingMap = memo(({
           Waiting for seller to accept
         </h3>
         <p className="text-sm text-gray-500 text-center max-w-sm font-medium">
-          The store has up to 60 seconds to confirm. If they don&apos;t, your
+          The store has up to {acceptWindow} to confirm. If they don&apos;t, your
           order will be cancelled automatically.
         </p>
       </div>
