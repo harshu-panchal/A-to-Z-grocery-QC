@@ -6,6 +6,8 @@ import OrderOtp from "../models/orderOtp.js";
 import { verifyOtpAtomic } from "./deliveryOtpService.js";
 import Seller from "../models/seller.js";
 import Delivery from "../models/delivery.js";
+import Wallet from "../models/wallet.js";
+import { roundCurrency } from "../utils/money.js";
 import {
   clearOrderTracking,
   clearRiderPresence,
@@ -68,6 +70,11 @@ function deliveryBroadcastPayloadFromOrder(order, extra = {}) {
     typeof order.address?.address === "string" && order.address.address.trim()
       ? order.address.address.trim()
       : "Customer address";
+  const customerName =
+    order.customer?.name ||
+    order.address?.name ||
+    (typeof order.customer === "object" ? order.customer?.name : "") ||
+    "Customer";
   const meta = order.deliverySearchMeta || {};
   const sid = seller?._id ?? order.seller;
   return {
@@ -75,6 +82,7 @@ function deliveryBroadcastPayloadFromOrder(order, extra = {}) {
     workflowStatus: order.workflowStatus || WORKFLOW_STATUS.DELIVERY_SEARCH,
     sellerId: sid != null ? String(sid) : undefined,
     radiusMeters: meta.radiusMeters ?? INITIAL_DELIVERY_RADIUS_M(),
+    customerName,
     // What the rider is carrying, so they can decide before accepting.
     items: (Array.isArray(order.items) ? order.items : []).slice(0, 10).map((item) => ({
       name: item.name,
@@ -87,6 +95,7 @@ function deliveryBroadcastPayloadFromOrder(order, extra = {}) {
       total: order.pricing?.total ?? 0,
       earnings: order.paymentBreakdown?.riderPayoutTotal ?? order.riderEarnings ?? 0,
       paymentMode: order.paymentMode || null,
+      customerName,
     },
     deliverySearchExpiresAt: order.deliverySearchExpiresAt,
     ...extra,
@@ -336,9 +345,36 @@ export async function deliveryAcceptAtomic(deliveryId, orderId, idempotencyKey) 
   // may take it (the popup is limited the same way; this also covers stale
   // lists / notifications and direct API calls).
   const pending = await Order.findOne({ orderId })
-    .select("seller deliverySearchMeta workflowStatus deliveryBoy")
+    .select("seller deliverySearchMeta workflowStatus deliveryBoy paymentMode payment pricing")
     .lean();
   if (pending && pending.workflowStatus === WORKFLOW_STATUS.DELIVERY_SEARCH && !pending.deliveryBoy) {
+    const isCodOrder =
+      pending.paymentMode === "COD" ||
+      pending.payment?.method === "cod" ||
+      pending.payment?.method === "cash";
+
+    if (isCodOrder && mongoose.connection?.readyState === 1) {
+      try {
+        const [wallet, riderDoc] = await Promise.all([
+          Wallet.findOne({ ownerType: "DELIVERY_PARTNER", ownerId: deliveryOid })
+            .select("cashInHand")
+            .lean(),
+          Delivery.findById(deliveryOid).select("limit").lean(),
+        ]);
+        const currentCash = roundCurrency(wallet?.cashInHand || 0);
+        const maxCashLimit = Number(riderDoc?.limit || 5000);
+        if (currentCash >= maxCashLimit) {
+          const err = new Error(
+            `Cash limit reached (₹${maxCashLimit.toLocaleString()}). Please deposit collected cash with admin to accept more Cash on Delivery (COD) orders.`
+          );
+          err.statusCode = 403;
+          throw err;
+        }
+      } catch (e) {
+        if (e.statusCode === 403) throw e;
+      }
+    }
+
     const store = await Seller.findById(pending.seller).select("location").lean();
     await assertRiderWithinRange(deliveryOid, store?.location, deliverySearchRadiusM(pending), "store");
   }
