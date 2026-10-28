@@ -72,6 +72,9 @@ import "../models/searchIndexFailure.js";
 import "../models/sellerMetrics.js";
 import "../models/stockHistory.js";
 import "../models/pos.js"; // PosOrder, PosCustomer, PosSupplier, ... (in-store billing)
+import "../models/staff.js"; // staff logins created by sellers / admins
+import "../models/staffType.js"; // owner-made quick buttons
+import "../models/staffActivity.js"; // what staff did
 
 // Module-scoped models
 import "../modules/notifications/preference.model.js"; // NotificationPreference
@@ -154,6 +157,11 @@ export const REQUIRED_MODELS = Object.freeze([
   "PosSettings",
   "PosPaymentIntent",
   "PosBatch",
+
+  // Staff accounts (sellers / admins delegate work with limited access)
+  "Staff",
+  "StaffType",
+  "StaffActivity",
 ]);
 
 // ---- 3. Boot-time assertion ----

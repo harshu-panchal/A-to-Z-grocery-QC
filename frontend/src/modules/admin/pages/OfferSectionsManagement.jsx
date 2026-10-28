@@ -64,7 +64,7 @@ const OfferSectionsManagement = () => {
   const { data: sections = [], isLoading, isError: isSectionsError } = useQuery({
     queryKey: OFFER_SECTIONS_QUERY_KEY,
     queryFn: async () => {
-      const res = await adminApi.getOfferSections();
+      const res = await adminApi.getOfferSections({ kind: "offer" });
       const list = res.data.results || res.data.result || res.data;
       return Array.isArray(list) ? list : [];
     },
@@ -188,6 +188,7 @@ const OfferSectionsManagement = () => {
       productIds: formData.productIds,
       order: Number(formData.order) || 0,
       status: formData.status,
+      kind: "offer",
     };
     try {
       if (editingSection) {

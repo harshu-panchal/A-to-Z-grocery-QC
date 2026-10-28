@@ -1,4 +1,5 @@
 import Seller from "../models/seller.js";
+import { toStaffProfile } from "../services/staff/staffProfile.js";
 import Transaction from "../models/transaction.js";
 import { handleResponse, calculateDistance } from "../utils/helper.js";
 import { invalidateSellerName } from "../services/entityNameCache.js";
@@ -168,6 +169,10 @@ export const requestWithdrawal = async (req, res) => {
 ================================ */
 export const getSellerProfile = async (req, res) => {
   try {
+    // Staff only ever see themselves and the shop name, never the owner's details.
+    if (req.staff) {
+      return handleResponse(res, 200, "Seller profile fetched successfully", toStaffProfile(req.staff));
+    }
     const seller = await Seller.findById(req.user.id);
     if (!seller) {
       return handleResponse(res, 404, "Seller not found");

@@ -1,5 +1,6 @@
 import React from 'react';
 import { useAuth } from '@core/context/AuthContext';
+import { useStaffAccess } from '@/modules/staff/staffAccess';
 import {
     HiOutlineLogout,
     HiOutlineUserCircle,
@@ -22,6 +23,7 @@ import { onNotificationNew } from '@core/services/orderSocket';
 
 const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
     const { user, logout, role, token } = useAuth();
+    const { isStaff, staff, canOpen } = useStaffAccess();
     const { settings } = useSettings();
     const navigate = useNavigate();
     const location = useLocation();
@@ -62,7 +64,7 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
         try {
             const sellerMode = isSellerRef.current;
             const adminMode = isAdminRef.current;
-            if (!sellerMode && !adminMode) return;
+            if (isStaff || (!sellerMode && !adminMode)) return;
             const response = sellerMode
                 ? await sellerApi.getNotifications()
                 : await adminApi.getNotifications();
@@ -73,7 +75,7 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
         } catch (error) {
             console.error("Notif Fetch Error:", error);
         }
-    }, []);
+    }, [isStaff]);
 
     // Event-driven refresh: subscribe to `notification:new` for the
     // current admin/seller and refetch on any in-app delta. The 60s
@@ -82,7 +84,7 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
     // the socket. Tab focus also triggers an immediate refresh so a
     // user returning to a backgrounded tab sees a fresh badge.
     React.useEffect(() => {
-        if (!isSeller && !isAdmin) return undefined;
+        if (isStaff || (!isSeller && !isAdmin)) return undefined;
         fetchNotifications();
 
         const getToken = () => token;
@@ -126,7 +128,7 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
             }
             if (typeof offNotification === 'function') offNotification();
         };
-    }, [isSeller, isAdmin, token, fetchNotifications]);
+    }, [isSeller, isAdmin, isStaff, token, fetchNotifications]);
 
     // Handle Click Outside
     React.useEffect(() => {
@@ -201,6 +203,7 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
                     )}
                 </NavLink>
 
+                {(!isStaff || canOpen(`/${isSeller ? 'seller' : 'admin'}/products`)) && (
                 <form onSubmit={handleSearchSubmit} className="relative w-full md:w-[380px] group hidden md:block">
                     <HiOutlineSearch className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-primary transition-all duration-300" />
                     <input
@@ -211,9 +214,11 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
                         className="w-full h-9 pl-10 pr-4 bg-slate-100/70 border border-transparent rounded-full text-sm font-medium text-slate-700 placeholder:text-slate-400 focus:bg-white focus:ring-2 focus:ring-primary/20 focus:border-primary/30 transition-all duration-300 outline-none"
                     />
                 </form>
+                )}
             </div>
 
             <div className="flex items-center space-x-4">
+                {!isStaff && (
                 <div className="relative" ref={notificationRef}>
                     <button
                         onClick={() => setShowNotifications(!showNotifications)}
@@ -241,6 +246,7 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
                         )}
                     </AnimatePresence>
                 </div>
+                )}
 
                 <div className="h-8 w-px bg-slate-100 mx-1"></div>
                 <div className="relative" ref={profileMenuRef}>
@@ -258,7 +264,7 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
                         </div>
                         <div className="hidden sm:block text-left">
                             <p className="text-xs font-bold text-slate-900 leading-tight">{user?.name || 'Demo User'}</p>
-                            <p className="text-[9px] text-slate-400 font-black uppercase tracking-wider">{user?.role || 'Member'}</p>
+                            <p className="text-[9px] text-slate-400 font-black uppercase tracking-wider">{isStaff ? (staff?.jobTitle || 'Staff') : (user?.role || 'Member')}</p>
                         </div>
                         <ChevronDown className={cn("h-3.5 w-3.5 text-slate-400 transition-transform hidden sm:block", showProfileMenu && "rotate-180")} />
                     </button>
@@ -275,7 +281,9 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
                                 <button
                                     onClick={() => {
                                         setShowProfileMenu(false);
-                                        if (location.pathname.startsWith('/admin')) {
+                                        if (isStaff) {
+                                            navigate(`/${role}/my-account`);
+                                        } else if (location.pathname.startsWith('/admin')) {
                                             navigate('/admin/profile');
                                         } else if (location.pathname.startsWith('/seller')) {
                                             navigate('/seller/profile');
@@ -288,7 +296,7 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
                                     className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                                 >
                                     <HiOutlineUserCircle className="h-4 w-4 text-slate-400" />
-                                    My Profile
+                                    {isStaff ? 'My Account' : 'My Profile'}
                                 </button>
                                 <div className="my-1 border-t border-slate-100" />
                                 <button

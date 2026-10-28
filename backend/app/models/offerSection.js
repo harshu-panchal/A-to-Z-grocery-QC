@@ -38,6 +38,9 @@ const offerSectionSchema = new mongoose.Schema(
       enum: ["active", "inactive"],
       default: "active",
     },
+    // Which admin page owns this entry: "offer" (Offer Sections, home page)
+    // or "store" (Shop by Store). Unset on entries saved before this field.
+    kind: { type: String, enum: ["offer", "store"] },
   },
   { timestamps: true }
 );

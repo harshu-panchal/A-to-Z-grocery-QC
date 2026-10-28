@@ -58,7 +58,7 @@ const ShopByStoreManagement = () => {
   const { data: stores = [], isLoading, isError } = useQuery({
     queryKey: SHOP_BY_STORE_QUERY_KEY,
     queryFn: async () => {
-      const res = await adminApi.getOfferSections();
+      const res = await adminApi.getOfferSections({ kind: "store" });
       const list = res.data.results || res.data.result || res.data;
       return Array.isArray(list) ? list : [];
     },
@@ -159,6 +159,7 @@ const ShopByStoreManagement = () => {
       productIds: formData.productIds,
       order: Number(formData.order) || 0,
       status: formData.status,
+      kind: "store",
     };
     try {
       if (editingStore) {

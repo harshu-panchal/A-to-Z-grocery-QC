@@ -11,6 +11,7 @@ import { useCart } from "../../context/CartContext";
 import { useSettings } from "@core/context/SettingsContext";
 import { applyCloudinaryTransform } from "@/core/utils/imageUtils";
 import { onlyInStock } from "../../utils/stock";
+import ExperienceBannerCarousel from "../experience/ExperienceBannerCarousel";
 
 const savingPct = (p) => {
   const mrp = Number(p.originalPrice ?? p.mrp) || 0;
@@ -99,16 +100,7 @@ const AtzHome = ({ categories, activeCategory, onCategorySelect, banners, produc
       {banners === null && <div className="gaming-banner loading" aria-hidden="true" />}
       {banners?.length > 0 && (
         <section className="gaming-banner" aria-label="Offers">
-          <div className="banner-track">
-            {banners.map((b, i) => (
-              <img
-                key={`${i}-${b.imageUrl}`}
-                src={applyCloudinaryTransform(b.imageUrl, "f_auto,q_auto,c_scale,w_824")}
-                alt={b.title || "Offer"}
-                loading={i === 0 ? "eager" : "lazy"}
-              />
-            ))}
-          </div>
+          <ExperienceBannerCarousel section={{ title: "Offers" }} items={banners} bare />
           <span className="ad-label">AD</span>
         </section>
       )}

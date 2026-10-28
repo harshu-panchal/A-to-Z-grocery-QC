@@ -89,6 +89,7 @@ const posOrderSchema = new Schema(
     channel: { type: String, enum: ["admin", "seller"], required: true, index: true },
     invoiceNumber: { type: String, required: true },
     createdBy: { type: ObjectId, required: true },
+    createdByName: { type: String, trim: true, default: "" }, // staff who made the bill (blank = the owner)
     customer: { type: ObjectId, ref: "PosCustomer", default: null },
     customerSnapshot: {
       name: { type: String, default: "Walk-in Customer" },

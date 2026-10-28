@@ -1,9 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
 import { Tag, Sparkles, Clock, ArrowRight } from "lucide-react";
 import { motion } from "framer-motion";
+import { useNavigate } from "react-router-dom";
+import { toast } from "sonner";
 import { customerApi } from "../services/customerApi";
 
 const OffersPage = () => {
+  const navigate = useNavigate();
   // Perf audit Phase 8: migrated to React Query.
   const { data: legacyOffers = [], isLoading } = useQuery({
     queryKey: ["customer", "offers"],
@@ -27,6 +30,23 @@ const OffersPage = () => {
     if (icon === "clock") return <Clock className="text-white" size={32} />;
     if (icon === "tag") return <Tag className="text-white" size={32} />;
     return <Sparkles className="text-white" size={32} />;
+  };
+
+  // Tapping a card opens what the admin attached to the offer: its first
+  // category, else its first product, else copies the code.
+  const idOf = (v) => (v && typeof v === "object" ? v._id : v);
+  const offerAction = (offer) => {
+    const categoryId = idOf(offer.categoryIds?.[0]);
+    if (categoryId) return () => navigate(`/category/${categoryId}`);
+    const productId = idOf(offer.productIds?.[0]);
+    if (productId) return () => navigate(`/product/${productId}`);
+    if (offer.code) {
+      return () =>
+        navigator.clipboard?.writeText(offer.code)
+          .then(() => toast.success(`Code ${offer.code} copied`))
+          .catch(() => {});
+    }
+    return undefined;
   };
 
   const sortedLegacyOffers = [...legacyOffers]
@@ -62,10 +82,14 @@ const OffersPage = () => {
             Coupon deals
           </h3>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sortedLegacyOffers.map((offer) => (
+            {sortedLegacyOffers.map((offer) => {
+              const open = offerAction(offer);
+              return (
               <div
                 key={offer._id}
-                className="relative overflow-hidden rounded-3xl group cursor-pointer shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-2"
+                onClick={open}
+                role={open ? "button" : undefined}
+                className={`relative overflow-hidden rounded-3xl group shadow-lg hover:shadow-2xl transition-all duration-500 hover:-translate-y-2 ${open ? "cursor-pointer" : ""}`}
               >
                 <div
                   className={`${styleToBg[offer.style] || styleToBg.blue
@@ -84,23 +108,28 @@ const OffersPage = () => {
                   </div>
                   <div className="flex items-center justify-between mt-auto">
                     <div className="flex flex-col items-end gap-2">
-                      <div className="bg-black/20 px-4 py-2 rounded-xl font-mono font-bold tracking-widest text-lg">
-                        {offer.code || "AUTO-APPLIED"}
-                      </div>
+                      {offer.code && (
+                        <div className="bg-black/20 px-4 py-2 rounded-xl font-mono font-bold tracking-widest text-lg">
+                          {offer.code}
+                        </div>
+                      )}
                       {offer.appliesOnOrderNumber && (
                         <span className="text-xs font-bold text-white/80">
                           Applies on order #{offer.appliesOnOrderNumber}
                         </span>
                       )}
                     </div>
-                    <button className="h-12 w-12 bg-white rounded-full flex items-center justify-center text-primary transform transition-transform group-hover:rotate-[-45deg]">
-                      <ArrowRight size={24} />
-                    </button>
+                    {open && (
+                      <span aria-hidden="true" className="h-12 w-12 bg-white rounded-full flex items-center justify-center text-primary transform transition-transform group-hover:rotate-[-45deg]">
+                        <ArrowRight size={24} />
+                      </span>
+                    )}
                   </div>
                 </div>
                 <div className="absolute top-[-10%] right-[-10%] w-40 h-40 bg-white/10 rounded-full blur-3xl group-hover:bg-white/20 transition-all duration-700" />
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

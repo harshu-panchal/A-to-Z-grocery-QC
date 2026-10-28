@@ -14,6 +14,7 @@ import {
   Receipt,
   CircleDollarSign,
   Users,
+  UserCog,
   HelpCircle,
   ScrollText,
   ClipboardList,
@@ -86,6 +87,8 @@ const SupportTickets = React.lazy(() => import("../pages/SupportTickets"));
 const ReviewModeration = React.lazy(() => import("../pages/ReviewModeration"));
 const FleetTracking = React.lazy(() => import("../pages/FleetTracking"));
 const CouponManagement = React.lazy(() => import("../pages/CouponManagement"));
+const StaffManagement = React.lazy(() => import("../../staff/pages/StaffManagement"));
+const StaffAccount = React.lazy(() => import("../../staff/pages/StaffAccount"));
 const ContentManager = React.lazy(() => import("../pages/ContentManager"));
 const HeroCategoriesPerPage = React.lazy(() => import("../pages/HeroCategoriesPerPage"));
 const NotificationComposer = React.lazy(
@@ -137,6 +140,7 @@ const navItems = [
       { label: "Hero & categories per page", path: "/admin/hero-categories" },
       { label: "Send Notifications", path: "/admin/notifications" },
       { label: "Coupons & Promos", path: "/admin/coupons" },
+      { label: "Offers Page", path: "/admin/offers" },
       { label: "Offer Sections", path: "/admin/offer-sections" },
       { label: "Shop by Store", path: "/admin/shop-by-store" },
     ],
@@ -235,6 +239,7 @@ const navItems = [
     color: "slate",
     group: "System",
   },
+  { label: "Staff Management", path: "/admin/staff", icon: UserCog, color: "indigo", group: "System" },
   { label: "My Profile", path: "/admin/profile", icon: User, color: "indigo", group: "System" },
   { label: "System Settings", path: "/admin/env", icon: Terminal, color: "dark", group: "System" },
 ];
@@ -337,6 +342,8 @@ const AdminRoutes = () => {
       <Routes>
         <Route path="/" element={<Dashboard />} />
         <Route path="/profile" element={<AdminProfile />} />
+        <Route path="/staff" element={<StaffManagement portal="admin" />} />
+        <Route path="/my-account" element={<StaffAccount />} />
         {/* Lazy routes for new sections */}
         <Route
           path="/categories"

@@ -17,9 +17,12 @@ import {
   HiOutlineMapPin,
   HiOutlineQuestionMarkCircle,
   HiOutlineCalculator,
+  HiOutlineUsers,
 } from "react-icons/hi2";
 
 const Dashboard = React.lazy(() => import("../pages/Dashboard"));
+const StaffManagement = React.lazy(() => import("../../staff/pages/StaffManagement"));
+const StaffAccount = React.lazy(() => import("../../staff/pages/StaffAccount"));
 const ProductManagement = React.lazy(
   () => import("../pages/ProductManagement"),
 );
@@ -70,6 +73,7 @@ const navItems = [
     icon: HiOutlineCurrencyDollar,
     group: "Finance",
   },
+  { label: "Staff Management", path: "/seller/staff", icon: HiOutlineUsers, group: "Account" },
   { label: "Support", path: "/seller/support", icon: HiOutlineQuestionMarkCircle, group: "Account" },
   { label: "Profile", path: "/seller/profile", icon: HiOutlineUser, group: "Account" },
 ];
@@ -116,6 +120,8 @@ const SellerRoutes = () => {
         <Route path="/earnings" element={<Earnings />} />
         <Route path="/withdrawals" element={<Withdrawals />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/staff" element={<StaffManagement portal="seller" />} />
+        <Route path="/my-account" element={<StaffAccount />} />
         <Route path="/support" element={<SellerSupportPage />} />
         <Route path="/about" element={<SellerAboutPage />} />
         <Route path="/terms" element={<SellerTermsPage />} />

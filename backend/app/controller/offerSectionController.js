@@ -7,6 +7,13 @@ import {
 import { buildKey, getOrSet, getTTL, invalidate } from "../services/cacheService.js";
 import { getApprovedOrLegacyFilter } from "../services/productModerationService.js";
 
+// Offer Sections and Shop by Store share this collection; `kind` says which
+// page an entry belongs to. Entries saved before `kind` existed have none and
+// keep showing in both places until an admin saves them from one page.
+const KINDS = ["offer", "store"];
+const matchesKind = (section, kind) =>
+  !KINDS.includes(kind) || !section.kind || section.kind === kind;
+
 export const getPublicOfferSections = async (req, res) => {
   try {
     const coords = parseCustomerCoordinates(req.query || {});
@@ -74,7 +81,13 @@ export const getPublicOfferSections = async (req, res) => {
       getTTL("homepage"),
     );
 
-    return handleResponse(res, 200, "Offer sections fetched", filteredSections);
+    const { kind } = req.query;
+    return handleResponse(
+      res,
+      200,
+      "Offer sections fetched",
+      filteredSections.filter((section) => matchesKind(section, kind)),
+    );
   } catch (error) {
     return handleResponse(res, 500, error.message);
   }
@@ -82,9 +95,10 @@ export const getPublicOfferSections = async (req, res) => {
 
 export const getAdminOfferSections = async (req, res) => {
   try {
-    const { status } = req.query;
+    const { status, kind } = req.query;
     const query = {};
     if (status && ["active", "inactive"].includes(status)) query.status = status;
+    if (KINDS.includes(kind)) query.kind = { $in: [kind, null] };
 
     const sections = await OfferSection.find(query)
       .sort({ order: 1, createdAt: 1 })
@@ -110,6 +124,7 @@ export const createOfferSection = async (req, res) => {
       productIds = [],
       order,
       status,
+      kind,
     } = req.body;
 
     if (!title || !title.trim()) {
@@ -130,6 +145,7 @@ export const createOfferSection = async (req, res) => {
       productIds: Array.isArray(productIds) ? productIds : [],
       order: typeof order === "number" ? order : count,
       status: status || "active",
+      kind: KINDS.includes(kind) ? kind : "offer",
     });
 
     // Audit fix: offer sections never invalidated their own public cache
@@ -164,6 +180,7 @@ export const updateOfferSection = async (req, res) => {
     if (Array.isArray(payload.productIds)) section.productIds = payload.productIds;
     if (payload.order !== undefined) section.order = payload.order;
     if (payload.status !== undefined) section.status = payload.status;
+    if (KINDS.includes(payload.kind)) section.kind = payload.kind;
 
     await section.save();
     await invalidate("cache:offersections:public:*");

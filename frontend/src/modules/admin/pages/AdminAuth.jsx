@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@core/context/AuthContext';
 import { useSettings } from '@core/context/SettingsContext';
 import {
@@ -116,6 +116,7 @@ const AdminAuth = () => {
 
     return (
         <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+            <Link to="/staff/login" className="absolute right-5 top-5 z-30 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-500 transition-colors hover:bg-white hover:text-primary">Staff login →</Link>
             {/* Background Decorations */}
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
                 <div className="absolute -left-[10%] -top-[20%] h-[800px] w-[800px] rounded-full bg-primary/10 opacity-40 blur-[120px]"></div>

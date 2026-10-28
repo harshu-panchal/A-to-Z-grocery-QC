@@ -6,6 +6,8 @@ import Button from "@shared/components/ui/Button";
 import Modal from "@shared/components/ui/Modal";
 import { cn } from "@/lib/utils";
 import { apiError } from "../posApi";
+import { useStaffAccess } from "@/modules/staff/staffAccess";
+import { useFillViewport } from "../useFillViewport";
 import {
   rupees, round2, WALK_IN, lineFromRow, lineTotal, billTotals, toApiLine, linesFromOrder,
   storageKey, loadLocal, saveLocal,
@@ -172,6 +174,12 @@ export default function PosTerminal({ portal }) {
   }));
 
   const totals = useMemo(() => billTotals(active?.items || [], active?.billDiscount), [active]);
+  // Staff only get the extras the owner switched on; owners always have them.
+  const staffAccess = useStaffAccess();
+  const canSeeCost = staffAccess.special("pos.cost");
+  const canQuickAdd = staffAccess.special("pos.quickadd");
+  const rootRef = useRef(null);
+  const fill = useFillViewport(rootRef);
   const [showProfit, setShowProfit] = useState(false);
   // phones show either the item grid or the bill
   const [mobileView, setMobileView] = useState("items");
@@ -211,13 +219,17 @@ export default function PosTerminal({ portal }) {
         setQuery(code);
         toast.info("Several items match this code; pick one");
       } else {
-        toast.info("No item with this barcode — add it now");
-        setQuickAdd({ open: true, barcode: code });
+        if (canQuickAdd) {
+          toast.info("No item with this barcode — add it now");
+          setQuickAdd({ open: true, barcode: code });
+        } else {
+          toast.error("No item with this barcode");
+        }
       }
     } catch (err) {
       toast.error(apiError(err));
     }
-  }, [lookupCode, addRow, settings.bill?.scale]);
+  }, [lookupCode, addRow, settings.bill?.scale, canQuickAdd]);
   useBarcodeWedge(handleCode, !scannerOpen && !quickAdd.open);
 
   const onSearchKey = (e) => {
@@ -264,10 +276,14 @@ export default function PosTerminal({ portal }) {
 
   // ------------------------------------------------------------- render
   return (
-    <div className="-m-4 flex min-h-[calc(100vh-64px)] flex-col bg-slate-50 md:-m-6 lg:flex-row">
-      {/* ---------------- catalogue ---------------- */}
-      <section className={cn("min-w-0 flex-1 flex-col border-slate-200 lg:flex lg:border-r", mobileView === "items" ? "flex" : "hidden")}>
-        <div className="sticky top-0 z-10 space-y-3 border-b border-slate-200 bg-white p-3">
+    <div
+      ref={rootRef}
+      style={fill ? { height: fill.height, paddingTop: fill.shiftTop || undefined } : { minHeight: "calc(100vh - 64px)" }}
+      className="-m-4 flex flex-col overflow-hidden bg-slate-50 md:-m-6 lg:flex-row"
+    >
+      {/* ---------------- catalogue: search stays on top, the items scroll ---------------- */}
+      <section className={cn("min-h-0 min-w-0 flex-1 flex-col border-slate-200 lg:flex lg:border-r", mobileView === "items" ? "flex" : "hidden")}>
+        <div className="shrink-0 space-y-3 border-b border-slate-200 bg-white p-3">
           <div className="flex gap-2">
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -282,7 +298,7 @@ export default function PosTerminal({ portal }) {
               />
             </div>
             <Button variant="outline" className="h-11" onClick={() => setScannerOpen(true)} title="Scan with camera"><ScanLine size={18} /></Button>
-            <Button variant="outline" className="h-11" onClick={() => setQuickAdd({ open: true, barcode: "" })} title="Quick add item"><PackagePlus size={18} /></Button>
+            {canQuickAdd && <Button variant="outline" className="h-11" onClick={() => setQuickAdd({ open: true, barcode: "" })} title="Quick add item"><PackagePlus size={18} /></Button>}
           </div>
           {portal === "admin" && (
             <select className={cn(inputCls, "h-9")} value={sellerFilter} onChange={(e) => setSellerFilter(e.target.value)}>
@@ -292,12 +308,12 @@ export default function PosTerminal({ portal }) {
           )}
         </div>
         {(!online || queued > 0) && (
-          <div className={cn("flex items-center justify-between gap-2 px-3 py-2 text-xs font-semibold", online ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-700")}>
+          <div className={cn("flex shrink-0 items-center justify-between gap-2 px-3 py-2 text-xs font-semibold", online ? "bg-amber-50 text-amber-800" : "bg-red-50 text-red-700")}>
             <span>{online ? "" : "Offline — billing continues; bills are saved on this device. "}{queued > 0 ? `${queued} bill(s) waiting to upload.` : ""}</span>
             {queued > 0 && online && <button type="button" className="underline" onClick={() => syncNow()}>Upload now</button>}
           </div>
         )}
-        <div className="grid flex-1 auto-rows-max grid-cols-2 gap-2 overflow-y-auto p-3 sm:grid-cols-3 xl:grid-cols-4">
+        <div data-lenis-prevent className="grid min-h-0 flex-1 auto-rows-max grid-cols-2 gap-2 overflow-y-auto overscroll-contain p-3 sm:grid-cols-3 xl:grid-cols-4">
           {results.map((r) => (
             <button
               key={`${r.productId}-${r.variantSku}`}
@@ -325,12 +341,12 @@ export default function PosTerminal({ portal }) {
           ))}
           {!results.length && !searching && (
             <div className="col-span-full py-16 text-center text-sm text-slate-500">
-              No items found. <button type="button" className="font-semibold text-primary underline" onClick={() => setQuickAdd({ open: true, barcode: "" })}>Quick add one</button>
+              No items found.{canQuickAdd && <> <button type="button" className="font-semibold text-primary underline" onClick={() => setQuickAdd({ open: true, barcode: "" })}>Quick add one</button></>}
             </div>
           )}
         </div>
         {active?.items.length > 0 && (
-          <button type="button" onClick={() => setMobileView("bill")} className="sticky bottom-16 mx-3 mb-3 flex items-center justify-between rounded-xl bg-primary px-4 py-3 text-white shadow-lg lg:hidden">
+          <button type="button" onClick={() => setMobileView("bill")} className="mx-3 mb-3 flex shrink-0 items-center justify-between rounded-xl bg-primary px-4 py-3 text-white shadow-lg lg:hidden">
             <span className="text-sm font-semibold">{round2(totals.itemCount)} item(s) in bill</span>
             <span className="text-base font-bold">{rupees(totals.total)} →</span>
           </button>
@@ -338,9 +354,9 @@ export default function PosTerminal({ portal }) {
       </section>
 
       {/* ---------------- bill ---------------- */}
-      <section className={cn("w-full flex-col bg-white lg:flex lg:w-[440px] xl:w-[480px]", mobileView === "bill" ? "flex" : "hidden")}>
-        <button type="button" className="flex items-center gap-1 border-b border-slate-200 px-3 py-2 text-sm font-semibold text-primary lg:hidden" onClick={() => setMobileView("items")}>← Add more items</button>
-        <div className="flex items-center gap-1 overflow-x-auto border-b border-slate-200 px-2 pt-2">
+      <section className={cn("min-h-0 w-full flex-1 flex-col bg-white lg:flex lg:w-[440px] lg:flex-none xl:w-[480px]", mobileView === "bill" ? "flex" : "hidden")}>
+        <button type="button" className="flex shrink-0 items-center gap-1 border-b border-slate-200 px-3 py-2 text-sm font-semibold text-primary lg:hidden" onClick={() => setMobileView("items")}>← Add more items</button>
+        <div className="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-200 px-2 pt-2">
           {bills.map((b) => (
             <div key={b.id} className={cn("group flex shrink-0 items-center gap-1 rounded-t-lg border border-b-0 px-3 py-1.5 text-sm", b.id === active?.id ? "border-slate-200 bg-white font-semibold text-slate-900" : "border-transparent bg-slate-100 text-slate-500")}>
               <button type="button" onClick={() => setActiveId(b.id)}>{b.name}{b.items.length ? ` (${b.items.length})` : ""}</button>
@@ -350,7 +366,7 @@ export default function PosTerminal({ portal }) {
           <button type="button" className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100" onClick={() => addTab()} title="New bill (hold current)"><Plus size={16} /></button>
         </div>
 
-        <div className="space-y-2 border-b border-slate-100 p-3">
+        <div className="shrink-0 space-y-2 border-b border-slate-100 p-3">
           {active?.editOrderId && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">Editing a saved bill — stock is adjusted when you update.</p>}
           {active?.quotationId && <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700">Billing from a quotation.</p>}
           <CustomerPicker api={api} value={active?.customer} onChange={(c) => updateActive((b) => ({ ...b, customer: c?._id === WALK_IN ? null : c }))} />
@@ -361,7 +377,7 @@ export default function PosTerminal({ portal }) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
+        <div data-lenis-prevent className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {!active?.items.length && (
             <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-sm text-slate-400">
               <ShoppingCart size={36} />
@@ -408,7 +424,8 @@ export default function PosTerminal({ portal }) {
           ))}
         </div>
 
-        <div className="space-y-2 border-t border-slate-200 bg-slate-50 p-3 text-sm">
+        {/* totals + Pay stay pinned at the bottom, whatever the length of the bill */}
+        <div data-lenis-prevent className="max-h-[60%] shrink-0 space-y-2 overflow-y-auto border-t border-slate-200 bg-slate-50 p-3 text-sm shadow-[0_-6px_12px_-8px_rgba(15,23,42,0.18)]">
           <div className="flex justify-between text-slate-600"><span>Items</span><span>{round2(totals.itemCount)}</span></div>
           <div className="flex justify-between text-slate-600"><span>Subtotal</span><span>{rupees(totals.subtotal)}</span></div>
           <div className="flex items-center justify-between text-slate-600">
@@ -425,7 +442,7 @@ export default function PosTerminal({ portal }) {
               <p className="text-3xl font-black text-slate-900">{rupees(totals.total)}</p>
               {totals.savings > 0 && <p className="text-xs font-semibold text-emerald-700">Customer saves {rupees(totals.savings)}</p>}
             </div>
-            <button type="button" className={cn("rounded-lg p-2", showProfit ? "bg-emerald-100 text-emerald-700" : "text-slate-400 hover:bg-slate-100")} onClick={() => setShowProfit((s) => !s)} title="Show profit"><TrendingUp size={18} /></button>
+            {canSeeCost && <button type="button" className={cn("rounded-lg p-2", showProfit ? "bg-emerald-100 text-emerald-700" : "text-slate-400 hover:bg-slate-100")} onClick={() => setShowProfit((s) => !s)} title="Show profit"><TrendingUp size={18} /></button>}
           </div>
           <div className="grid grid-cols-4 gap-2 pt-1">
             <Button variant="outline" onClick={previewReceipt} title="Print estimate"><Printer size={16} /></Button>

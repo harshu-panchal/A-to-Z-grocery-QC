@@ -6,6 +6,7 @@ import handleResponse from "../utils/helper.js";
 import mongoose from "mongoose";
 import { buildKey, getOrSet, getTTL, invalidate } from "../services/cacheService.js";
 import { uploadToCloudinary } from "../services/mediaService.js";
+import { normalizeBannerItems, activeBanners } from "../services/bannerItems.js";
 
 /* ===============================
    Helpers
@@ -58,7 +59,7 @@ const validateBasePayload = async (body) => {
     headerId: headerId || null,
     displayType,
     title: title?.trim() || "",
-    order: order ?? 0,
+    order: order === undefined || order === null || order === "" ? undefined : Number(order),
     status: status || "active",
     config,
   };
@@ -72,31 +73,33 @@ const normalizeUrl = (value) => {
   return normalized;
 };
 
+// Layout numbers from the admin form: whole numbers within what the
+// storefront can lay out.
+const clampInt = (value, min, max, fallback) => {
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+};
+const MAX_ROWS = 10;
+const MAX_TILE_COLUMNS = 8; // category / subcategory tiles
+const MAX_PRODUCT_COLUMNS = 6; // product grid on desktop
+
 const validateAndNormalizeConfig = async (displayType, config = {}) => {
   const normalized = {};
 
   if (displayType === "banners") {
-    const items = Array.isArray(config.items) ? config.items : [];
     normalized.banners = {
-      items: items
-        .filter((b) => b && b.imageUrl)
-        .map((b) => ({
-          imageUrl: b.imageUrl,
-          title: b.title,
-          subtitle: b.subtitle,
-          linkType: b.linkType || "none",
-          linkValue: b.linkValue || "",
-          status: b.status || "active",
-        })),
+      items: await normalizeBannerItems(config.items, { min: 1 }),
     };
     return normalized;
   }
 
   if (displayType === "categories") {
-    const maxItems = Number(config.maxItems) || undefined;
-    const rows = Number(config.rows) || 1;
+    const maxItems = config.maxItems ? clampInt(config.maxItems, 1, 100, undefined) : undefined;
+    const rows = clampInt(config.rows, 1, MAX_ROWS, 1);
+    const columns = clampInt(config.columns, 1, MAX_TILE_COLUMNS, 4);
     const categoryIds = Array.isArray(config.categoryIds)
-      ? config.categoryIds.filter(Boolean)
+      ? [...new Set(config.categoryIds.filter(Boolean).map(String))]
       : [];
 
     if (!categoryIds.length) {
@@ -108,25 +111,28 @@ const validateAndNormalizeConfig = async (displayType, config = {}) => {
       type: "category",
     }).select("_id");
 
-    if (!categories.length) {
+    if (categories.length !== categoryIds.length) {
       throw new Error("Provided categoryIds are invalid");
     }
 
+    // Keep the admin's pick order (the storefront shows them in this order).
     normalized.categories = {
       maxItems,
-      categoryIds: categories.map((c) => c._id),
-      rows: rows < 1 ? 1 : rows,
+      categoryIds,
+      rows,
+      columns,
     };
     return normalized;
   }
 
   if (displayType === "subcategories") {
-    const rows = Number(config.rows) || 1;
+    const rows = clampInt(config.rows, 1, MAX_ROWS, 1);
+    const columns = clampInt(config.columns, 1, MAX_TILE_COLUMNS, 4);
     const categoryIds = Array.isArray(config.categoryIds)
-      ? config.categoryIds.filter(Boolean)
+      ? [...new Set(config.categoryIds.filter(Boolean).map(String))]
       : [];
     const subcategoryIds = Array.isArray(config.subcategoryIds)
-      ? config.subcategoryIds.filter(Boolean)
+      ? [...new Set(config.subcategoryIds.filter(Boolean).map(String))]
       : [];
 
     if (!categoryIds.length || !subcategoryIds.length) {
@@ -140,23 +146,29 @@ const validateAndNormalizeConfig = async (displayType, config = {}) => {
     const subcategories = await Category.find({
       _id: { $in: subcategoryIds },
       type: "subcategory",
-    }).select("_id");
+    }).select("_id parentId");
 
-    if (!categories.length || !subcategories.length) {
+    const chosenCategories = new Set(categories.map((c) => String(c._id)));
+    if (
+      categories.length !== categoryIds.length ||
+      subcategories.length !== subcategoryIds.length ||
+      subcategories.some((s) => !chosenCategories.has(String(s.parentId)))
+    ) {
       throw new Error("Provided categoryIds or subcategoryIds are invalid");
     }
 
     normalized.subcategories = {
-      categoryIds: categories.map((c) => c._id),
-      subcategoryIds: subcategories.map((s) => s._id),
-      rows: rows < 1 ? 1 : rows,
+      categoryIds,
+      subcategoryIds,
+      rows,
+      columns,
     };
     return normalized;
   }
 
   if (displayType === "products") {
-    const rows = Number(config.rows) || 1;
-    const columns = Number(config.columns) || 2;
+    const rows = clampInt(config.rows, 1, MAX_ROWS, 1);
+    const columns = clampInt(config.columns, 1, MAX_PRODUCT_COLUMNS, 2);
     const singleRowScrollable = Boolean(config.singleRowScrollable);
 
     const categoryIds = Array.isArray(config.categoryIds)
@@ -169,8 +181,8 @@ const validateAndNormalizeConfig = async (displayType, config = {}) => {
       ? config.productIds.filter(Boolean)
       : [];
 
-    const normalizedRows = singleRowScrollable ? 1 : rows < 1 ? 1 : rows;
-    const normalizedColumns = columns < 1 ? 1 : columns;
+    const normalizedRows = singleRowScrollable ? 1 : rows;
+    const normalizedColumns = columns;
 
     const categories = categoryIds.length
       ? await Category.find({ _id: { $in: categoryIds }, type: "category" }).select("_id")
@@ -184,6 +196,11 @@ const validateAndNormalizeConfig = async (displayType, config = {}) => {
     const products = productIds.length
       ? await Product.find({ _id: { $in: productIds } }).select("_id")
       : [];
+
+    // A section with nothing chosen renders nothing on the storefront.
+    if (!categories.length && !subcategories.length && !products.length) {
+      throw new Error("Choose at least one product, category or subcategory");
+    }
 
     normalized.products = {
       categoryIds: categories.map((c) => c._id),
@@ -270,7 +287,7 @@ export const updateExperienceSection = async (req, res) => {
     existing.headerId = base.headerId;
     existing.displayType = base.displayType;
     existing.title = base.title;
-    existing.order = base.order;
+    existing.order = base.order ?? existing.order;
     existing.status = base.status;
     existing.config = config;
 
@@ -335,8 +352,7 @@ export const reorderExperienceSections = async (req, res) => {
     return handleResponse(res, 200, "Sections reordered");
   } catch (error) {
     console.error("Error while reordering experience sections:", error);
-    // Fail gracefully so the admin UI doesn't break on partial reorder issues
-    return handleResponse(res, 200, "Sections reordered (best-effort)");
+    return handleResponse(res, 500, "Failed to reorder sections");
   }
 };
 
@@ -373,7 +389,24 @@ export const getPublicExperienceSections = async (req, res) => {
       getTTL("homepage"),
     );
 
-    return handleResponse(res, 200, "Experience sections fetched", sections);
+    const visible = sections
+      .map((section) =>
+        section.displayType === "banners"
+          ? {
+              ...section,
+              config: {
+                ...section.config,
+                banners: { items: activeBanners(section.config?.banners?.items) },
+              },
+            }
+          : section,
+      )
+      .filter(
+        (section) =>
+          section.displayType !== "banners" || section.config.banners.items.length > 0,
+      );
+
+    return handleResponse(res, 200, "Experience sections fetched", visible);
   } catch (error) {
     return handleResponse(res, 500, error.message);
   }
@@ -450,7 +483,7 @@ export const getPublicHeroConfig = async (req, res) => {
 
     const payload = config
       ? {
-          banners: config.banners || { items: [] },
+          banners: { items: activeBanners(config.banners?.items) },
           categoryIds: config.categoryIds || [],
         }
       : { banners: { items: [] }, categoryIds: [] };
@@ -508,18 +541,7 @@ export const upsertHeroConfig = async (req, res) => {
       }
     }
 
-    const bannerItems = Array.isArray(banners?.items)
-      ? banners.items
-        .filter((b) => b && b.imageUrl)
-        .map((b) => ({
-          imageUrl: b.imageUrl,
-          title: b.title || "",
-          subtitle: b.subtitle || "",
-          linkType: b.linkType || "none",
-          linkValue: b.linkValue || "",
-          status: b.status || "active",
-        }))
-      : [];
+    const bannerItems = await normalizeBannerItems(banners?.items);
 
     const ids = Array.isArray(categoryIds) ? categoryIds.filter(Boolean) : [];
 
@@ -542,6 +564,6 @@ export const upsertHeroConfig = async (req, res) => {
 
     return handleResponse(res, 200, "Hero config saved", config);
   } catch (error) {
-    return handleResponse(res, 500, error.message);
+    return handleResponse(res, error.statusCode || 500, error.message);
   }
 };

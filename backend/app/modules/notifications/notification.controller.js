@@ -512,6 +512,8 @@ export const broadcastNotification = async (req, res) => {
         data: {
           audience,
           deepLink,
+          // The push sender and the app's tap handlers read `link`.
+          link: deepLink,
           imageUrl,
           broadcastId,
           source: "admin_broadcast",

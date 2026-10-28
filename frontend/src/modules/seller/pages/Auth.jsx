@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@core/context/AuthContext";
 import { useSettings } from "@core/context/SettingsContext";
 import {
@@ -526,6 +526,7 @@ const Auth = () => {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6 relative">
+      <Link to="/staff/login" className="absolute right-5 top-5 z-30 rounded-lg px-3 py-1.5 text-xs font-bold text-slate-500 transition-colors hover:bg-white hover:text-primary">Staff login →</Link>
       {/* Elegant Ambient Background */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
         <div className="absolute top-[-10%] left-[-5%] w-[60%] h-[60%] bg-slate-100/50 rounded-full blur-[120px]" />

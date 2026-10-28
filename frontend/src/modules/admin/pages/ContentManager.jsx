@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Card from '@shared/components/ui/Card';
@@ -17,10 +17,15 @@ import {
     HiOutlineArrowDownCircle,
     HiOutlineDevicePhoneMobile,
     HiOutlineSparkles,
-    HiOutlineXMark
 } from 'react-icons/hi2';
 import { cn } from '@/lib/utils';
 import { adminApi } from '../services/adminApi';
+import BannerListEditor from '../components/BannerListEditor';
+import { bannerPayload, newBanner, toEditorItems, validateBanners } from '../components/bannerEditorUtils';
+import ProductMultiPicker from '../components/ProductMultiPicker';
+
+// Saved sections may hold populated objects instead of plain ids.
+const toIds = (list) => (list || []).map((v) => String(typeof v === 'object' && v ? v._id : v));
 
 const DISPLAY_TYPES = [
     { id: 'banners', label: 'Banners' },
@@ -33,26 +38,27 @@ const ContentManager = () => {
     const { showToast } = useToast();
     const queryClient = useQueryClient();
     const [searchParams] = useSearchParams();
-    const [pageType, setPageType] = useState('header');
+    const [pageType, setPageType] = useState('home');
     const [selectedHeaderId, setSelectedHeaderId] = useState('');
-
-    const [activeTab, setActiveTab] = useState('banners');
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingItem, setEditingItem] = useState(null);
+    const [isSaving, setIsSaving] = useState(false);
     const [formData, setFormData] = useState({
         displayType: 'banners',
         title: '',
         status: 'active',
         // banners
-        bannerItems: [{ imageUrl: '', title: '', subtitle: '', linkType: 'none', linkValue: '', isUploading: false }],
+        bannerItems: [newBanner()],
         // categories
-        maxCategories: 4,
+        maxCategories: '',
         categoryIds: [],
         categoryRows: 1,
+        categoryColumns: 4,
         // subcategories
         subCategoryCategoryIds: [],
         subCategoryIds: [],
         subCategoryRows: 1,
+        subCategoryColumns: 4,
         // products
         productCategoryIds: [],
         productSubCategoryIds: [],
@@ -61,8 +67,6 @@ const ContentManager = () => {
         productColumns: 2,
         singleRowScrollable: false,
     });
-
-    const bannerFileInputsRef = useRef([]);
 
     // Perf audit Phase 8: migrated `headerCategories` and `sections` to
     // React Query. `headerCategories` is a one-time tree fetch; `sections`
@@ -85,12 +89,28 @@ const ContentManager = () => {
         [headerCategories, selectedHeaderId]
     );
 
+    // Main categories for the page being edited (every header's on Home).
     const availableCategories = useMemo(() => {
-        if (pageType === 'home') {
-            return headerCategories.flatMap((header) => header.children || []);
-        }
-        return selectedHeader?.children || [];
+        const headers = pageType === 'home' ? headerCategories : (selectedHeader ? [selectedHeader] : []);
+        return headers.flatMap((header) =>
+            (header.children || []).map((category) => ({ ...category, headerName: header.name }))
+        );
     }, [headerCategories, pageType, selectedHeader]);
+
+    const availableSubcategories = useMemo(
+        () => availableCategories.flatMap((category) =>
+            (category.children || []).map((sub) => ({
+                ...sub,
+                parentCategoryId: category._id,
+                parentCategoryName: category.name,
+                headerName: category.headerName,
+            }))
+        ),
+        [availableCategories]
+    );
+    const subcategoryOptions = availableSubcategories.filter((s) => formData.subCategoryCategoryIds.includes(s.parentCategoryId));
+    const productSubcategoryOptions = availableSubcategories.filter((s) => formData.productCategoryIds.includes(s.parentCategoryId));
+    const headerPrefix = (item) => (pageType === 'home' && item.headerName ? `${item.headerName} · ` : '');
 
     useEffect(() => {
         if (isHeaderCategoriesError) showToast('Failed to load header categories', 'error');
@@ -99,7 +119,7 @@ const ContentManager = () => {
 
     useEffect(() => {
         if (!selectedHeaderId && headerCategories.length) {
-            setSelectedHeaderId(headerCategories[0]._id);
+            setSelectedHeaderId((headerCategories.find(h => (h.children || []).length) || headerCategories[0])._id);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [headerCategories]);
@@ -150,13 +170,15 @@ const ContentManager = () => {
             displayType: 'banners',
             title: '',
             status: 'active',
-            bannerItems: [{ imageUrl: '', title: '', subtitle: '', linkType: 'none', linkValue: '', isUploading: false }],
-            maxCategories: 4,
+            bannerItems: [newBanner()],
+            maxCategories: '',
             categoryIds: [],
             categoryRows: 1,
+            categoryColumns: 4,
             subCategoryCategoryIds: [],
             subCategoryIds: [],
             subCategoryRows: 1,
+            subCategoryColumns: 4,
             productCategoryIds: [],
             productSubCategoryIds: [],
             productIds: [],
@@ -164,7 +186,6 @@ const ContentManager = () => {
             productColumns: 2,
             singleRowScrollable: false,
         });
-        setActiveTab('banners');
     };
 
     const openCreateModal = () => {
@@ -180,24 +201,23 @@ const ContentManager = () => {
             displayType,
             title: title || '',
             status: status || 'active',
-            bannerItems: config.banners?.items?.length
-                ? config.banners.items.map(b => ({ ...b, isUploading: false }))
-                : [{ imageUrl: '', title: '', subtitle: '', linkType: 'none', linkValue: '', isUploading: false }],
-            maxCategories: config.categories?.maxItems || 4,
-            categoryIds: config.categories?.categoryIds || [],
+            bannerItems: config.banners?.items?.length ? toEditorItems(config.banners.items) : [newBanner()],
+            maxCategories: config.categories?.maxItems ?? '',
+            categoryIds: toIds(config.categories?.categoryIds),
             categoryRows: config.categories?.rows || 1,
-            subCategoryCategoryIds: config.subcategories?.categoryIds || [],
-            subCategoryIds: config.subcategories?.subcategoryIds || [],
+            categoryColumns: config.categories?.columns || 4,
+            subCategoryCategoryIds: toIds(config.subcategories?.categoryIds),
+            subCategoryIds: toIds(config.subcategories?.subcategoryIds),
             subCategoryRows: config.subcategories?.rows || 1,
-            productCategoryIds: config.products?.categoryIds || [],
-            productSubCategoryIds: config.products?.subcategoryIds || [],
-            productIds: config.products?.productIds || [],
+            subCategoryColumns: config.subcategories?.columns || 4,
+            productCategoryIds: toIds(config.products?.categoryIds),
+            productSubCategoryIds: toIds(config.products?.subcategoryIds),
+            productIds: toIds(config.products?.productIds),
             productRows: config.products?.rows || 1,
             productColumns: config.products?.columns || 2,
             singleRowScrollable: !!config.products?.singleRowScrollable,
         };
         setFormData(next);
-        setActiveTab(displayType);
         setIsModalOpen(true);
     };
 
@@ -234,34 +254,27 @@ const ContentManager = () => {
         let config = {};
 
         if (displayType === 'banners') {
-            if ((formData.bannerItems || []).some(b => b.isUploading)) {
-                showToast('Please wait for all banner images to finish uploading', 'warning');
+            const problem = validateBanners(formData.bannerItems);
+            if (problem) {
+                showToast(problem, 'warning');
                 return;
             }
-            const items = (formData.bannerItems || []).filter(b => b.imageUrl);
+            const items = bannerPayload(formData.bannerItems);
             if (!items.length) {
                 showToast('Please add at least one banner image', 'warning');
                 return;
             }
-            config = {
-                items: items.map(b => ({
-                    imageUrl: b.imageUrl,
-                    title: b.title,
-                    subtitle: b.subtitle,
-                    linkType: b.linkType || 'none',
-                    linkValue: b.linkValue || '',
-                    status: b.status || 'active',
-                })),
-            };
+            config = { items };
         } else if (displayType === 'categories') {
             if (!formData.categoryIds?.length) {
                 showToast('Please select at least one category', 'warning');
                 return;
             }
             config = {
-                maxItems: Number(formData.maxCategories) || 1,
+                maxItems: Number(formData.maxCategories) || undefined,
                 categoryIds: formData.categoryIds,
                 rows: Number(formData.categoryRows) || 1,
+                columns: Number(formData.categoryColumns) || 4,
             };
         } else if (displayType === 'subcategories') {
             if (!formData.subCategoryCategoryIds?.length || !formData.subCategoryIds?.length) {
@@ -272,14 +285,19 @@ const ContentManager = () => {
                 categoryIds: formData.subCategoryCategoryIds,
                 subcategoryIds: formData.subCategoryIds,
                 rows: Number(formData.subCategoryRows) || 1,
+                columns: Number(formData.subCategoryColumns) || 4,
             };
         } else if (displayType === 'products') {
+            if (!formData.productIds?.length && !formData.productCategoryIds?.length && !formData.productSubCategoryIds?.length) {
+                showToast('Pick products, or a category / subcategory to fill this section', 'warning');
+                return;
+            }
             config = {
                 categoryIds: formData.productCategoryIds,
                 subcategoryIds: formData.productSubCategoryIds,
                 productIds: formData.productIds,
                 rows: formData.singleRowScrollable ? 1 : (Number(formData.productRows) || 1),
-                columns: Number(formData.productColumns) || 2,
+                columns: Math.min(6, Math.max(1, Number(formData.productColumns) || 2)),
                 singleRowScrollable: !!formData.singleRowScrollable,
             };
         }
@@ -289,6 +307,8 @@ const ContentManager = () => {
             config,
         };
 
+        if (isSaving) return;
+        setIsSaving(true);
         try {
             if (editingItem) {
                 const res = await adminApi.updateExperienceSection(editingItem._id, payload);
@@ -305,6 +325,8 @@ const ContentManager = () => {
         } catch (e) {
             console.error(e);
             showToast(e.response?.data?.message || 'Failed to save section', 'error');
+        } finally {
+            setIsSaving(false);
         }
     };
 
@@ -326,51 +348,6 @@ const ContentManager = () => {
             console.error(e);
             showToast('Failed to reorder sections', 'error');
         }
-    };
-
-    const updateBannerItem = (idx, changes) => {
-        setFormData(prev => {
-            const items = [...prev.bannerItems];
-            items[idx] = { ...items[idx], ...changes };
-            return { ...prev, bannerItems: items };
-        });
-    };
-
-    const handleBannerFileChange = async (idx, file) => {
-        if (!file) return;
-        updateBannerItem(idx, { isUploading: true });
-        try {
-            const fd = new FormData();
-            fd.append('image', file);
-            const res = await adminApi.uploadExperienceBanner(fd);
-            const url = res.data?.result?.url || res.data?.url;
-            if (!url) {
-                throw new Error('Upload failed');
-            }
-            updateBannerItem(idx, { imageUrl: url, isUploading: false });
-            showToast('Banner image uploaded', 'success');
-        } catch (e) {
-            console.error(e);
-            updateBannerItem(idx, { isUploading: false });
-            showToast('Failed to upload banner image', 'error');
-        }
-    };
-
-    const addBannerItem = () => {
-        setFormData(prev => ({
-            ...prev,
-            bannerItems: [
-                ...prev.bannerItems,
-                { imageUrl: '', title: '', subtitle: '', linkType: 'none', linkValue: '', isUploading: false },
-            ],
-        }));
-    };
-
-    const removeBannerItem = (idx) => {
-        setFormData(prev => ({
-            ...prev,
-            bannerItems: prev.bannerItems.filter((_, i) => i !== idx),
-        }));
     };
 
     return (
@@ -476,9 +453,9 @@ const ContentManager = () => {
                                             </h4>
                                             <p className="text-[11px] text-slate-500">
                                                 {section.displayType === 'banners' && `${section.config?.banners?.items?.length || 0} banners configured`}
-                                                {section.displayType === 'categories' && `${section.config?.categories?.categoryIds?.length || 0} categories • ${section.config?.categories?.rows || 1} rows`}
-                                                {section.displayType === 'subcategories' && `${section.config?.subcategories?.subcategoryIds?.length || 0} subcategories • ${section.config?.subcategories?.rows || 1} rows`}
-                                                {section.displayType === 'products' && `${section.config?.products?.productIds?.length || 0} products • ${section.config?.products?.rows || 1}x${section.config?.products?.columns || 2}${section.config?.products?.singleRowScrollable ? ' • Single row scroll' : ''}`}
+                                                {section.displayType === 'categories' && `${section.config?.categories?.categoryIds?.length || 0} categories • ${section.config?.categories?.rows || 1}x${section.config?.categories?.columns || 4} grid`}
+                                                {section.displayType === 'subcategories' && `${section.config?.subcategories?.subcategoryIds?.length || 0} subcategories • ${section.config?.subcategories?.rows || 1}x${section.config?.subcategories?.columns || 4} grid`}
+                                                {section.displayType === 'products' && `${section.config?.products?.productIds?.length ? `${section.config.products.productIds.length} picked products` : 'Products from chosen categories'} • ${section.config?.products?.singleRowScrollable ? 'Single row scroll' : `${section.config?.products?.rows || 1}x${section.config?.products?.columns || 2}`}`}
                                             </p>
                                         </div>
                                     </div>
@@ -541,7 +518,6 @@ const ContentManager = () => {
                                 onChange={(e) => {
                                     const value = e.target.value;
                                     setFormData(prev => ({ ...prev, displayType: value }));
-                                    setActiveTab(value);
                                 }}
                                 className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
                             >
@@ -572,154 +548,77 @@ const ContentManager = () => {
                             value={formData.title}
                             onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
                             className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-sm font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-                            placeholder="E.g. Grocery Essentials"
+                            placeholder={formData.displayType === 'banners' ? 'Optional, shown above the banners' : 'E.g. Grocery Essentials'}
                         />
                     </div>
 
                     {/* Type-specific config */}
                     {formData.displayType === 'banners' && (
-                        <div className="space-y-3">
-                            <div className="flex items-center justify-between">
-                                <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                    Banner Items
-                                </span>
-                                <button
-                                    type="button"
-                                    onClick={addBannerItem}
-                                    className="flex items-center gap-1 text-[10px] font-bold text-primary"
-                                >
-                                    <HiOutlinePlus className="h-3 w-3" />
-                                    Add banner
-                                </button>
-                            </div>
-                            <div className="max-h-72 space-y-3 overflow-y-auto pr-1">
-                                {formData.bannerItems.map((item, idx) => (
-                                    <Card key={idx} className="p-3">
-                                        <div className="flex items-start gap-3">
-                                            <div className="flex-1 space-y-2">
-                                                <div className="flex items-center gap-3">
-                                                    <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                                                        {item.imageUrl ? (
-                                                            <img
-                                                                src={item.imageUrl}
-                                                                alt={item.title || `Banner ${idx + 1}`}
-                                                                className="h-full w-full object-cover"
-                                                            />
-                                                        ) : (
-                                                            <HiOutlinePhoto className="h-6 w-6 text-slate-300" />
-                                                        )}
-                                                    </div>
-                                                    <div className="flex-1 space-y-1">
-                                                        <input
-                                                            ref={(el) => {
-                                                                bannerFileInputsRef.current[idx] = el;
-                                                            }}
-                                                            type="file"
-                                                            accept="image/*"
-                                                            className="hidden"
-                                                            onChange={(e) =>
-                                                                handleBannerFileChange(idx, e.target.files?.[0])
-                                                            }
-                                                        />
-                                                        <button
-                                                            type="button"
-                                                            onClick={() =>
-                                                                bannerFileInputsRef.current[idx]?.click()
-                                                            }
-                                                            className="inline-flex items-center rounded-lg bg-slate-900 px-3 py-1.5 text-[11px] font-bold text-white transition-colors hover:bg-slate-800"
-                                                        >
-                                                            {item.imageUrl ? 'Change image' : 'Choose image file'}
-                                                        </button>
-                                                        <p className="text-[10px] text-slate-400">
-                                                            {item.isUploading
-                                                                ? 'Uploading...'
-                                                                : item.imageUrl
-                                                                ? 'Image uploaded'
-                                                                : 'PNG, JPG up to 5MB'}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                                <input
-                                                    value={item.title || ''}
-                                                    onChange={(e) => updateBannerItem(idx, { title: e.target.value })}
-                                                    className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-                                                    placeholder="Banner title (optional)"
-                                                />
-                                                <input
-                                                    value={item.subtitle || ''}
-                                                    onChange={(e) => updateBannerItem(idx, { subtitle: e.target.value })}
-                                                    className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-                                                    placeholder="Subtitle (optional)"
-                                                />
-                                                <div className="grid grid-cols-2 gap-2">
-                                                    <select
-                                                        value={item.linkType || 'none'}
-                                                        onChange={(e) => updateBannerItem(idx, { linkType: e.target.value })}
-                                                        className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-xs font-bold outline-none"
-                                                    >
-                                                        <option value="none">No link</option>
-                                                        <option value="header">Header</option>
-                                                        <option value="category">Category</option>
-                                                        <option value="subcategory">Subcategory</option>
-                                                        <option value="product">Product</option>
-                                                        <option value="url">External URL</option>
-                                                    </select>
-                                                    <input
-                                                        value={item.linkValue || ''}
-                                                        onChange={(e) => updateBannerItem(idx, { linkValue: e.target.value })}
-                                                        className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-                                                        placeholder={item.linkType === 'url' ? "https://..." : "Slug / ID"}
-                                                    />
-                                                </div>
-                                            </div>
-                                            {formData.bannerItems.length > 1 && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeBannerItem(idx)}
-                                                    className="rounded-lg p-2 text-slate-300 transition-all hover:bg-danger/10 hover:text-danger"
-                                                >
-                                                    <HiOutlineXMark className="h-4 w-4" />
-                                                </button>
-                                            )}
-                                        </div>
-                                    </Card>
-                                ))}
-                            </div>
-                        </div>
+                        <BannerListEditor
+                            items={formData.bannerItems}
+                            onChange={(updater) => setFormData(prev => ({ ...prev, bannerItems: updater(prev.bannerItems) }))}
+                        />
                     )}
 
                     {formData.displayType === 'categories' && (
                         <div className="space-y-3">
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
+                                <div className="col-span-2 md:col-span-1">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                        Categories to show
+                                        Maximum categories (optional)
                                     </label>
                                     <input
                                         type="number"
                                         min={1}
+                                        step={1}
                                         value={formData.maxCategories ?? ''}
                                         onChange={(e) => setFormData(prev => ({ ...prev, maxCategories: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                        placeholder="No limit"
+                                    />
+                                </div>
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Rows
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={10}
+                                        step={1}
+                                        value={formData.categoryRows ?? ''}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, categoryRows: e.target.value === '' ? '' : Number(e.target.value) }))}
                                         className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
                                     />
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                        Rows (4 columns on mobile)
+                                        Columns
                                     </label>
                                     <input
                                         type="number"
                                         min={1}
-                                        value={formData.categoryRows ?? ''}
-                                        onChange={(e) => setFormData(prev => ({ ...prev, categoryRows: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                        max={8}
+                                        step={1}
+                                        value={formData.categoryColumns ?? ''}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, categoryColumns: e.target.value === '' ? '' : Number(e.target.value) }))}
                                         className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
                                     />
                                 </div>
                             </div>
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                    Choose categories to show
+                                    Select categories to show ({formData.categoryIds.length} selected)
                                 </label>
+                                {!availableCategories.length && (
+                                    <p className="rounded-md bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-700">
+                                        {pageType === 'header'
+                                            ? 'This header has no categories yet. Choose another header, switch to Home Page, or add categories first.'
+                                            : 'No categories found. Add categories first.'}
+                                    </p>
+                                )}
                                 <div className="flex flex-wrap gap-2">
                                     {availableCategories.map(c => {
                                         const isSelected = formData.categoryIds.includes(c._id);
@@ -742,13 +641,13 @@ const ContentManager = () => {
                                                         : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
                                                 )}
                                             >
-                                                {c.name}
+                                                {headerPrefix(c)}{c.name}
                                             </button>
                                         );
                                     })}
                                 </div>
                                 <p className="text-[10px] text-slate-400">
-                                    Pick the categories you want to show. One row displays 4 categories.
+                                    Choose the number of rows and columns. Leave the maximum blank to use the full grid size. Extra categories appear under &quot;See all&quot;.
                                 </p>
                             </div>
                         </div>
@@ -758,10 +657,17 @@ const ContentManager = () => {
                         <div className="space-y-3">
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                    Parent categories
+                                    Select parent categories ({formData.subCategoryCategoryIds.length} selected)
                                 </label>
+                                {!availableCategories.length && (
+                                    <p className="rounded-md bg-amber-50 px-3 py-2 text-[11px] font-semibold text-amber-700">
+                                        {pageType === 'header'
+                                            ? 'This header has no categories yet. Choose another header, switch to Home Page, or add categories first.'
+                                            : 'No categories found. Add categories first.'}
+                                    </p>
+                                )}
                                 <div className="flex flex-wrap gap-2">
-                                    {(selectedHeader?.children || []).map(c => {
+                                    {availableCategories.map(c => {
                                         const isSelected = formData.subCategoryCategoryIds.includes(c._id);
                                         return (
                                             <button
@@ -769,25 +675,16 @@ const ContentManager = () => {
                                                 type="button"
                                                 onClick={() =>
                                                     setFormData(prev => {
-                                                        const alreadySelected = prev.subCategoryCategoryIds.includes(c._id);
-                                                        let nextCategoryIds;
-                                                        let nextSubCategoryIds = prev.subCategoryIds;
-
-                                                        if (alreadySelected) {
-                                                            nextCategoryIds = prev.subCategoryCategoryIds.filter(id => id !== c._id);
+                                                        if (prev.subCategoryCategoryIds.includes(c._id)) {
+                                                            // Unselecting a parent also drops its subcategories
                                                             const childIds = (c.children || []).map(child => child._id);
-                                                            nextSubCategoryIds = prev.subCategoryIds.filter(
-                                                                id => !childIds.includes(id)
-                                                            );
-                                                        } else {
-                                                            nextCategoryIds = [...prev.subCategoryCategoryIds, c._id];
+                                                            return {
+                                                                ...prev,
+                                                                subCategoryCategoryIds: prev.subCategoryCategoryIds.filter(id => id !== c._id),
+                                                                subCategoryIds: prev.subCategoryIds.filter(id => !childIds.includes(id)),
+                                                            };
                                                         }
-
-                                                        return {
-                                                            ...prev,
-                                                            subCategoryCategoryIds: nextCategoryIds,
-                                                            subCategoryIds: nextSubCategoryIds,
-                                                        };
+                                                        return { ...prev, subCategoryCategoryIds: [...prev.subCategoryCategoryIds, c._id] };
                                                     })
                                                 }
                                                 className={cn(
@@ -797,7 +694,7 @@ const ContentManager = () => {
                                                         : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
                                                 )}
                                             >
-                                                {c.name}
+                                                {headerPrefix(c)}{c.name}
                                             </button>
                                         );
                                     })}
@@ -805,24 +702,21 @@ const ContentManager = () => {
                             </div>
                             <div className="space-y-1.5">
                                 <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                    Subcategories
+                                    Select subcategories ({formData.subCategoryIds.length} selected)
                                 </label>
                                 <div className="flex flex-wrap gap-2">
-                                    {(selectedHeader?.children || [])
-                                        .filter(c => formData.subCategoryCategoryIds.includes(c._id))
-                                        .flatMap(c => c.children || [])
-                                        .map(s => {
-                                        const isSelected = formData.subCategoryIds.includes(s._id);
+                                    {subcategoryOptions.map(sub => {
+                                        const isSelected = formData.subCategoryIds.includes(sub._id);
                                         return (
                                             <button
-                                                key={s._id}
+                                                key={sub._id}
                                                 type="button"
                                                 onClick={() =>
                                                     setFormData(prev => ({
                                                         ...prev,
                                                         subCategoryIds: isSelected
-                                                            ? prev.subCategoryIds.filter(id => id !== s._id)
-                                                            : [...prev.subCategoryIds, s._id],
+                                                            ? prev.subCategoryIds.filter(id => id !== sub._id)
+                                                            : [...prev.subCategoryIds, sub._id],
                                                     }))
                                                 }
                                                 className={cn(
@@ -832,26 +726,47 @@ const ContentManager = () => {
                                                         : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
                                                 )}
                                             >
-                                                {s.name}
+                                                {headerPrefix(sub)}{sub.parentCategoryName} · {sub.name}
                                             </button>
                                         );
                                     })}
                                 </div>
+                                {!subcategoryOptions.length && (
+                                    <p className="text-[10px] text-slate-400">Choose a parent category to see its subcategories.</p>
+                                )}
                                 <p className="text-[10px] text-slate-400">
-                                    Displayed in 4-column grids per row.
+                                    Choose the number of rows and columns to display. Extra subcategories appear under &quot;See all&quot;.
                                 </p>
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                    Rows
-                                </label>
-                                <input
-                                    type="number"
-                                    min={1}
-                                    value={formData.subCategoryRows ?? ''}
-                                    onChange={(e) => setFormData(prev => ({ ...prev, subCategoryRows: e.target.value === '' ? '' : Number(e.target.value) }))}
-                                    className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-                                />
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Rows
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={10}
+                                        step={1}
+                                        value={formData.subCategoryRows ?? ''}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, subCategoryRows: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                        Columns
+                                    </label>
+                                    <input
+                                        type="number"
+                                        min={1}
+                                        max={8}
+                                        step={1}
+                                        value={formData.subCategoryColumns ?? ''}
+                                        onChange={(e) => setFormData(prev => ({ ...prev, subCategoryColumns: e.target.value === '' ? '' : Number(e.target.value) }))}
+                                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                    />
+                                </div>
                             </div>
                         </div>
                     )}
@@ -874,11 +789,12 @@ const ContentManager = () => {
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                                        Columns
+                                        Columns (1-6)
                                     </label>
                                     <input
                                         type="number"
                                         min={1}
+                                        max={6}
                                         value={formData.productColumns ?? ''}
                                         onChange={(e) => setFormData(prev => ({ ...prev, productColumns: e.target.value === '' ? '' : Number(e.target.value) }))}
                                         className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
@@ -902,7 +818,7 @@ const ContentManager = () => {
                                 </label>
                                 <div className="grid grid-cols-2 gap-3">
                                     <div className="flex flex-wrap gap-2">
-                                        {(selectedHeader?.children || []).map(c => {
+                                        {availableCategories.map(c => {
                                             const isSelected = formData.productCategoryIds.includes(c._id);
                                             return (
                                                 <button
@@ -938,15 +854,13 @@ const ContentManager = () => {
                                                             : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
                                                     )}
                                                 >
-                                                    {c.name}
+                                                    {headerPrefix(c)}{c.name}
                                                 </button>
                                             );
                                         })}
                                     </div>
                                     <div className="flex flex-wrap gap-2">
-                                        {(selectedHeader?.children || [])
-                                            .filter(c => formData.productCategoryIds.includes(c._id))
-                                            .flatMap(c => c.children || [])
+                                        {productSubcategoryOptions
                                             .map(s => {
                                                 const isSelected = formData.productSubCategoryIds.includes(s._id);
                                                 return (
@@ -968,20 +882,32 @@ const ContentManager = () => {
                                                                 : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
                                                         )}
                                                     >
-                                                        {s.name}
+                                                        {headerPrefix(s)}{s.parentCategoryName} · {s.name}
                                                     </button>
                                                 );
                                             })}
                                     </div>
                                 </div>
                                 <p className="text-[10px] text-slate-400">
-                                    You can later extend this to select specific products.
+                                    Without picked products below, the section fills with in-stock products from these categories.
+                                </p>
+                            </div>
+                            <div className="space-y-1.5">
+                                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
+                                    Pick specific products (optional)
+                                </label>
+                                <ProductMultiPicker
+                                    value={formData.productIds}
+                                    onChange={(ids) => setFormData(prev => ({ ...prev, productIds: ids }))}
+                                />
+                                <p className="text-[10px] text-slate-400">
+                                    Picked products are shown in this order and take priority over the category filter.
                                 </p>
                             </div>
                         </div>
                     )}
-                    <Button className="w-full" onClick={handleSaveSection}>
-                        {editingItem ? 'Save Changes' : 'Publish Section'}
+                    <Button className="w-full" onClick={handleSaveSection} disabled={isSaving}>
+                        {isSaving ? 'Saving…' : editingItem ? 'Save Changes' : 'Publish Section'}
                     </Button>
                 </div>
             </Modal>

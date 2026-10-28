@@ -15,7 +15,33 @@ import {
 import { verifyToken, allowRoles } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage() });
+
+const BANNER_MAX_BYTES = 5 * 1024 * 1024;
+const BANNER_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"];
+
+const bannerUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: BANNER_MAX_BYTES, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (BANNER_MIME_TYPES.includes(file.mimetype)) return cb(null, true);
+    const error = new Error("Only JPG, PNG, WebP, GIF or AVIF images can be uploaded");
+    error.statusCode = 400;
+    return cb(error);
+  },
+});
+
+// Turn multer failures into a readable 400 instead of a generic server error.
+const uploadBannerFile = (req, res, next) =>
+  bannerUpload.single("image")(req, res, (error) => {
+    if (!error) return next();
+    const tooLarge = error.code === "LIMIT_FILE_SIZE";
+    return res.status(error.statusCode || 400).json({
+      success: false,
+      error: true,
+      message: tooLarge ? "Image is larger than 5 MB. Choose a smaller file." : error.message,
+      result: {},
+    });
+  });
 
 // Admin routes (protected)
 router.get(
@@ -72,7 +98,7 @@ router.post(
   "/admin/experience/upload-banner",
   verifyToken,
   allowRoles("admin"),
-  upload.single("image"),
+  uploadBannerFile,
   uploadBannerImage
 );
 

@@ -1,11 +1,13 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 
 import Sidebar from './Sidebar';
 import Topbar from './Topbar';
 import BottomNav from './BottomNav';
 import { sellerApi } from '@/modules/seller/services/sellerApi';
 import { useAuth } from "@core/context/AuthContext";
+import { filterNavForStaff, useStaffAccess } from '@/modules/staff/staffAccess';
+import StaffPosShell from '@/modules/staff/components/StaffPosShell';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BellRing, Check, X, Clock, Truck } from 'lucide-react';
 import { toast } from 'sonner';
@@ -73,6 +75,24 @@ const DashboardLayout = ({ children, navItems, title }) => {
     const { user, logout, role } = useAuth();
     const location = useLocation();
     const navigate = useNavigate();
+
+    // Staff accounts see only the menu / screens they were given. Owners are
+    // never limited (every staff check answers "yes" for them).
+    const staffAccess = useStaffAccess();
+    const { isStaff } = staffAccess;
+    const visibleNav = useMemo(
+        () => (isStaff ? filterNavForStaff(navItems, staffAccess.access) : navItems),
+        [isStaff, navItems, staffAccess.access],
+    );
+    // Order polling feeds the Orders / Tracking screens; the accept-or-decline
+    // pop-up is only for staff who may change orders.
+    const ordersEnabled = role === 'seller' && (!isStaff || staffAccess.can('orders.orders') || staffAccess.can('orders.tracking'));
+    const canActOnOrders = !isStaff || staffAccess.can('orders.orders', 'edit');
+    const canSeeEarnings = !isStaff || ['finance.earnings', 'finance.reports', 'finance.transactions', 'finance.withdrawals'].some((k) => staffAccess.can(k));
+    const canActOnOrdersRef = useRef(canActOnOrders);
+    useEffect(() => {
+        canActOnOrdersRef.current = canActOnOrders;
+    }, [canActOnOrders]);
 
     // Shared data for seller – single source, avoids duplicate API calls
     const [sellerOrders, setSellerOrders] = useState([]);
@@ -168,7 +188,7 @@ const DashboardLayout = ({ children, navItems, title }) => {
     }, [newReturnAlert]);
 
     useEffect(() => {
-        if (role !== 'seller') {
+        if (!ordersEnabled) {
             setSellerOrders([]);
             setOrdersLoading(false);
             return;
@@ -208,7 +228,7 @@ const DashboardLayout = ({ children, navItems, title }) => {
                 }
 
                 const newOrder = pendingOrders.find((o) => !shownOrderIdsRef.current.has(o.orderId));
-                if (!newOrder || newOrderAlertRef.current) return;
+                if (!newOrder || newOrderAlertRef.current || !canActOnOrdersRef.current) return;
 
                 setNewOrderAlert(newOrder);
                 setShownOrderIds((prev) => new Set(prev).add(newOrder.orderId));
@@ -224,11 +244,11 @@ const DashboardLayout = ({ children, navItems, title }) => {
 
         fetchOrdersRef.current = fetchOrders;
         fetchOrders();
-    }, [role]);
+    }, [ordersEnabled]);
 
     // Resilient fallback when socket events are missed (tab backgrounded/suspended).
     useEffect(() => {
-        if (role !== 'seller') return undefined;
+        if (!ordersEnabled) return undefined;
 
         const syncOrders = () => {
             if (fetchOrdersRef.current) fetchOrdersRef.current();
@@ -251,7 +271,7 @@ const DashboardLayout = ({ children, navItems, title }) => {
             document.removeEventListener('visibilitychange', onVisible);
             window.removeEventListener('online', onOnline);
         };
-    }, [role]);
+    }, [ordersEnabled]);
 
     useEffect(() => {
         if (newOrderAlert) {
@@ -274,7 +294,7 @@ const DashboardLayout = ({ children, navItems, title }) => {
     }, [role]);
 
     useEffect(() => {
-        if (role !== 'seller') return undefined;
+        if (role !== 'seller' || isStaff) return undefined;
         const getToken = createSocketTokenReader(STORAGE_KEYS.AUTH_SELLER);
         getOrderSocket(getToken);
         const unsubscribeSellerNew = onSellerOrderNew(getToken, () => {
@@ -317,7 +337,7 @@ const DashboardLayout = ({ children, navItems, title }) => {
             unsubscribeDrop();
             unsubscribeStatus();
         };
-    }, [role]);
+    }, [role, isStaff]);
 
     // Close the "Received at store" confirmation by itself after a few seconds
     useEffect(() => {
@@ -328,7 +348,7 @@ const DashboardLayout = ({ children, navItems, title }) => {
 
     // Single earnings fetch when seller is on earnings/withdrawals/transactions – no duplicate calls
     useEffect(() => {
-        if (role !== 'seller' || !isEarningsRoute(location.pathname)) {
+        if (role !== 'seller' || !canSeeEarnings || !isEarningsRoute(location.pathname)) {
             if (!isEarningsRoute(location.pathname)) earningsFetchedRef.current = false;
             return;
         }
@@ -350,7 +370,7 @@ const DashboardLayout = ({ children, navItems, title }) => {
             })
             .catch((err) => console.error("Earnings Fetch Error:", err))
             .finally(() => setEarningsLoading(false));
-    }, [role, location.pathname]);
+    }, [role, canSeeEarnings, location.pathname]);
 
     // Perf audit FE-R2: wrapped in useCallback (stable identity across
     // renders — both only ever touch refs/setState setters, which are
@@ -483,6 +503,25 @@ const DashboardLayout = ({ children, navItems, title }) => {
 
     const isAdminOrSeller = role === "admin" || role === "seller";
 
+    // A staff member can only open the screens they were given.
+    if (isStaff && !staffAccess.canOpen(location.pathname)) {
+        return <Navigate to={staffAccess.landing || `/${role}/my-account`} replace />;
+    }
+
+    // Staff whose only access is POS get the POS and nothing else around it.
+    if (isStaff && staffAccess.posOnly) {
+        const posTabs = visibleNav.flatMap((i) => i.children || []).filter((c) => c.path.startsWith(`/${role}/pos`));
+        return (
+            <StaffPosShell portal={role} tabs={posTabs}>
+                <SellerOrdersContext.Provider value={sellerOrdersContextValue}>
+                    <SellerEarningsContext.Provider value={sellerEarningsContextValue}>
+                        {children}
+                    </SellerEarningsContext.Provider>
+                </SellerOrdersContext.Provider>
+            </StaffPosShell>
+        );
+    }
+
     return (
         <div className={cn("min-h-screen relative", isAdminOrSeller ? "bg-slate-50" : "mesh-gradient-light")}>
             {!isAdminOrSeller && (
@@ -494,7 +533,7 @@ const DashboardLayout = ({ children, navItems, title }) => {
             )}
 
             <Sidebar
-                items={navItems}
+                items={visibleNav}
                 title={title}
                 isOpen={isSidebarOpen}
                 onClose={() => setIsSidebarOpen(false)}
@@ -685,7 +724,7 @@ const DashboardLayout = ({ children, navItems, title }) => {
                 )}
             </AnimatePresence>
 
-            {(role === "admin" || role === "seller") && <BottomNav navItems={navItems} />}
+            {(role === "admin" || role === "seller") && <BottomNav navItems={visibleNav} />}
         </div>
     );
 };

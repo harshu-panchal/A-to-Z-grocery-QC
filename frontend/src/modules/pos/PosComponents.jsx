@@ -199,7 +199,7 @@ export function CustomerPicker({ api, value, onChange, allowWalkIn = true }) {
       {open && (
         <div className="absolute z-40 mt-1 w-full rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
           <input className={inputCls} placeholder="Search name or phone" value={query} onChange={(e) => setQuery(e.target.value)} autoFocus />
-          <div className="mt-2 max-h-64 overflow-auto">
+          <div data-lenis-prevent className="mt-2 max-h-64 overflow-auto">
             {allowWalkIn && (
               <button type="button" className="w-full rounded-lg px-2 py-2 text-left text-sm hover:bg-slate-50" onClick={() => { onChange({ _id: WALK_IN, name: "Walk-in customer" }); setOpen(false); }}>
                 Walk-in customer

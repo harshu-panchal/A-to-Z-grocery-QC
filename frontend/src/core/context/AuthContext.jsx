@@ -14,6 +14,7 @@ import {
     clearOnLogout,
     STORAGE_KEYS,
 } from '@core/utils/storage';
+import { isStaffSession, markStaffSession } from '@core/utils/staffSession';
 
 const AuthContext = createContext(undefined);
 
@@ -156,6 +157,8 @@ export const AuthProvider = ({ children }) => {
             // Persist only the raw JWT string; everything else lives in memory
             // until the next profile fetch.
             rawSet(storageKey, userData.token);
+            // A staff login lives in the owner's panel; remember it is staff.
+            markStaffSession(Boolean(userData.isStaff));
 
             // Guard against state leaking from a previous account on the same
             // browser (e.g. abandoned guest cart, leftover recent searches).
@@ -173,6 +176,13 @@ export const AuthProvider = ({ children }) => {
     const logout = async () => {
         const storageKey = ROLE_STORAGE_KEYS[currentRole];
         const previousUserId = user?._id || user?.id || '';
+        const wasStaff = Boolean(user?.isStaff) || isStaffSession();
+
+        if (wasStaff) {
+            // Best effort: lets the owner's activity log show the sign-out.
+            try { await axiosInstance.post('/staff/logout'); } catch { /* already signed out */ }
+            markStaffSession(false);
+        }
 
         try {
             const { removeStoredFcmToken } = await import('@core/firebase/pushClient');
@@ -226,7 +236,8 @@ export const AuthProvider = ({ children }) => {
         // Final fallback: redirect based on current path if needed
         // (ProtectedRoute usually handles this, but explicit navigation is safer for some UI edge cases)
         const path = window.location.pathname;
-        if (path.startsWith('/admin')) window.location.href = '/admin/auth';
+        if (wasStaff) window.location.href = '/staff/login';
+        else if (path.startsWith('/admin')) window.location.href = '/admin/auth';
         else if (path.startsWith('/seller')) window.location.href = '/seller/auth';
         else if (path.startsWith('/delivery')) window.location.href = '/delivery/auth';
         else window.location.href = '/login';

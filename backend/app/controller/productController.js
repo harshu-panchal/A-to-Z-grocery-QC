@@ -461,6 +461,7 @@ export const getProducts = async (req, res) => {
       subcategoryId,
       headerId,
       categoryIds,
+      subcategoryIds,
       sellerIds,
       sort,
       lat,
@@ -545,6 +546,13 @@ export const getProducts = async (req, res) => {
         .map((id) => id.trim())
         .filter((id) => id && id !== "all");
       if (ids.length) query.categoryId = { $in: ids };
+    }
+    if (subcategoryIds && typeof subcategoryIds === "string") {
+      const ids = subcategoryIds
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id && id !== "all");
+      if (ids.length) query.subcategoryId = { $in: ids };
     }
     // Multiple sellers: sellerIds=id1,id2 (or single sellerId)
     if (!query.sellerId) {

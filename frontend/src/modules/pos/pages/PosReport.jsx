@@ -8,6 +8,7 @@ import Modal from "@shared/components/ui/Modal";
 import Badge from "@shared/components/ui/Badge";
 import { cn } from "@/lib/utils";
 import { apiError } from "../posApi";
+import { useStaffAccess } from "@/modules/staff/staffAccess";
 import { rupees, round2, fmtDateTime, todayLocal } from "../posUtils";
 import { printReceipt, downloadInvoicePdf, downloadCsv, downloadTablePdf } from "../posPrint";
 import { usePosApi, usePosSettings, StatTile, Pager, inputCls, Field } from "../PosComponents";
@@ -23,15 +24,18 @@ const TABS = [
 export default function PosReport({ portal }) {
   const api = usePosApi(portal);
   const [tab, setTab] = useState("bills");
+  // Cancelling bills and exchanges need their own permission for staff.
+  const canCancel = useStaffAccess().special("pos.cancel");
+  const tabs = TABS.filter((t) => t.key !== "exchange" || canCancel);
   return (
     <div className="space-y-4">
       <PageHeader title="POS Reports" description="Counter bills, stock movements and exchanges." />
       <div className="flex gap-1 rounded-xl bg-slate-100 p-1 text-sm font-semibold sm:w-fit">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button key={t.key} type="button" onClick={() => setTab(t.key)} className={cn("rounded-lg px-4 py-2", tab === t.key ? "bg-white text-slate-900 shadow-sm" : "text-slate-500")}>{t.label}</button>
         ))}
       </div>
-      {tab === "bills" && <BillsTab api={api} portal={portal} />}
+      {tab === "bills" && <BillsTab api={api} portal={portal} canCancel={canCancel} />}
       {tab === "ledger" && <LedgerTab api={api} portal={portal} />}
       {tab === "exchange" && <ExchangeTab api={api} />}
       {tab === "channel" && <ChannelReport api={api} portal={portal} />}
@@ -43,7 +47,7 @@ const statusVariant = { completed: "success", cancelled: "danger", pending_payme
 const payVariant = { Paid: "success", Pending: "warning", Failed: "danger", Refunded: "secondary" };
 
 // ===================================================================== bills
-function BillsTab({ api, portal }) {
+function BillsTab({ api, portal, canCancel }) {
   const navigate = useNavigate();
   const [settings] = usePosSettings(api);
   const [filters, setFilters] = useState({ from: todayLocal(), to: todayLocal(), paymentMethod: "all", status: "all", search: "" });
@@ -67,8 +71,8 @@ function BillsTab({ api, portal }) {
 
   const setF = (k) => (e) => { setPage(1); setFilters((f) => ({ ...f, [k]: e.target.value })); };
   const s = data.summary || {};
-  const exportRows = data.items.map((o) => [o.invoiceNumber, fmtDateTime(o.createdAt), o.customerSnapshot?.name, o.itemCount, round2(o.total), round2(o.gstTotal), o.paymentMethod, o.paymentStatus, o.status]);
-  const HEAD = ["Invoice", "Date", "Customer", "Items", "Total", "GST", "Method", "Payment", "Status"];
+  const exportRows = data.items.map((o) => [o.invoiceNumber, fmtDateTime(o.createdAt), o.customerSnapshot?.name, o.itemCount, round2(o.total), round2(o.gstTotal), o.paymentMethod, o.paymentStatus, o.status, o.createdByName || ""]);
+  const HEAD = ["Invoice", "Date", "Customer", "Items", "Total", "GST", "Method", "Payment", "Status", "Billed by"];
 
   const openFull = async (id) => {
     try { setView(await api.getOrder(id)); } catch (err) { toast.error(apiError(err)); }
@@ -104,7 +108,7 @@ function BillsTab({ api, portal }) {
       <div className="flex flex-wrap items-center gap-2">
         {Object.entries(s.byMethod || {}).map(([m, v]) => <Badge key={m} variant="outline">{m}: {rupees(v.total)} ({v.count})</Badge>)}
         <div className="ml-auto flex gap-2">
-          {selected.length > 0 && <Button size="sm" variant="danger" onClick={() => setCancelling({ ids: selected })}><Ban size={14} className="mr-1" /> Cancel {selected.length}</Button>}
+          {canCancel && selected.length > 0 && <Button size="sm" variant="danger" onClick={() => setCancelling({ ids: selected })}><Ban size={14} className="mr-1" /> Cancel {selected.length}</Button>}
           <Button size="sm" variant="outline" onClick={() => downloadCsv(`pos-bills-${filters.from}-${filters.to}.csv`, HEAD, exportRows)}><Download size={14} className="mr-1" /> CSV</Button>
           <Button size="sm" variant="outline" onClick={() => downloadTablePdf({ title: "POS Bills", subtitle: `${filters.from} to ${filters.to} · Sales ${rupees(s.sales || 0)}`, head: HEAD, body: exportRows })}><FileText size={14} className="mr-1" /> PDF</Button>
         </div>
@@ -122,7 +126,7 @@ function BillsTab({ api, portal }) {
             {data.items.map((o) => (
               <tr key={o._id} className="border-t border-slate-100 hover:bg-slate-50/60">
                 <td className="p-3">{o.status === "completed" && <input type="checkbox" aria-label={`Select ${o.invoiceNumber}`} checked={selected.includes(o._id)} onChange={(e) => setSelected((sel) => (e.target.checked ? [...sel, o._id] : sel.filter((x) => x !== o._id)))} />}</td>
-                <td className="p-3 font-semibold text-slate-800">{o.invoiceNumber}{o.editCount > 0 && <span className="ml-1 text-[10px] text-amber-600">edited</span>}</td>
+                <td className="p-3 font-semibold text-slate-800">{o.invoiceNumber}{o.editCount > 0 && <span className="ml-1 text-[10px] text-amber-600">edited</span>}{o.createdByName && <span className="block text-[10px] font-normal text-slate-400">by {o.createdByName}</span>}</td>
                 <td className="p-3 text-slate-600">{fmtDateTime(o.createdAt)}</td>
                 <td className="p-3">{o.customerSnapshot?.name}<div className="text-xs text-slate-400">{o.customerSnapshot?.phone}</div></td>
                 <td className="p-3 text-right">{round2(o.itemCount)}</td>
@@ -135,7 +139,7 @@ function BillsTab({ api, portal }) {
                     <IconBtn title="Print receipt" onClick={() => printReceipt(o, settings.bill)}><Printer size={15} /></IconBtn>
                     <IconBtn title="PDF invoice" onClick={() => downloadInvoicePdf(o, settings.bill)}><FileText size={15} /></IconBtn>
                     {o.status === "completed" && o.paymentMethod !== "Online" && <IconBtn title="Edit bill" onClick={() => navigate(`/${portal}/pos?edit=${o._id}`)}><Pencil size={15} /></IconBtn>}
-                    {o.status === "completed" && <IconBtn title="Cancel bill" danger onClick={() => setCancelling({ ids: [o._id], label: o.invoiceNumber })}><Ban size={15} /></IconBtn>}
+                    {canCancel && o.status === "completed" && <IconBtn title="Cancel bill" danger onClick={() => setCancelling({ ids: [o._id], label: o.invoiceNumber })}><Ban size={15} /></IconBtn>}
                   </div>
                 </td>
               </tr>

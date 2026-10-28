@@ -213,7 +213,8 @@ function groupNavItems(items) {
 
 const SidebarContent = ({ items, title, onClose, openMenu, handleToggle, hoveredIdx, setHoveredIdx, collapsed, onToggleCollapse }) => {
   const { settings } = useSettings();
-  const { role } = useAuth();
+  const { role, user } = useAuth();
+  const staff = user?.isStaff ? user.staff : null;
   const appName = settings?.appName || 'App';
 
   const homePath = role === 'admin' ? '/admin' : (role === 'seller' ? '/seller' : '/');
@@ -309,10 +310,10 @@ const SidebarContent = ({ items, title, onClose, openMenu, handleToggle, hovered
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-bold text-white truncate">
-                  {title?.toLowerCase().includes('seller') ? 'Seller Console' : 'Admin Console'}
+                  {staff ? staff.name : (title?.toLowerCase().includes('seller') ? 'Seller Console' : 'Admin Console')}
                 </p>
                 <p className="text-[9px] text-gray-500 truncate font-black uppercase tracking-widest">
-                  {title?.toLowerCase().includes('seller') ? 'Seller' : 'Super Admin'}
+                  {staff ? (staff.jobTitle || 'Staff') : (title?.toLowerCase().includes('seller') ? 'Seller' : 'Super Admin')}
                 </p>
               </div>
             </div>

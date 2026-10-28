@@ -1,28 +1,15 @@
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  HiOutlinePencilSquare,
-  HiOutlinePhoto,
-  HiOutlinePlus,
-  HiOutlineXMark,
-} from "react-icons/hi2";
+import { HiOutlinePencilSquare } from "react-icons/hi2";
 import { adminApi } from "../services/adminApi";
-import Card from "@shared/components/ui/Card";
 import Button from "@shared/components/ui/Button";
 import Modal from "@shared/components/ui/Modal";
 import PageHeader from "@shared/components/ui/PageHeader";
 import DataTable from "@shared/components/ui/DataTable";
 import { useToast } from "@shared/components/ui/Toast";
 import { cn } from "@/lib/utils";
-
-const emptyBannerItem = () => ({
-  imageUrl: "",
-  title: "",
-  subtitle: "",
-  linkType: "none",
-  linkValue: "",
-  isUploading: false,
-});
+import BannerListEditor from "../components/BannerListEditor";
+import { bannerPayload, newBanner, toEditorItems, validateBanners } from "../components/bannerEditorUtils";
 
 const HERO_CATEGORIES_QUERY_KEY = ["admin", "heroCategoriesPerPage"];
 
@@ -32,9 +19,10 @@ export default function HeroCategoriesPerPage() {
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRow, setEditingRow] = useState(null);
-  const [formBanners, setFormBanners] = useState([emptyBannerItem()]);
+  const [formBanners, setFormBanners] = useState([newBanner()]);
   const [formCategoryIds, setFormCategoryIds] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [opening, setOpening] = useState(false);
 
   // Perf audit Phase 8: migrated the compound tree + per-header hero-config
   // load to a single React Query entry (it was always fetched as one unit
@@ -105,9 +93,8 @@ export default function HeroCategoriesPerPage() {
   }, [isError]);
 
   const openEdit = async (row) => {
-    setEditingRow(row);
-    setFormCategoryIds([]);
-    setFormBanners([emptyBannerItem()]);
+    if (opening) return;
+    setOpening(true);
     try {
       const res = await adminApi.getHeroConfig({
         pageType: row.pageType,
@@ -116,49 +103,19 @@ export default function HeroCategoriesPerPage() {
       const result = res.data?.result || res.data || {};
       const items = result.banners?.items || [];
       const catIds = result.categoryIds || [];
-      setFormBanners(
-        items.length
-          ? items.map((b) => ({ ...b, isUploading: false }))
-          : [emptyBannerItem()]
+      // Saved ids may come back populated; the form works with plain ids.
+      setFormBanners(items.length ? toEditorItems(items) : [newBanner()]);
+      setFormCategoryIds(
+        (Array.isArray(catIds) ? catIds : []).map((c) => String(c && typeof c === "object" ? c._id : c))
       );
-      setFormCategoryIds(Array.isArray(catIds) ? catIds : []);
+      setEditingRow(row);
+      setModalOpen(true);
     } catch (e) {
+      // Opening a blank form here would let a save overwrite the real config.
       console.error(e);
-    }
-    setModalOpen(true);
-  };
-
-  const updateBannerItem = (idx, changes) => {
-    setFormBanners((prev) => {
-      const next = [...prev];
-      next[idx] = { ...next[idx], ...changes };
-      return next;
-    });
-  };
-
-  const addBannerItem = () => {
-    setFormBanners((prev) => [...prev, emptyBannerItem()]);
-  };
-
-  const removeBannerItem = (idx) => {
-    setFormBanners((prev) => prev.filter((_, i) => i !== idx));
-  };
-
-  const handleBannerFileChange = async (idx, file) => {
-    if (!file) return;
-    updateBannerItem(idx, { isUploading: true });
-    try {
-      const fd = new FormData();
-      fd.append("image", file);
-      const res = await adminApi.uploadExperienceBanner(fd);
-      const url = res.data?.result?.url || res.data?.url;
-      if (!url) throw new Error("Upload failed");
-      updateBannerItem(idx, { imageUrl: url, isUploading: false });
-      showToast("Banner image uploaded", "success");
-    } catch (e) {
-      console.error(e);
-      updateBannerItem(idx, { isUploading: false });
-      showToast("Failed to upload banner image", "error");
+      showToast("Could not load this page's saved hero. Try again.", "error");
+    } finally {
+      setOpening(false);
     }
   };
 
@@ -169,16 +126,13 @@ export default function HeroCategoriesPerPage() {
   };
 
   const handleSave = async () => {
-    const items = formBanners.filter((b) => b.imageUrl).map((b) => ({
-      imageUrl: b.imageUrl,
-      title: b.title || "",
-      subtitle: b.subtitle || "",
-      linkType: b.linkType || "none",
-      linkValue: b.linkValue || "",
-      status: b.status || "active",
-    }));
-
-    if (!editingRow) return;
+    if (!editingRow || saving) return;
+    const problem = validateBanners(formBanners);
+    if (problem) {
+      showToast(problem, "warning");
+      return;
+    }
+    const items = bannerPayload(formBanners);
     setSaving(true);
     try {
       await adminApi.setHeroConfig({
@@ -247,7 +201,8 @@ export default function HeroCategoriesPerPage() {
         <button
           type="button"
           onClick={() => openEdit(row)}
-          className="inline-flex items-center gap-1 text-[10px] font-bold text-primary hover:underline"
+          disabled={opening}
+          className="inline-flex items-center gap-1 text-[10px] font-bold text-primary hover:underline disabled:opacity-50"
         >
           <HiOutlinePencilSquare className="h-3.5 w-3.5" />
           Edit
@@ -293,80 +248,7 @@ export default function HeroCategoriesPerPage() {
       >
         {editingRow && (
           <div className="space-y-5">
-            <div>
-              <div className="mb-2 flex items-center justify-between">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                  Hero banners
-                </label>
-                <button
-                  type="button"
-                  onClick={addBannerItem}
-                  className="flex items-center gap-1 text-[10px] font-bold text-primary"
-                >
-                  <HiOutlinePlus className="h-3 w-3" />
-                  Add banner
-                </button>
-              </div>
-              <div className="max-h-48 space-y-3 overflow-y-auto">
-                {formBanners.map((item, idx) => (
-                  <Card key={idx} className="p-3">
-                    <div className="flex items-start gap-3">
-                      <div className="flex-1 space-y-2">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
-                            {item.imageUrl ? (
-                              <img
-                                src={item.imageUrl}
-                                alt={item.title || `Banner ${idx + 1}`}
-                                className="h-full w-full object-cover"
-                              />
-                            ) : (
-                              <HiOutlinePhoto className="h-6 w-6 text-slate-300" />
-                            )}
-                          </div>
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              id={`hero-banner-file-${idx}`}
-                              onChange={(e) => handleBannerFileChange(idx, e.target.files?.[0])}
-                            />
-                            <label
-                              htmlFor={`hero-banner-file-${idx}`}
-                              className="inline-block cursor-pointer rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600 hover:bg-slate-200"
-                            >
-                              {item.isUploading ? "Uploading…" : item.imageUrl ? "Change" : "Upload"}
-                            </label>
-                            <input
-                              value={item.title || ""}
-                              onChange={(e) => updateBannerItem(idx, { title: e.target.value })}
-                              className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-                              placeholder="Title (optional)"
-                            />
-                            <input
-                              value={item.subtitle || ""}
-                              onChange={(e) => updateBannerItem(idx, { subtitle: e.target.value })}
-                              className="h-9 w-full rounded-md border border-slate-200 bg-white px-3 text-xs font-bold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-                              placeholder="Subtitle (optional)"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                      {formBanners.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => removeBannerItem(idx)}
-                          className="rounded-lg p-2 text-slate-300 transition-all hover:bg-danger/10 hover:text-danger"
-                        >
-                          <HiOutlineXMark className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  </Card>
-                ))}
-              </div>
-            </div>
+            <BannerListEditor items={formBanners} onChange={setFormBanners} />
 
             <div>
               <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-slate-400">

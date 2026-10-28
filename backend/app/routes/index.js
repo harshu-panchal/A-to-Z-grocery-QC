@@ -27,6 +27,7 @@ import healthRoute from "./healthRoutes.js";
 import metricsRoute from "./metricsRoutes.js";
 import authOtpRoute from "../modules/otp/otp.routes.js";
 import { adminPosRouter, sellerPosRouter } from "./posRoutes.js";
+import { adminStaffRouter, sellerStaffRouter, staffAuthRouter } from "./staffRoutes.js";
 
 import express from "express";
 
@@ -47,6 +48,10 @@ const setupRoutes = (app) => {
     // POS (in-store billing) — mounted before /admin and /seller so it wins the prefix
     router.use("/admin/pos", adminPosRouter);
     router.use("/seller/pos", sellerPosRouter);
+    // Staff management is mounted ahead of /admin and /seller for the same reason.
+    router.use("/admin/staff", adminStaffRouter);
+    router.use("/seller/staff", sellerStaffRouter);
+    router.use("/staff", staffAuthRouter); // staff login + their own profile
     router.use("/admin", adminRoute);
     router.use("/seller", sellerRoute);
     router.use("/settings", settingsRoute);

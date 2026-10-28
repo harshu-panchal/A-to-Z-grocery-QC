@@ -31,7 +31,12 @@ export const posScope = (role) => (req, res, next) => {
     isAdmin,
     owner,
     ownerKey: isAdmin ? "admin" : `seller:${req.user.id}`,
-    actor: new mongoose.Types.ObjectId(String(req.user.id)),
+    // A staff member's bills are recorded under their own id and name; the
+    // owner's data scope (above) stays the shop / admin.
+    actor: new mongoose.Types.ObjectId(String(req.staff?.id || req.user.id)),
+    actorName: req.staff?.name || "",
+    isStaff: Boolean(req.staff),
+    canSeeCost: !req.staff || Boolean(req.staff.permissions?.["pos.cost"]),
   };
   next();
 };

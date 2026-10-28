@@ -209,6 +209,7 @@ const Home = () => {
   const [isInstantBannerJump, setIsInstantBannerJump] = useState(false);
   const [categoryMap, setCategoryMap] = useState(() => cachedHomePageData?.categoryMap || {});
   const [subcategoryMap, setSubcategoryMap] = useState(() => cachedHomePageData?.subcategoryMap || {});
+  const [sectionProducts, setSectionProducts] = useState([]);
   const [pendingReturn, setPendingReturn] = useState(null);
   const [offerSections, setOfferSections] = useState(() => cachedHomePageData?.offerSections || []);
   const [noServiceData, setNoServiceData] = useState(null);
@@ -271,7 +272,7 @@ const Home = () => {
         customerApi.getCategories(),
         hasValidLocation ? customerApi.getProducts(productParams) : Promise.resolve({ data: { success: true, result: { items: [] } } }),
         customerApi.getExperienceSections({ pageType: "home" }).catch(() => null),
-        hasValidLocation ? customerApi.getOfferSections({ lat: currentLocation.latitude, lng: currentLocation.longitude }).catch(() => ({ data: {} })) : Promise.resolve({ data: { results: [] } }),
+        hasValidLocation ? customerApi.getOfferSections({ lat: currentLocation.latitude, lng: currentLocation.longitude, kind: "offer" }).catch(() => ({ data: {} })) : Promise.resolve({ data: { results: [] } }),
       ]);
       const nextHomeData = {
         categories: [ALL_CATEGORY],
@@ -329,20 +330,6 @@ const Home = () => {
     }
   };
 
-  const hydrateSelectedSectionProducts = async (sections = []) => {
-    const selectedProductIds = Array.from(new Set(sections.flatMap((s) => s?.displayType === "products" ? (s?.config?.products?.productIds || []) : []).map((id) => String(id || "").trim()).filter(Boolean)));
-    if (!selectedProductIds.length) return;
-    const existingIds = new Set(productsRef.current.map((p) => String(p?._id || p?.id || "").trim()));
-    const missingIds = selectedProductIds.filter((id) => !existingIds.has(id));
-    if (!missingIds.length) return;
-    try {
-      const locationParams = Number.isFinite(currentLocation?.latitude) ? { lat: currentLocation.latitude, lng: currentLocation.longitude } : undefined;
-      const missingResults = await Promise.allSettled(missingIds.map((id) => customerApi.getProductById(id, locationParams)));
-      const fetchedMissing = missingResults.filter((r) => r.status === "fulfilled").flatMap((r) => { const p = r.value?.data?.result || r.value?.data?.results; return Array.isArray(p) ? p : (p ? [p] : []); }).map((p) => ({ ...p, id: p._id, image: p.mainImage || p.image || "https://images.unsplash.com/photo-1550989460-0adf9ea622e2?auto=format&fit=crop&q=80&w=400&h=400", price: p.sellingPrice || p.mrp, originalPrice: p.mrp, weight: p.weight || "1 unit", deliveryTime: "8-15 mins" }));
-      if (fetchedMissing.length) setProducts((prev) => { const merged = [...prev]; const mergedIds = new Set(merged.map((p) => String(p?._id || p?.id || "").trim())); fetchedMissing.forEach((p) => { const key = String(p?._id || p?.id || "").trim(); if (!mergedIds.has(key)) { merged.push(p); mergedIds.add(key); } }); return merged; });
-    } catch (e) {}
-  };
-
   useEffect(() => { fetchData(); }, [currentLocation?.latitude, currentLocation?.longitude]);
   const headerSectionsCache = useRef(headerSectionsMemoryCache);
   const heroConfigCache = useRef(heroConfigMemoryCache);
@@ -354,7 +341,7 @@ const Home = () => {
       if (headerSectionsCache.current[cacheKey]) { setHeaderSections(headerSectionsCache.current[cacheKey]); return; }
       try {
         const res = await customerApi.getExperienceSections({ pageType: "header", headerId: activeCategory._id });
-        if (res.data.success) { const sections = Array.isArray(res.data.result || res.data.results) ? (res.data.result || res.data.results) : []; headerSectionsCache.current[cacheKey] = sections; setHeaderSections(sections); await hydrateSelectedSectionProducts(sections); }
+        if (res.data.success) { const sections = Array.isArray(res.data.result || res.data.results) ? (res.data.result || res.data.results) : []; headerSectionsCache.current[cacheKey] = sections; setHeaderSections(sections); }
         else setHeaderSections([]);
       } catch (e) { setHeaderSections([]); }
     };
@@ -425,7 +412,7 @@ const Home = () => {
   useEffect(() => { if (!isInstantBannerJump) return; const id = requestAnimationFrame(() => setIsInstantBannerJump(false)); return () => cancelAnimationFrame(id); }, [isInstantBannerJump]);
 
   // Experience sections pick products from this map; hide out-of-stock ones (search still shows them)
-  const productsById = useMemo(() => { const map = {}; onlyInStock(products).forEach((p) => { map[p._id || p.id] = p; }); return map; }, [products]);
+  const productsById = useMemo(() => { const map = {}; onlyInStock([...products, ...sectionProducts]).forEach((p) => { map[p._id || p.id] = p; }); return map; }, [products, sectionProducts]);
   const effectiveQuickCategories = useMemo(() => {
     const ids = heroConfig.categoryIds || [];
     if (ids.length > 0) { const resolved = ids.map((id) => categoryMap[id]).filter(Boolean).map((c) => ({ id: c._id, name: c.name, image: c.image || "https://cdn-icons-png.flaticon.com/128/2321/2321831.png" })); if (resolved.length > 0) return resolved; }
@@ -443,6 +430,32 @@ const Home = () => {
   // A header tab never falls back to the generic home sections
   const sectionsForRenderer = isHeaderTab ? headerSections : experienceSections;
   const tabProducts = isHeaderTab && headerProducts ? headerProducts : products;
+
+  // Each product section loads its own products (its picked ids, or its
+  // category filter), so it isn't limited to the 20 the home page fetches.
+  useEffect(() => {
+    const lat = currentLocation?.latitude;
+    const lng = currentLocation?.longitude;
+    const productSections = sectionsForRenderer.filter((s) => s?.displayType === "products");
+    if (!productSections.length || !Number.isFinite(lat) || !Number.isFinite(lng)) return undefined;
+    let cancelled = false;
+    const listOf = (data) => { const raw = data?.result; return Array.isArray(data?.results) ? data.results : Array.isArray(raw?.items) ? raw.items : Array.isArray(raw) ? raw : []; };
+    const pickedIds = [...new Set(productSections.flatMap((s) => s.config?.products?.productIds || []).map(String))];
+    const filtered = productSections.map((s) => s.config?.products || {}).filter((c) => !(c.productIds || []).length);
+    Promise.all([
+      ...pickedIds.map((id) => customerApi.getProductById(id, { lat, lng }).then((r) => [r.data?.result]).catch(() => [])),
+      ...filtered.map((c) => customerApi.getProducts({
+        lat, lng,
+        limit: c.singleRowScrollable ? 30 : Math.max(1, (c.rows || 1) * (c.columns || 2)),
+        ...(c.categoryIds?.length ? { categoryIds: c.categoryIds.join(",") } : {}),
+        ...(c.subcategoryIds?.length ? { subcategoryIds: c.subcategoryIds.join(",") } : {}),
+      }).then((r) => listOf(r.data)).catch(() => [])),
+    ]).then((lists) => {
+      if (cancelled) return;
+      setSectionProducts(lists.flat().filter(Boolean).map((p) => ({ ...p, id: p._id, image: p.mainImage || p.image || "https://images.unsplash.com/photo-1550989460-0adf9ea622e2?auto=format&fit=crop&q=80&w=400&h=400", price: p.sellingPrice || p.mrp, originalPrice: p.mrp, weight: p.weight || "1 unit", deliveryTime: "8-15 mins" })));
+    });
+    return () => { cancelled = true; };
+  }, [sectionsForRenderer, currentLocation?.latitude, currentLocation?.longitude]);
   // All level-2 categories of the selected header, used for per-category product rows
   const headerLevel2Categories = useMemo(() => {
     if (!isHeaderTab) return [];
@@ -515,8 +528,7 @@ const Home = () => {
     </>
   );
 
-  // AtzHome has its own "Explore top categories" grid, so skip admin category grids there
-  const phoneSections = sectionsForRenderer.filter((s) => s.displayType !== "categories");
+  const phoneSections = sectionsForRenderer;
 
   if (isPhone && !showNoService) {
     return (
@@ -568,7 +580,7 @@ const Home = () => {
           <motion.div ref={heroRef} className="block md:hidden will-change-transform" style={isMobile ? { opacity: 1 } : { opacity, y, scale, pointerEvents }}>
             <div className="relative w-full overflow-hidden">
               {heroConfig.banners?.items?.length ? (
-                <ExperienceBannerCarousel section={{ title: "" }} items={heroConfig.banners.items} fullWidth edgeToEdge />
+                <ExperienceBannerCarousel section={{ title: "" }} items={heroConfig.banners.items} fullWidth />
               ) : (
                 <div className="relative flex h-[190px] w-full items-center overflow-hidden border-y border-primary/10 bg-gradient-to-br from-brand-50 via-white to-emerald-50 px-6 shadow-sm">
                   <div className="relative z-10 w-3/5 flex flex-col items-start gap-2">
@@ -586,19 +598,13 @@ const Home = () => {
           {/* Desktop: hero banners in a row (phones use the carousel above) */}
           {(heroConfig === EMPTY_HERO_CONFIG || heroConfig.banners?.items?.length > 0) && (
             <section aria-label="Offers" className="mx-auto hidden w-full max-w-[1440px] px-8 pb-6 pt-2 md:block lg:px-12">
-              <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
-                {heroConfig === EMPTY_HERO_CONFIG
-                  ? [0, 1, 2].map((i) => <div key={i} className={cn("aspect-[824/397] animate-pulse rounded-2xl bg-slate-200", i === 2 && "hidden lg:block")} />)
-                  : heroConfig.banners.items.slice(0, 6).map((b, i) => (
-                    <img
-                      key={`${i}-${b.imageUrl}`}
-                      src={applyCloudinaryTransform(b.imageUrl, "f_auto,q_auto,c_scale,w_824")}
-                      alt={b.title || "Offer"}
-                      loading={i < 3 ? "eager" : "lazy"}
-                      className="aspect-[824/397] w-full rounded-2xl bg-slate-100 object-cover shadow-sm"
-                    />
-                  ))}
-              </div>
+              {heroConfig === EMPTY_HERO_CONFIG ? (
+                <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+                  {[0, 1, 2].map((i) => <div key={i} className={cn("aspect-[824/397] animate-pulse rounded-2xl bg-slate-200", i === 2 && "hidden lg:block")} />)}
+                </div>
+              ) : (
+                <ExperienceBannerCarousel section={{ title: "Offers" }} items={heroConfig.banners.items} />
+              )}
             </section>
           )}
 

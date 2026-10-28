@@ -18,6 +18,7 @@ const Auth = lazy(() => import('../../modules/seller/pages/Auth'));
 const ApplicationPending = lazy(() => import('../../modules/seller/pages/ApplicationPending'));
 const AdminAuth = lazy(() => import('../../modules/admin/pages/AdminAuth'));
 const DeliveryAuth = lazy(() => import('../../modules/delivery/pages/DeliveryAuth'));
+const StaffLogin = lazy(() => import('../../modules/staff/pages/StaffLogin'));
 const CustomerAuth = lazy(() => import('../../modules/customer/pages/CustomerAuth'));
 
 // Customer Pages (lazy-loaded)
@@ -163,6 +164,14 @@ const AppRouter = () => {
                     element: (
                         <Suspense fallback={<Loader fullScreen />}>
                             <AdminAuth />
+                        </Suspense>
+                    ),
+                },
+                {
+                    path: 'staff/login',
+                    element: (
+                        <Suspense fallback={<Loader fullScreen />}>
+                            <StaffLogin />
                         </Suspense>
                     ),
                 },

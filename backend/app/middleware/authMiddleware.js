@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import handleResponse from "../utils/helper.js";
 import Seller from "../models/seller.js";
 import Admin from "../models/admin.js";
+import { STAFF_ROLE, resolveStaffRequest } from "../services/staff/staffAccess.js";
 
 export function extractJwtFromHeaders(req) {
   const authHeader = String(req.headers.authorization || "").trim();
@@ -41,6 +42,15 @@ export const verifyToken = async (req, res, next) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
 
+    // Staff accounts act inside their owner's panel with limited permissions.
+    // They are identified, permission-checked and logged here; afterwards
+    // req.user looks like the owner so existing handlers work unchanged.
+    if (decoded.role === STAFF_ROLE) {
+      const result = await resolveStaffRequest(req, res, decoded);
+      if (!result.ok) return handleResponse(res, result.status, result.message);
+      return next();
+    }
+
     // Audit fix H5: admin/seller password change increments `tokenVersion`
     // in the DB (see admin/profileController.js updateAdminPassword and
     // sellerAuthController.js resetSellerPassword). Reject any token issued
@@ -69,14 +79,20 @@ export const verifyToken = async (req, res, next) => {
 /* ===============================
    Optional Verify Token (for public routes that need user context)
 ================================ */
-export const optionalVerifyToken = (req, res, next) => {
+export const optionalVerifyToken = async (req, res, next) => {
   try {
     const token = extractJwtFromHeaders(req);
 
     if (token) {
       try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
-        req.user = decoded; // { id, role }
+        if (decoded.role === STAFF_ROLE) {
+          // Public routes: a staff token counts only where its permissions allow it.
+          const result = await resolveStaffRequest(req, res, decoded);
+          if (!result.ok) req.user = null;
+        } else {
+          req.user = decoded; // { id, role }
+        }
       } catch (error) {
         // Token is invalid, but we don't block the request
         req.user = null;

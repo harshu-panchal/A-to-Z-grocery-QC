@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { isStaffSession, markStaffSession } from '@core/utils/staffSession';
 import { resolveApiBaseUrl } from './resolveApiBaseUrl';
 import { getStoredAuthToken } from '@core/utils/authStorage';
 import { getActiveRole, ROLES } from '@core/auth/activeRoleStore';
@@ -48,6 +49,11 @@ const axiosInstance = axios.create({
 axiosInstance.interceptors.request.use(
     (config) => {
         const url = config.url || '';
+
+        // Logging in must never carry (and then wipe, on a wrong password)
+        // some other signed-in session's token.
+        if (url.startsWith('/staff/login')) return config;
+
         const isMultipartRequest =
             typeof FormData !== 'undefined' && config.data instanceof FormData;
 
@@ -139,8 +145,10 @@ function clearSessionAndRedirect(storageKey) {
     if (redirectInFlight) return;
     if (typeof window === 'undefined') return;
 
-    const authRoute = STORAGE_KEY_TO_AUTH_ROUTE[storageKey];
+    const staff = isStaffSession();
+    const authRoute = staff ? '/staff/login' : STORAGE_KEY_TO_AUTH_ROUTE[storageKey];
     if (!authRoute || window.location.pathname === authRoute) return;
+    if (staff) markStaffSession(false);
 
     redirectInFlight = true;
     window.location.href = authRoute;

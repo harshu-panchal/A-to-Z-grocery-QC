@@ -1,8 +1,12 @@
 import Admin from "../../models/admin.js";
 import handleResponse from "../../utils/helper.js";
+import { toStaffProfile } from "../../services/staff/staffProfile.js";
 
 export const getAdminProfile = async (req, res) => {
   try {
+    if (req.staff) {
+      return handleResponse(res, 200, "Admin profile fetched successfully", toStaffProfile(req.staff));
+    }
     if (!req.user?.id) {
       return handleResponse(res, 400, "Missing user ID in session");
     }

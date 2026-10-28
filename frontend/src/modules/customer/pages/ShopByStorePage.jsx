@@ -42,6 +42,7 @@ const ShopByStorePage = () => {
         .getOfferSections({
           lat: currentLocation.latitude,
           lng: currentLocation.longitude,
+          kind: "store",
         })
         .catch(() => ({ data: {} }));
       const list =

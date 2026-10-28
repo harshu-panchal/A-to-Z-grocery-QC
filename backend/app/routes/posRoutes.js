@@ -7,6 +7,7 @@
 import express from "express";
 import { verifyToken, allowRoles, requireApprovedSeller } from "../middleware/authMiddleware.js";
 import { posScope } from "../services/pos/posService.js";
+import { hideCostForStaff } from "../services/staff/redactCost.js";
 import * as orders from "../controller/pos/posOrderController.js";
 import * as parties from "../controller/pos/posPartyController.js";
 import * as purchases from "../controller/pos/posPurchaseController.js";
@@ -18,6 +19,7 @@ export function buildPosRouter(role) {
   router.use(verifyToken, allowRoles(role));
   if (role === "seller") router.use(requireApprovedSeller);
   router.use(posScope(role));
+  router.use(hideCostForStaff);
 
   // catalogue
   router.get("/products", misc.posProducts);

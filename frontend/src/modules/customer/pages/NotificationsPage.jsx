@@ -93,10 +93,19 @@ const NotificationsPage = () => {
 
             <div className="px-4 space-y-3 max-w-2xl mx-auto">
                 {notifications.length > 0 ? (
-                    notifications.map((notification) => (
-                        <div 
-                            key={notification.id} 
-                            className={`p-4 rounded-2xl border flex gap-4 ${
+                    notifications.map((notification) => {
+                        const link = String(notification.data?.link || notification.data?.deepLink || "").trim();
+                        const open = link.startsWith("/")
+                            ? () => navigate(link)
+                            : /^https?:\/\//i.test(link)
+                                ? () => window.open(link, "_blank", "noopener,noreferrer")
+                                : undefined;
+                        return (
+                        <div
+                            key={notification.id}
+                            onClick={open}
+                            role={open ? "link" : undefined}
+                            className={`p-4 rounded-2xl border flex gap-4 ${open ? "cursor-pointer " : ""}${
                                 notification.isRead 
                                 ? "bg-white border-slate-100" 
                                 : "bg-primary/5 border-primary/20"
@@ -117,11 +126,12 @@ const NotificationsPage = () => {
                                     </span>
                                 </div>
                                 <p className={`mt-1 text-sm ${notification.isRead ? "text-slate-500" : "text-slate-700"}`}>
-                                    {notification.message}
+                                    {notification.message || notification.body}
                                 </p>
                             </div>
                         </div>
-                    ))
+                        );
+                    })
                 ) : (
                     <div className="flex flex-col items-center justify-center py-20 px-4 text-center">
                         <div className="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-4">
