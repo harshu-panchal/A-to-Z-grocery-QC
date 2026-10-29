@@ -178,6 +178,7 @@ export default function PosTerminal({ portal }) {
   const staffAccess = useStaffAccess();
   const canSeeCost = staffAccess.special("pos.cost");
   const canQuickAdd = staffAccess.special("pos.quickadd");
+  const canChangePrice = staffAccess.special("pos.price");
   const rootRef = useRef(null);
   const fill = useFillViewport(rootRef);
   const [showProfit, setShowProfit] = useState(false);
@@ -409,14 +410,18 @@ export default function PosTerminal({ portal }) {
                   <button type="button" aria-label="More" className="p-1.5 text-slate-600" onClick={() => setLine(l.id, { quantity: round2(Number(l.quantity) + 1) })}><Plus size={14} /></button>
                 </div>
                 <span className="text-xs text-slate-400">×</span>
-                <input
-                  className="w-20 rounded-lg border border-slate-200 px-2 py-1 text-right text-sm outline-none focus:border-primary"
-                  inputMode="decimal"
-                  value={l.price}
-                  onChange={(e) => setLine(l.id, { price: e.target.value.replace(/[^\d.]/g, ""), priceType: "custom" })}
-                  onBlur={(e) => setLine(l.id, { price: Number(e.target.value) || 0 })}
-                  aria-label={`${l.name} price`}
-                />
+                {canChangePrice || !l.productId ? (
+                  <input
+                    className="w-20 rounded-lg border border-slate-200 px-2 py-1 text-right text-sm outline-none focus:border-primary"
+                    inputMode="decimal"
+                    value={l.price}
+                    onChange={(e) => setLine(l.id, { price: e.target.value.replace(/[^\d.]/g, ""), priceType: "custom" })}
+                    onBlur={(e) => setLine(l.id, { price: Number(e.target.value) || 0 })}
+                    aria-label={`${l.name} price`}
+                  />
+                ) : (
+                  <span className="w-20 px-2 py-1 text-right text-sm font-semibold text-slate-700" aria-label={`${l.name} price`}>{rupees(l.price)}</span>
+                )}
                 <span className="ml-auto text-sm font-bold text-slate-900">{rupees(lineTotal(l))}</span>
               </div>
               {l.stock != null && Number(l.quantity) > l.stock && <p className="mt-1 text-[11px] font-semibold text-red-600">Only {l.stock} in stock</p>}

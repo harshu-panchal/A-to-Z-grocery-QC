@@ -37,6 +37,10 @@ export const posScope = (role) => (req, res, next) => {
     actorName: req.staff?.name || "",
     isStaff: Boolean(req.staff),
     canSeeCost: !req.staff || Boolean(req.staff.permissions?.["pos.cost"]),
+    // Staff can only sell at the shop price unless the owner allowed price changes.
+    canChangePrice: !req.staff || Boolean(req.staff.permissions?.["pos.price"]),
+    // items not in the catalogue (typed in with Quick add) need the Quick add switch
+    canQuickAdd: !req.staff || Boolean(req.staff.permissions?.["pos.quickadd"]),
   };
   next();
 };
@@ -149,7 +153,7 @@ export async function searchPosProducts(pos, { search = "", sellerId, categoryId
  * the product/variant (stock owner = product's seller); others are custom
  * "quick" items that never touch stock.
  */
-export async function resolveLines(pos, rawItems) {
+export async function resolveLines(pos, rawItems, { knownLines = [] } = {}) {
   if (!Array.isArray(rawItems) || rawItems.length === 0) throw httpError(400, "Add at least one item");
   const ids = [...new Set(rawItems.map((i) => i.productId).filter(isObjectId).map(String))];
   const products = ids.length
@@ -162,6 +166,9 @@ export async function resolveLines(pos, rawItems) {
     if (!(quantity > 0)) throw httpError(400, `Invalid quantity on line ${idx + 1}`);
     const product = isObjectId(raw.productId) ? byId.get(String(raw.productId)) : null;
     if (isObjectId(raw.productId) && !product) throw httpError(404, `Product on line ${idx + 1} no longer exists`);
+    if (!product && pos.canQuickAdd === false && !knownLines.some((k) => !k.product && k.name === String(raw.name || "").trim())) {
+      throw httpError(403, `You are not allowed to add items that are not in the product list (line ${idx + 1})`);
+    }
     if (product && !pos.isAdmin && String(product.sellerId) !== String(pos.owner)) {
       throw httpError(403, `"${product.name}" is not your product`);
     }
@@ -176,6 +183,17 @@ export async function resolveLines(pos, rawItems) {
     const unitPrice = round2(raw.price ?? raw.unitPrice ?? defaultPrice);
     if (!(unitPrice >= 0)) throw httpError(400, `Invalid price on line ${idx + 1}`);
     const lineDiscount = Math.max(0, round2(raw.lineDiscount || 0));
+    if (product && pos.canChangePrice === false) {
+      // only the shop price, the wholesale price, or what this same bill already had
+      const sku = variant ? String(variant.sku || variant.name || "") : "";
+      const same = knownLines.filter((k) => String(k.product) === String(product._id) && String(k.variantSku || "") === sku);
+      const wholesale = Number(variant?.wholesalePrice) || Number(product.wholesalePrice) || 0;
+      const okPrice = unitPrice === round2(defaultPrice) || (wholesale > 0 && unitPrice === round2(wholesale)) || same.some((k) => round2(k.unitPrice) === unitPrice);
+      const okDiscount = lineDiscount === 0 || same.some((k) => round2(k.lineDiscount || 0) === lineDiscount);
+      if (!okPrice || !okDiscount) {
+        throw httpError(403, `You are not allowed to change the price of "${product.name}"${okPrice ? "" : ". Refresh the product list if the shop price changed"}`);
+      }
+    }
     const total = Math.max(0, round2(unitPrice * quantity - lineDiscount));
     const gstRate = Number(raw.gstRate ?? raw.gst ?? product?.gstRate ?? 0) || 0;
     const name = String(raw.name || product?.name || "").trim();

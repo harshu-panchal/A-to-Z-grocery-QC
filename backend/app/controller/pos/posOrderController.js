@@ -326,7 +326,7 @@ export const updatePosOrderItems = async (req, res) => {
       await moveStock(oldLines, { direction: 1, type: "POS Edit Restore", pos, posOrder: doc._id, note: `Edit of ${doc.invoiceNumber}`, strict: false, session });
 
       // 2. take the new lines
-      const lines = await resolveLines(pos, items);
+      const lines = await resolveLines(pos, items, { knownLines: doc.items });
       await moveStock(lines, { direction: -1, type: "POS Edit Deduct", pos, posOrder: doc._id, note: `Edit of ${doc.invoiceNumber}`, session });
 
       const oldTotal = doc.total;

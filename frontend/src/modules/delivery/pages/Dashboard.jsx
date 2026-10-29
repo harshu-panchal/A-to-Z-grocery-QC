@@ -37,7 +37,8 @@ const Dashboard = () => {
 
   // One toggle request at a time; remembers the last status the rider chose
   const toggleBusyRef = useRef(false);
-  const draggedRef = useRef(false);
+  const gestureRef = useRef(null); // the switch's current tap/slide
+  const [dragPct, setDragPct] = useState(null); // knob position while sliding (0-100), null otherwise
   const lastToggleRef = useRef({ status: null, at: 0 });
 
   // Sync isOnline with user profile from context. A profile refresh that was
@@ -180,12 +181,33 @@ const Dashboard = () => {
       toggleBusyRef.current = false;
     }
   };
-  const handleOnlineToggle = () => {
-    if (draggedRef.current) {
-      draggedRef.current = false;
-      return;
-    }
-    setOnlineStatus(!isOnline);
+  // One gesture handler for the switch: a tap toggles, a slide right goes
+  // online, a slide left goes offline. The knob follows the finger meanwhile.
+  const onSwitchDown = (e) => {
+    const track = e.currentTarget;
+    const half = (track.clientWidth - 12) / 2; // knob travel (track minus p-1.5 padding)
+    track.setPointerCapture?.(e.pointerId);
+    gestureRef.current = { startX: e.clientX, base: isOnline ? 1 : 0, half, moved: false };
+  };
+  const onSwitchMove = (e) => {
+    const g = gestureRef.current;
+    if (!g) return;
+    const dx = e.clientX - g.startX;
+    if (Math.abs(dx) > 6) g.moved = true;
+    if (g.moved) setDragPct(Math.min(1, Math.max(0, g.base + dx / g.half)) * 100);
+  };
+  const onSwitchUp = (e) => {
+    const g = gestureRef.current;
+    gestureRef.current = null;
+    setDragPct(null);
+    if (!g) return;
+    if (!g.moved) return setOnlineStatus(!isOnline);
+    const pos = g.base + (e.clientX - g.startX) / g.half;
+    setOnlineStatus(pos > 0.5);
+  };
+  const onSwitchCancel = () => {
+    gestureRef.current = null;
+    setDragPct(null);
   };
 
   return (
@@ -256,8 +278,20 @@ const Dashboard = () => {
           </div>
 
           <div
-            className="relative w-full h-14 bg-gray-100/80 rounded-2xl flex items-center p-1.5 cursor-pointer shadow-inner overflow-hidden border border-gray-200/50"
-            onClick={handleOnlineToggle}
+            role="switch"
+            aria-checked={isOnline}
+            aria-label={isOnline ? "Online. Tap or slide left to go offline" : "Offline. Tap or slide right to go online"}
+            tabIndex={0}
+            className="relative w-full h-14 bg-gray-100/80 rounded-2xl flex items-center p-1.5 cursor-pointer shadow-inner overflow-hidden border border-gray-200/50 select-none touch-pan-y"
+            onPointerDown={onSwitchDown}
+            onPointerMove={onSwitchMove}
+            onPointerUp={onSwitchUp}
+            onPointerCancel={onSwitchCancel}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setOnlineStatus(!isOnline); }
+              else if (e.key === "ArrowRight") setOnlineStatus(true);
+              else if (e.key === "ArrowLeft") setOnlineStatus(false);
+            }}
           >
             {/* Background Labels */}
             <div className="absolute inset-0 flex w-full">
@@ -276,37 +310,17 @@ const Dashboard = () => {
             </div>
 
             <motion.div
-              drag="x"
-              dragConstraints={{ left: 0, right: 0 }} // We will use dragElastic for feel, but onDragEnd for logic
-              dragElastic={0.1}
-              onDragStart={() => {
-                draggedRef.current = true;
-              }}
-              onDragEnd={(_, info) => {
-                const swipePower = info.offset.x;
-                if (swipePower > 50) setOnlineStatus(true);
-                else if (swipePower < -50) setOnlineStatus(false);
-                // the click that follows a drag must not toggle again
-                setTimeout(() => {
-                  draggedRef.current = false;
-                }, 0);
-              }}
-              whileTap={{ scale: 0.98 }}
               className={cn(
-                "w-1/2 h-full rounded-xl shadow-md flex items-center justify-center gap-2 z-10 border transition-all duration-500 cursor-grab active:cursor-grabbing",
-                isOnline 
-                  ? "bg-gradient-to-r from-primary to-[var(--brand-400)] border-[#389ecb] text-white" 
+                "w-1/2 h-full rounded-xl shadow-md flex items-center justify-center gap-2 z-10 border transition-colors duration-300 cursor-grab active:cursor-grabbing",
+                isOnline
+                  ? "bg-gradient-to-r from-primary to-[var(--brand-400)] border-[#389ecb] text-white"
                   : "bg-gradient-to-r from-slate-700 to-slate-800 border-slate-900 text-white"
               )}
-              animate={{ x: isOnline ? "100%" : "0%" }}
-              transition={{ type: "spring", stiffness: 400, damping: 30 }}
+              initial={false}
+              animate={{ x: `${dragPct ?? (isOnline ? 100 : 0)}%` }}
+              transition={dragPct !== null ? { duration: 0 } : { type: "spring", stiffness: 400, damping: 32 }}
             >
-              <motion.div
-                initial={false}
-                animate={{ rotate: isOnline ? 0 : 0 }}
-              >
-                {isOnline ? <CheckCircle size={18} strokeWidth={3} /> : <XCircle size={18} strokeWidth={3} />}
-              </motion.div>
+              {isOnline ? <CheckCircle size={18} strokeWidth={3} /> : <XCircle size={18} strokeWidth={3} />}
               <span className="text-xs font-black uppercase tracking-widest select-none">
                 {isOnline ? "ONLINE" : "OFFLINE"}
               </span>
