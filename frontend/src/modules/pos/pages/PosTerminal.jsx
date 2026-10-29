@@ -146,10 +146,13 @@ export default function PosTerminal({ portal }) {
   }, [query, sellerFilter, api, portal]);
 
   // --------------------------------------------------------------- cart
+  const staffAccess = useStaffAccess();
+  const isStaff = staffAccess.isStaff;
   const addRow = useCallback((row, qty = 1) => {
     if (!active) return;
     updateActive((b) => {
-      const line = lineFromRow(row, { priceType: b.priceMode, quantity: qty });
+      // staff always bill at the shop price (wholesale is owner-only)
+      const line = lineFromRow(row, { priceType: isStaff ? "retail" : b.priceMode, quantity: qty });
       const existing = row.productId && b.items.find((l) => l.id === line.id);
       if (existing) {
         const nextQty = Number(existing.quantity) + qty;
@@ -159,7 +162,7 @@ export default function PosTerminal({ portal }) {
       if (line.stock != null && line.stock < qty) toast.warning(`${line.name}: only ${line.stock} in stock`);
       return { ...b, items: [line, ...b.items] };
     });
-  }, [active, updateActive]);
+  }, [active, updateActive, isStaff]);
 
   const setLine = (id, patch) => updateActive((b) => ({ ...b, items: b.items.map((l) => (l.id === id ? { ...l, ...patch } : l)) }));
   const removeLine = (id) => updateActive((b) => ({ ...b, items: b.items.filter((l) => l.id !== id) }));
@@ -175,7 +178,6 @@ export default function PosTerminal({ portal }) {
 
   const totals = useMemo(() => billTotals(active?.items || [], active?.billDiscount), [active]);
   // Staff only get the extras the owner switched on; owners always have them.
-  const staffAccess = useStaffAccess();
   const canSeeCost = staffAccess.special("pos.cost");
   const canQuickAdd = staffAccess.special("pos.quickadd");
   const canChangePrice = staffAccess.special("pos.price");
@@ -371,11 +373,14 @@ export default function PosTerminal({ portal }) {
           {active?.editOrderId && <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">Editing a saved bill — stock is adjusted when you update.</p>}
           {active?.quotationId && <p className="rounded-lg bg-sky-50 px-3 py-2 text-xs font-semibold text-sky-700">Billing from a quotation.</p>}
           <CustomerPicker api={api} value={active?.customer} onChange={(c) => updateActive((b) => ({ ...b, customer: c?._id === WALK_IN ? null : c }))} />
-          <div className="flex rounded-lg bg-slate-100 p-1 text-xs font-semibold">
-            {["retail", "wholesale"].map((m) => (
-              <button key={m} type="button" onClick={() => setPriceMode(m)} className={cn("flex-1 rounded-md py-1.5 capitalize", active?.priceMode === m ? "bg-white text-slate-900 shadow-sm" : "text-slate-500")}>{m} price</button>
-            ))}
-          </div>
+          {/* wholesale pricing is for the owner only; staff always bill at the shop price */}
+          {!isStaff && (
+            <div className="flex rounded-lg bg-slate-100 p-1 text-xs font-semibold">
+              {["retail", "wholesale"].map((m) => (
+                <button key={m} type="button" onClick={() => setPriceMode(m)} className={cn("flex-1 rounded-md py-1.5 capitalize", active?.priceMode === m ? "bg-white text-slate-900 shadow-sm" : "text-slate-500")}>{m} price</button>
+              ))}
+            </div>
+          )}
         </div>
 
         <div data-lenis-prevent className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
@@ -479,6 +484,7 @@ const METHODS = [
 ];
 
 function PaymentModal({ api, portal, bill, totals, onClose, onDone, onQueued }) {
+  const showDues = useStaffAccess().can("pos.customers");
   // one id per checkout: a retried/double-tapped save can't create two bills
   const [clientRef] = useState(() => newClientRef(portal));
   const editing = Boolean(bill.editOrderId);
@@ -575,7 +581,7 @@ function PaymentModal({ api, portal, bill, totals, onClose, onDone, onQueued }) 
         )}
         {!editing && method === "Credit" && (
           hasCustomer
-            ? <p className="text-slate-600">{rupees(totals.total)} will be added to <b>{bill.customer.name}</b>'s udhaar{Number(bill.customer.creditBalance) ? ` (current balance ${rupees(bill.customer.creditBalance)})` : ""}.</p>
+            ? <p className="text-slate-600">{rupees(totals.total)} will be added to <b>{bill.customer.name}</b>'s udhaar{showDues && Number(bill.customer.creditBalance) ? ` (current balance ${rupees(bill.customer.creditBalance)})` : ""}.</p>
             : <p className="font-semibold text-red-600">Pick a saved customer in the bill to give udhaar.</p>
         )}
         {!editing && (method === "UPI" || method === "Card") && <p className="text-slate-600">Collect {rupees(totals.total)} by {method} on your machine/app, then confirm.</p>}

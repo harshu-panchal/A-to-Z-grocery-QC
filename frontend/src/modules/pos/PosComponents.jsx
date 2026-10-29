@@ -6,6 +6,7 @@ import Button from "@shared/components/ui/Button";
 import { cn } from "@/lib/utils";
 import { makePosApi, apiError } from "./posApi";
 import { rupees, WALK_IN } from "./posUtils";
+import { useStaffAccess } from "@/modules/staff/staffAccess";
 
 export const usePosApi = (portal) => useMemo(() => makePosApi(portal), [portal]);
 
@@ -122,6 +123,8 @@ export function BarcodeScannerModal({ isOpen, onClose, onDetected }) {
 export function CustomerFormModal({ api, isOpen, onClose, onSaved, initial }) {
   const [form, setForm] = useState({ name: "", phone: "", email: "", address: "", gstin: "" });
   const [saving, setSaving] = useState(false);
+  // staff only fill name, phone and address; email and GSTIN are for the owner
+  const { isStaff } = useStaffAccess();
   useEffect(() => {
     if (isOpen) setForm({ name: "", phone: "", email: "", address: "", gstin: "", ...(initial || {}) });
   }, [isOpen, initial]);
@@ -151,8 +154,8 @@ export function CustomerFormModal({ api, isOpen, onClose, onSaved, initial }) {
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Name *"><input className={inputCls} value={form.name} onChange={set("name")} autoFocus /></Field>
         <Field label="Phone"><input className={inputCls} inputMode="numeric" maxLength={10} value={form.phone} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value.replace(/\D/g, "") }))} /></Field>
-        <Field label="Email"><input className={inputCls} value={form.email} onChange={set("email")} /></Field>
-        <Field label="GSTIN"><input className={inputCls} value={form.gstin} onChange={set("gstin")} /></Field>
+        {!isStaff && <Field label="Email"><input className={inputCls} value={form.email} onChange={set("email")} /></Field>}
+        {!isStaff && <Field label="GSTIN"><input className={inputCls} value={form.gstin} onChange={set("gstin")} /></Field>}
         <Field label="Address" className="sm:col-span-2"><input className={inputCls} value={form.address} onChange={set("address")} /></Field>
       </div>
     </Modal>
@@ -166,6 +169,8 @@ export function CustomerPicker({ api, value, onChange, allowWalkIn = true }) {
   const [open, setOpen] = useState(false);
   const [adding, setAdding] = useState(false);
   const wrap = useRef(null);
+  // staff only see a customer's due / advance if they have Customers & Udhaar
+  const showDues = useStaffAccess().can("pos.customers");
 
   useEffect(() => {
     if (!open) return undefined;
@@ -190,11 +195,11 @@ export function CustomerPicker({ api, value, onChange, allowWalkIn = true }) {
         className="flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 text-left text-sm hover:border-slate-300"
       >
         <span className="truncate font-medium text-slate-800">{label}</span>
-        {value && value._id !== WALK_IN && Number(value.creditBalance) !== 0 && (
+        {showDues && value && value._id !== WALK_IN && Number(value.creditBalance) ? (
           <span className={cn("shrink-0 rounded px-1.5 py-0.5 text-[10px] font-bold", value.creditBalance > 0 ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-700")}>
             {value.creditBalance > 0 ? `Due ${rupees(value.creditBalance)}` : `Adv ${rupees(-value.creditBalance)}`}
           </span>
-        )}
+        ) : null}
       </button>
       {open && (
         <div className="absolute z-40 mt-1 w-full rounded-xl border border-slate-200 bg-white p-2 shadow-xl">
@@ -208,7 +213,7 @@ export function CustomerPicker({ api, value, onChange, allowWalkIn = true }) {
             {results.map((c) => (
               <button key={c._id} type="button" className="flex w-full items-center justify-between rounded-lg px-2 py-2 text-left text-sm hover:bg-slate-50" onClick={() => { onChange(c); setOpen(false); }}>
                 <span><span className="font-medium text-slate-800">{c.name}</span>{c.phone && <span className="text-slate-500"> · {c.phone}</span>}</span>
-                {Number(c.creditBalance) > 0 && <span className="text-xs font-semibold text-red-600">Due {rupees(c.creditBalance)}</span>}
+                {showDues && Number(c.creditBalance) > 0 && <span className="text-xs font-semibold text-red-600">Due {rupees(c.creditBalance)}</span>}
               </button>
             ))}
             {!results.length && query && <p className="px-2 py-2 text-xs text-slate-500">No customer found.</p>}

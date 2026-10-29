@@ -84,7 +84,7 @@ function BillsTab({ api, portal, canCancel }) {
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatTile label="Today's sales" value={rupees(summary.today.sales)} sub={`${summary.today.bills} bills`} tone="green" />
           <StatTile label="This month" value={rupees(summary.month.sales)} sub={`${summary.month.bills} bills`} />
-          <StatTile label="Udhaar outstanding" value={rupees(summary.creditDue.total)} sub={`${summary.creditDue.customers} customers`} tone="red" />
+          {summary.creditDue && <StatTile label="Udhaar outstanding" value={rupees(summary.creditDue.total)} sub={`${summary.creditDue.customers} customers`} tone="red" />}
           <StatTile label="Selected period" value={rupees(s.sales || 0)} sub={`${s.bills || 0} bills · GST ${rupees(s.gst || 0)}`} />
         </div>
       )}
@@ -138,7 +138,7 @@ function BillsTab({ api, portal, canCancel }) {
                     <IconBtn title="View" onClick={() => openFull(o._id)}><Eye size={15} /></IconBtn>
                     <IconBtn title="Print receipt" onClick={() => printReceipt(o, settings.bill)}><Printer size={15} /></IconBtn>
                     <IconBtn title="PDF invoice" onClick={() => downloadInvoicePdf(o, settings.bill)}><FileText size={15} /></IconBtn>
-                    {o.status === "completed" && o.paymentMethod !== "Online" && <IconBtn title="Edit bill" onClick={() => navigate(`/${portal}/pos?edit=${o._id}`)}><Pencil size={15} /></IconBtn>}
+                    {canCancel && o.status === "completed" && o.paymentMethod !== "Online" && <IconBtn title="Edit bill" onClick={() => navigate(`/${portal}/pos?edit=${o._id}`)}><Pencil size={15} /></IconBtn>}
                     {canCancel && o.status === "completed" && <IconBtn title="Cancel bill" danger onClick={() => setCancelling({ ids: [o._id], label: o.invoiceNumber })}><Ban size={15} /></IconBtn>}
                   </div>
                 </td>
@@ -187,6 +187,7 @@ export function OrderViewModal({ order, bill, onClose }) {
         {order.gstTotal > 0 && <p className="text-xs text-slate-500">Incl. GST {rupees(order.gstTotal)}</p>}
         <p className="text-lg font-black">Total {rupees(order.total)}</p>
       </div>
+      {order.notes && <p className="mt-3 whitespace-pre-line rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">{order.notes}</p>}
     </Modal>
   );
 }
@@ -316,20 +317,41 @@ function LedgerEditModal({ api, entry, onClose, onSaved }) {
 }
 
 // ================================================================== exchange
+/** What the customer paid per unit of a bill line (line discount, bill discount and round-off included). */
+const paidPerUnit = (order, line) => (order.subtotal > 0 ? (line.total / line.quantity) * (order.total / order.subtotal) : line.total / line.quantity);
+
 function ExchangeTab({ api }) {
+  // Staff take returns against the original bill (refund = what was paid);
+  // the owner may also take back items without a bill.
+  const { isStaff } = useStaffAccess();
+  const [bill, setBill] = useState(null);
+  const [backQty, setBackQty] = useState({}); // bill line id -> quantity coming back
   const [returnItems, setReturnItems] = useState([]);
   const [newItems, setNewItems] = useState([]);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const total = (list) => round2(list.reduce((s, l) => s + l.price * l.quantity, 0));
-  const diff = round2(total(newItems) - total(returnItems));
+  const fromBill = bill ? bill.items.filter((l) => Number(backQty[l._id]) > 0) : [];
+  const billBack = round2(fromBill.reduce((s, l) => s + paidPerUnit(bill, l) * Number(backQty[l._id]), 0));
+  const returned = round2(billBack + total(returnItems));
+  const diff = round2(total(newItems) - returned);
+  const pickBill = (order) => { setBill(order); setBackQty({}); };
   const submit = async () => {
     setBusy(true);
     try {
       const strip = (l) => ({ productId: l.productId, variantSku: l.variantSku, name: l.name, quantity: l.quantity, price: l.price });
-      const res = await api.exchange({ returnItems: returnItems.map(strip), newItems: newItems.map(strip), note });
-      toast.success(res.difference > 0 ? `Exchange saved. Collect ${rupees(res.difference)}` : res.difference < 0 ? `Exchange saved. Return ${rupees(-res.difference)}` : "Exchange saved");
-      setReturnItems([]); setNewItems([]); setNote("");
+      const res = await api.exchange({
+        orderId: bill?._id,
+        returnLines: fromBill.map((l) => ({ lineId: l._id, quantity: Number(backQty[l._id]) })),
+        returnItems: returnItems.map(strip),
+        newItems: newItems.map(strip),
+        note,
+      });
+      const d = res.difference;
+      toast.success(res.onAccount && d
+        ? `Exchange saved. ${rupees(Math.abs(d))} ${d > 0 ? "added to" : "taken off"} the customer's udhaar`
+        : d > 0 ? `Exchange saved. Collect ${rupees(d)}` : d < 0 ? `Exchange saved. Return ${rupees(-d)}` : "Exchange saved");
+      setBill(null); setBackQty({}); setReturnItems([]); setNewItems([]); setNote("");
     } catch (err) {
       toast.error(apiError(err));
     } finally {
@@ -338,16 +360,89 @@ function ExchangeTab({ api }) {
   };
   return (
     <div className="grid gap-4 lg:grid-cols-2">
-      <ItemListEditor api={api} title="Items coming back (stock in)" items={returnItems} setItems={setReturnItems} />
+      <div className="space-y-4">
+        <BillReturnPicker api={api} bill={bill} onPick={pickBill} backQty={backQty} setBackQty={setBackQty} required={isStaff} />
+        {!isStaff && <ItemListEditor api={api} title="Other items coming back (no bill, shop price)" items={returnItems} setItems={setReturnItems} />}
+      </div>
       <ItemListEditor api={api} title="Items going out (stock out)" items={newItems} setItems={setNewItems} />
       <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm lg:col-span-2">
         <Field label="Note" className="min-w-[200px] flex-1"><input className={inputCls} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. size change, bill S-000123" /></Field>
         <div className="text-sm">
-          <p className="text-slate-500">Returned {rupees(total(returnItems))} · New {rupees(total(newItems))}</p>
-          <p className={cn("text-lg font-bold", diff > 0 ? "text-slate-900" : "text-emerald-700")}>{diff > 0 ? `Collect ${rupees(diff)}` : diff < 0 ? `Give back ${rupees(-diff)}` : "No difference"}</p>
+          <p className="text-slate-500">Returned {rupees(returned)} · New {rupees(total(newItems))}</p>
+          <p className={cn("text-lg font-bold", diff > 0 ? "text-slate-900" : "text-emerald-700")}>
+            {bill?.paymentMethod === "Credit" && diff
+              ? `${rupees(Math.abs(diff))} ${diff > 0 ? "added to" : "taken off"} udhaar`
+              : diff > 0 ? `Collect ${rupees(diff)}` : diff < 0 ? `Give back ${rupees(-diff)}` : "No difference"}
+          </p>
         </div>
-        <Button onClick={submit} isLoading={busy} disabled={!returnItems.length && !newItems.length}>Save exchange</Button>
+        <Button onClick={submit} isLoading={busy} disabled={(!fromBill.length && !returnItems.length && !newItems.length) || (isStaff && !bill)}>Save exchange</Button>
       </div>
+    </div>
+  );
+}
+
+/** Find the original bill and choose how much of each item comes back. */
+function BillReturnPicker({ api, bill, onPick, backQty, setBackQty, required }) {
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState([]);
+  useEffect(() => {
+    if (!q.trim()) return undefined;
+    const t = setTimeout(() => api.listOrders({ search: q, status: "completed", limit: 6 }).then((r) => setRows(r.items || [])).catch(() => setRows([])), 250);
+    return () => clearTimeout(t);
+  }, [q, api]);
+  const open = async (id) => {
+    try {
+      onPick(await api.getOrder(id));
+      setQ(""); setRows([]);
+    } catch (err) {
+      toast.error(apiError(err));
+    }
+  };
+  return (
+    <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
+      <p className="mb-2 text-sm font-bold text-slate-800">Items coming back from a bill{required ? "" : " (optional)"}</p>
+      {!bill ? (
+        <div className="relative">
+          <input className={inputCls} placeholder="Bill number, customer name or phone" value={q} onChange={(e) => setQ(e.target.value)} />
+          {q.trim() && rows.length > 0 && (
+            <div className="absolute z-20 mt-1 w-full rounded-xl border border-slate-200 bg-white shadow-lg">
+              {rows.map((o) => (
+                <button key={o._id} type="button" onClick={() => open(o._id)} className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-50">
+                  <b>{o.invoiceNumber}</b> · {fmtDateTime(o.createdAt)} · {o.customerSnapshot?.name || "Walk-in"} · {rupees(o.total)}
+                </button>
+              ))}
+            </div>
+          )}
+          {q.trim() && !rows.length && <p className="mt-2 text-xs text-slate-400">No completed bill found.</p>}
+        </div>
+      ) : (
+        <>
+          <div className="mb-3 flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
+            <span><b>{bill.invoiceNumber}</b> · {fmtDateTime(bill.createdAt)} · {bill.customerSnapshot?.name || "Walk-in"}</span>
+            <button type="button" className="text-xs font-semibold text-primary underline" onClick={() => onPick(null)}>Change</button>
+          </div>
+          <div className="space-y-2">
+            {bill.items.map((l) => {
+              const left = round2(l.quantity - (l.returnedQty || 0));
+              return (
+                <div key={l._id} className="flex items-center gap-2 text-sm">
+                  <span className="min-w-0 flex-1 truncate">
+                    {l.name}{l.variantName ? ` (${l.variantName})` : ""}
+                    <span className="block text-[11px] text-slate-400">paid {rupees(paidPerUnit(bill, l))} each · {left > 0 ? `${left} can come back` : "all returned"}</span>
+                  </span>
+                  <input
+                    className="w-16 rounded border border-slate-200 px-2 py-1 text-center disabled:bg-slate-50"
+                    type="number" min="0" max={left} step="any" disabled={left <= 0}
+                    value={backQty[l._id] ?? ""} placeholder="0"
+                    onChange={(e) => setBackQty((m) => ({ ...m, [l._id]: Math.min(left, Math.max(0, Number(e.target.value) || 0)) || "" }))}
+                    aria-label={`${l.name} quantity coming back`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 }

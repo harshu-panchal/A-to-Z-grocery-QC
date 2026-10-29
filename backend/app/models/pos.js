@@ -79,6 +79,7 @@ const posOrderItemSchema = new Schema(
     warrantyType: { type: String, trim: true },
     warrantyDuration: { type: String, trim: true },
     stockDeducted: { type: Boolean, default: false },
+    returnedQty: { type: Number, default: 0 }, // taken back through an exchange
   },
   { _id: true },
 );
@@ -122,6 +123,7 @@ const posOrderSchema = new Schema(
       state: String,
     },
     editCount: { type: Number, default: 0 },
+    returnedValue: money, // refunded through exchanges (at the price paid)
     // Offline billing: id made on the device so a re-sent bill isn't saved twice
     clientRef: { type: String, trim: true },
     billedOffline: { type: Boolean, default: false },

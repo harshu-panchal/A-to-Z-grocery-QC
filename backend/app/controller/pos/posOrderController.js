@@ -41,6 +41,24 @@ async function loadCustomer(pos, customerId, session) {
   return customer;
 }
 
+/**
+ * Prices on a quotation the owner made are allowed for staff who can't change
+ * prices themselves (the quotation was the owner's decision).
+ */
+async function quotationLines(pos, quotationId) {
+  if (!pos.isStaff || !isObjectId(quotationId)) return [];
+  const q = await PosPurchaseEntry.findOne(ownerFilter(pos, { _id: quotationId, type: "quotation" })).select("data").lean();
+  return (q?.data?.lines || []).map((l) => ({ product: l.productId, variantSku: l.variantSku || "", unitPrice: Number(l.price) || 0, lineDiscount: 0 }));
+}
+
+/** Udhaar must stay within the customer's limit (when one is set). */
+function checkCreditLimit(customer, amount) {
+  const limit = Number(customer?.creditLimit) || 0;
+  if (limit > 0 && round2((Number(customer.creditBalance) || 0) + amount) > limit) {
+    throw httpError(400, "This customer's udhaar limit would be crossed. Take payment another way or ask the owner.");
+  }
+}
+
 const snapshotOf = (customer) =>
   customer
     ? { name: customer.name, phone: customer.phone, gstin: customer.gstin, address: customer.address }
@@ -86,8 +104,10 @@ export const createPosOrder = async (req, res) => {
 
     const order = await withTransaction(async (session) => {
       const customer = await loadCustomer(pos, customerId, session);
-      const lines = await resolveLines(pos, items);
+      const priceWarnings = offline ? [] : null;
+      const lines = await resolveLines(pos, items, { knownLines: await quotationLines(pos, quotationId), priceWarnings });
       const totals = computeTotals(lines, { billDiscount });
+      if (paymentMethod === "Credit" && !offline) checkCreditLimit(customer, totals.total);
       const received = paymentMethod === "Credit" ? 0 : round2(amountReceived ?? totals.total);
       if (paymentMethod === "Cash" && received < totals.total && !offline) throw httpError(400, "Cash received is less than the bill total");
 
@@ -107,7 +127,9 @@ export const createPosOrder = async (req, res) => {
           amountReceived: received,
           changeReturned: paymentMethod === "Cash" ? round2(received - totals.total) : 0,
           status: "completed",
-          notes,
+          notes: priceWarnings?.length
+            ? [notes, `Offline bill by ${pos.actorName || "staff"}, price differs from shop price: ${priceWarnings.join("; ")}`].filter(Boolean).join("\n")
+            : notes,
           quotation: isObjectId(quotationId) ? quotationId : null,
           clientRef,
           billedOffline: offline,
@@ -146,7 +168,7 @@ export const initiateOnlinePosOrder = async (req, res) => {
     const pos = req.pos;
     const { customerId, items, billDiscount = 0, notes, quotationId } = req.body;
     const customer = await loadCustomer(pos, customerId, null);
-    const lines = await resolveLines(pos, items);
+    const lines = await resolveLines(pos, items, { knownLines: await quotationLines(pos, quotationId) });
     const totals = computeTotals(lines, { billDiscount });
     if (totals.total < 1) throw httpError(400, "Online payment needs a total of at least ₹1");
 
@@ -320,6 +342,7 @@ export const updatePosOrderItems = async (req, res) => {
       if (!doc) throw httpError(404, "Bill not found");
       if (doc.status !== "completed") throw httpError(400, "Only completed bills can be edited");
       if (doc.paymentMethod === "Online") throw httpError(400, "PhonePe bills can't be edited; cancel and re-bill instead");
+      if (doc.items.some((l) => l.returnedQty > 0)) throw httpError(400, "Items on this bill were exchanged, so it can't be edited. Use Exchange instead.");
 
       // 1. put back what the old bill took
       const oldLines = doc.items.filter((l) => l.stockDeducted).map((l) => l.toObject());
@@ -370,12 +393,14 @@ async function cancelOne(pos, id, { restore, reason }) {
     if (!doc) throw httpError(404, "Bill not found");
     if (doc.status === "cancelled") throw httpError(400, "Bill is already cancelled");
     if (restore && doc.status === "completed") {
-      const lines = doc.items.filter((l) => l.stockDeducted).map((l) => l.toObject());
+      const lines = doc.items
+        .filter((l) => l.stockDeducted && l.quantity - (l.returnedQty || 0) > 0)
+        .map((l) => ({ ...l.toObject(), quantity: round2(l.quantity - (l.returnedQty || 0)) }));
       await moveStock(lines, { direction: 1, type: "POS Cancel Restore", pos, posOrder: doc._id, note: `Cancelled ${doc.invoiceNumber}`, strict: false, session });
     }
     if (doc.paymentMethod === "Credit" && doc.customer && doc.status === "completed") {
       const customer = await PosCustomer.findById(doc.customer).session(session);
-      if (customer) await changeCredit({ pos, customer, amount: -doc.total, type: "reversal", order: doc._id, note: `Bill ${doc.invoiceNumber} cancelled`, session });
+      if (customer) await changeCredit({ pos, customer, amount: -round2(doc.total - (doc.returnedValue || 0)), type: "reversal", order: doc._id, note: `Bill ${doc.invoiceNumber} cancelled`, session });
     }
     doc.status = "cancelled";
     doc.cancelledAt = new Date();
@@ -418,19 +443,68 @@ export const bulkCancelPosOrders = async (req, res) => {
 
 // ---------------------------------------------------------------- exchange
 /** Items returned (stock in) and new items given (stock out), no new bill. */
+/**
+ * Items taken back from a bill, refunded at what the customer actually paid:
+ * the line's own price and discount, then the bill discount / round-off.
+ * `returnLines`: [{ lineId, quantity }]. Marks them returned on the bill.
+ */
+export function takeBackFromBill(doc, returnLines) {
+  const share = doc.subtotal > 0 ? doc.total / doc.subtotal : 1;
+  return returnLines.map((r, idx) => {
+    const line = doc.items.id(r.lineId);
+    if (!line) throw httpError(400, `Returned item ${idx + 1} is not on bill ${doc.invoiceNumber}`);
+    const quantity = Number(r.quantity);
+    const left = round2(line.quantity - (line.returnedQty || 0));
+    if (!(quantity > 0) || quantity > left) {
+      throw httpError(400, `Only ${left} of "${line.name}" can still be returned on this bill`);
+    }
+    line.returnedQty = round2((line.returnedQty || 0) + quantity);
+    const refund = round2((line.total / line.quantity) * quantity * share);
+    // stock goes back only if the sale took it out
+    return { ...line.toObject(), quantity, total: refund, product: line.stockDeducted ? line.product : null };
+  });
+}
+
 export const posExchange = async (req, res) => {
   try {
     const pos = req.pos;
-    const { returnItems = [], newItems = [], note = "" } = req.body;
-    if (!returnItems.length && !newItems.length) throw httpError(400, "Nothing to exchange");
+    const { orderId, returnLines = [], returnItems = [], newItems = [], note = "" } = req.body;
+    if (!returnLines.length && !returnItems.length && !newItems.length) throw httpError(400, "Nothing to exchange");
+    // staff must take returns against the bill, so the refund is what was paid
+    if (returnItems.length && pos.isStaff) throw httpError(400, "Pick the original bill for the items coming back");
+    if (returnLines.length && !isObjectId(orderId)) throw httpError(400, "Pick the original bill");
     const result = await withTransaction(async (session) => {
-      const ins = returnItems.length ? await resolveLines(pos, returnItems) : [];
+      const doc = isObjectId(orderId) ? await PosOrder.findOne(ownerFilter(pos, { _id: orderId })).session(session) : null;
+      if (orderId && !doc) throw httpError(404, "Bill not found");
+      if (doc && doc.status !== "completed") throw httpError(400, "Only completed bills can take an exchange");
+
+      const fromBill = doc ? takeBackFromBill(doc, returnLines) : [];
+      const ins = [...fromBill, ...(returnItems.length ? await resolveLines(pos, returnItems) : [])];
       const outs = newItems.length ? await resolveLines(pos, newItems) : [];
-      await moveStock(ins, { direction: 1, type: "Exchange In", pos, note: note || "POS exchange", strict: false, session });
-      await moveStock(outs, { direction: -1, type: "Exchange Out", pos, note: note || "POS exchange", session });
+      const ref = note || (doc ? `Exchange on ${doc.invoiceNumber}` : "POS exchange");
+      await moveStock(ins, { direction: 1, type: "Exchange In", pos, posOrder: doc?._id || null, note: ref, strict: false, session });
+      await moveStock(outs, { direction: -1, type: "Exchange Out", pos, posOrder: doc?._id || null, note: ref, session });
       const returnedValue = round2(ins.reduce((s, l) => s + l.total, 0));
       const newValue = round2(outs.reduce((s, l) => s + l.total, 0));
-      return { returnedValue, newValue, difference: round2(newValue - returnedValue) };
+      const difference = round2(newValue - returnedValue);
+
+      if (doc) {
+        const fromBillValue = round2(fromBill.reduce((s, l) => s + l.total, 0));
+        doc.returnedValue = round2((doc.returnedValue || 0) + fromBillValue);
+        const when = new Date().toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" });
+        const what = [
+          fromBill.length && `returned ${fromBill.map((l) => `${l.name} ×${l.quantity}`).join(", ")} (₹${fromBillValue})`,
+          outs.length && `gave ${outs.map((l) => `${l.name} ×${l.quantity}`).join(", ")} (₹${newValue})`,
+        ].filter(Boolean).join("; ");
+        doc.notes = [doc.notes, `Exchange ${when}${pos.actorName ? ` by ${pos.actorName}` : ""}: ${what}`].filter(Boolean).join("\n");
+        await doc.save({ session });
+        // an udhaar bill settles the difference on the customer's account
+        if (doc.paymentMethod === "Credit" && doc.customer && difference) {
+          const customer = await PosCustomer.findById(doc.customer).session(session);
+          if (customer) await changeCredit({ pos, customer, amount: difference, type: "adjust", order: doc._id, note: `Exchange on ${doc.invoiceNumber}`, session });
+        }
+      }
+      return { returnedValue, newValue, difference, onAccount: doc?.paymentMethod === "Credit" };
     });
     return handleResponse(res, 200, "Exchange recorded", result);
   } catch (err) {

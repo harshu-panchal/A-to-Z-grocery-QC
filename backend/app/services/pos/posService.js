@@ -37,6 +37,8 @@ export const posScope = (role) => (req, res, next) => {
     actorName: req.staff?.name || "",
     isStaff: Boolean(req.staff),
     canSeeCost: !req.staff || Boolean(req.staff.permissions?.["pos.cost"]),
+    // customer due / advance only for staff given the Customers & Udhaar section
+    canSeeDues: !req.staff || Boolean(req.staff.permissions?.["pos.customers"]),
     // Staff can only sell at the shop price unless the owner allowed price changes.
     canChangePrice: !req.staff || Boolean(req.staff.permissions?.["pos.price"]),
     // items not in the catalogue (typed in with Quick add) need the Quick add switch
@@ -153,7 +155,7 @@ export async function searchPosProducts(pos, { search = "", sellerId, categoryId
  * the product/variant (stock owner = product's seller); others are custom
  * "quick" items that never touch stock.
  */
-export async function resolveLines(pos, rawItems, { knownLines = [] } = {}) {
+export async function resolveLines(pos, rawItems, { knownLines = [], priceWarnings = null } = {}) {
   if (!Array.isArray(rawItems) || rawItems.length === 0) throw httpError(400, "Add at least one item");
   const ids = [...new Set(rawItems.map((i) => i.productId).filter(isObjectId).map(String))];
   const products = ids.length
@@ -177,20 +179,23 @@ export async function resolveLines(pos, rawItems, { knownLines = [] } = {}) {
     if (product && Array.isArray(product.variants) && product.variants.length > 1 && !variant) {
       throw httpError(400, `Pick a size/variant for "${product.name}"`);
     }
+    // same rule as the catalogue rows the billing screen shows (productRows)
     const defaultPrice = variant
-      ? Number(variant.sellingPrice) || Number(variant.mrp) || 0
+      ? Number(variant.sellingPrice) || Number(variant.mrp) || Number(product.sellingPrice) || 0
       : product ? Number(product.sellingPrice) || Number(product.mrp) || 0 : 0;
     const unitPrice = round2(raw.price ?? raw.unitPrice ?? defaultPrice);
     if (!(unitPrice >= 0)) throw httpError(400, `Invalid price on line ${idx + 1}`);
     const lineDiscount = Math.max(0, round2(raw.lineDiscount || 0));
     if (product && pos.canChangePrice === false) {
-      // only the shop price, the wholesale price, or what this same bill already had
-      const sku = variant ? String(variant.sku || variant.name || "") : "";
-      const same = knownLines.filter((k) => String(k.product) === String(product._id) && String(k.variantSku || "") === sku);
-      const wholesale = Number(variant?.wholesalePrice) || Number(product.wholesalePrice) || 0;
-      const okPrice = unitPrice === round2(defaultPrice) || (wholesale > 0 && unitPrice === round2(wholesale)) || same.some((k) => round2(k.unitPrice) === unitPrice);
+      // only the shop price, or what this same bill already had (wholesale is owner-only)
+      const sku = variant ? String(variant.sku || variant.name || "").trim() : "";
+      const same = knownLines.filter((k) => String(k.product) === String(product._id) && String(k.variantSku || "").trim() === sku);
+      const okPrice = unitPrice === round2(defaultPrice) || same.some((k) => round2(k.unitPrice) === unitPrice);
       const okDiscount = lineDiscount === 0 || same.some((k) => round2(k.lineDiscount || 0) === lineDiscount);
-      if (!okPrice || !okDiscount) {
+      if ((!okPrice || !okDiscount) && priceWarnings) {
+        // an offline bill was already handed over: keep it, but tell the owner
+        priceWarnings.push(`${product.name} at ₹${unitPrice}${lineDiscount ? ` less ₹${lineDiscount}` : ""} (shop price ₹${round2(defaultPrice)})`);
+      } else if (!okPrice || !okDiscount) {
         throw httpError(403, `You are not allowed to change the price of "${product.name}"${okPrice ? "" : ". Refresh the product list if the shop price changed"}`);
       }
     }

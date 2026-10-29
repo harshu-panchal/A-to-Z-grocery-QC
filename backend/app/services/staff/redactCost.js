@@ -14,13 +14,20 @@ const COST_KEYS = new Set([
   "margin",
 ]);
 
-export function stripCostFields(value) {
-  if (Array.isArray(value)) return value.map(stripCostFields);
-  if (value && typeof value === "object" && !(value instanceof Date)) {
-    const plain = typeof value.toObject === "function" ? value.toObject() : value;
+// A customer's due / advance (udhaar) and the shop's total outstanding.
+const DUE_KEYS = new Set(["creditBalance", "creditLimit", "creditDue"]);
+
+export function stripCostFields(value, keys = COST_KEYS) {
+  if (Array.isArray(value)) return value.map((v) => stripCostFields(v, keys));
+  if (value && typeof value === "object") {
+    const plain = typeof value.toObject === "function" && !value._bsontype ? value.toObject() : value;
+    // Only walk plain data. IDs (ObjectId), dates, buffers etc. go out as they
+    // are; taking them apart turned every _id into {} and broke the screens.
+    const proto = Object.getPrototypeOf(plain);
+    if (proto !== Object.prototype && proto !== null) return plain;
     const out = {};
     for (const [k, v] of Object.entries(plain)) {
-      if (!COST_KEYS.has(k)) out[k] = stripCostFields(v);
+      if (!keys.has(k)) out[k] = stripCostFields(v, keys);
     }
     return out;
   }
@@ -28,8 +35,10 @@ export function stripCostFields(value) {
 }
 
 export function hideCostForStaff(req, res, next) {
-  if (!req.pos || req.pos.canSeeCost) return next();
+  if (!req.pos) return next();
+  const keys = new Set([...(req.pos.canSeeCost ? [] : COST_KEYS), ...(req.pos.canSeeDues === false ? DUE_KEYS : [])]);
+  if (!keys.size) return next();
   const originalJson = res.json.bind(res);
-  res.json = (body) => originalJson(stripCostFields(body));
+  res.json = (body) => originalJson(stripCostFields(body, keys));
   return next();
 }

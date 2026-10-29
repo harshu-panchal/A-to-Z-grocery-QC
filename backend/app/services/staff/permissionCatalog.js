@@ -34,7 +34,7 @@ const posModule = (portal) =>
     sub("pos.gst", "GST Register", [`/${portal}/pos/gst-register`]),
     sub("pos.settings", "POS Settings", [`/${portal}/pos/settings`]),
     special("pos.cost", "See cost price and profit", "Purchase rate and profit on the billing screen and bills"),
-    special("pos.cancel", "Cancel or exchange a bill", "Cancel bills, bulk cancel, exchange items"),
+    special("pos.cancel", "Cancel, edit or exchange a saved bill", "Cancel bills, bulk cancel, edit a saved bill, exchange items"),
     special("pos.price", "Change price while billing", "Edit the selling price or give a discount on a bill item; without it the shop price is used"),
     special("pos.quickadd", "Add new products while billing", "Create a product from the billing screen"),
   ]);
