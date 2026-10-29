@@ -11,6 +11,9 @@ export const deliveryApi = {
   getEarnings: () => axiosInstance.get("/delivery/earnings"),
   getCodCashSummary: () => axiosInstance.get("/delivery/cod/summary"),
   payCodCashToAdmin: (data) => axiosInstance.post("/delivery/cod/pay", data),
+  // pay COD cash online: create a Razorpay order, then verify after the popup
+  createCodRazorpayOrder: (data) => axiosInstance.post("/delivery/cod/razorpay/order", data),
+  verifyCodRazorpayPayment: (data) => axiosInstance.post("/delivery/cod/razorpay/verify", data),
   getWalletSummary: () => axiosInstance.get("/delivery/wallet/summary"),
   getOrderHistory: (params, config = {}) =>
     axiosInstance.get("/delivery/order-history", { params, ...config }),

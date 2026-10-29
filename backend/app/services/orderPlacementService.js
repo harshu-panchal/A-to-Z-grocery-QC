@@ -419,6 +419,15 @@ export async function placeOrderAtomic({
     // from the server-hydrated cart, applying free-delivery rebates
     // server-side. When the flag is off, only `discountTotal` flows
     // through — preserving legacy bit-for-bit behaviour.
+    //
+    // Without delivery coordinates the store's service radius (and the
+    // rider range checks later) cannot be applied, so any store could be
+    // ordered from. Require them to place an order.
+    if (!normalizedAddress?.location) {
+      const err = new Error("Please pick your delivery location on the map to place the order.");
+      err.statusCode = 400;
+      throw err;
+    }
     const pricingSnapshot = await buildCheckoutPricingSnapshot({
       orderItems: orderItemsInput,
       address: normalizedAddress,

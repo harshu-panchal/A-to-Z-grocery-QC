@@ -49,6 +49,7 @@ import {
 import { getLegacyStatusFromOrder } from "@/shared/utils/orderStatus";
 import { createSocketTokenReader } from "@core/utils/authStorage";
 import { STORAGE_KEYS } from "@core/utils/storage";
+import { openRazorpayCheckout } from "@/shared/utils/razorpay";
 
 const coordsToLatLng = (coords) => {
   if (!Array.isArray(coords) || coords.length < 2) return null;
@@ -753,8 +754,20 @@ const OrderDetailPage = () => {
       const response = await customerApi.createPaymentOrder({
         orderRef: paymentRef,
       });
-      if (response.data.success && response.data.result?.redirectUrl) {
-        window.location.href = response.data.result.redirectUrl;
+      const payResult = response.data.result || {};
+      if (response.data.success && payResult.checkout?.provider === "razorpay") {
+        try {
+          await openRazorpayCheckout({
+            ...payResult.checkout,
+            description: `Order #${order.orderId}`,
+          });
+          navigate(`/payment-status?merchantOrderId=${encodeURIComponent(payResult.merchantOrderId)}`);
+        } catch (popupError) {
+          if (popupError.dismissed) toast.info("Payment not completed");
+          else toast.error(popupError.message);
+        }
+      } else if (response.data.success && payResult.redirectUrl) {
+        window.location.href = payResult.redirectUrl;
       } else {
         toast.error(response.data.message || "Failed to initiate payment");
       }

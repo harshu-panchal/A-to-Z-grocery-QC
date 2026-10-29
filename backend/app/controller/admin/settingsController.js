@@ -8,6 +8,7 @@ import {
   applyOrderTimeoutSettings,
 } from "../../services/orderTimeoutSettings.js";
 import { invalidate } from "../../services/cacheService.js";
+import { applyDefaultCodCashLimit } from "../../services/delivery/codLimit.js";
 
 function flattenForMongoSet(prefix, value, target) {
   if (value === undefined) return;
@@ -93,6 +94,7 @@ export const updatePlatformSettings = async (req, res) => {
     // new order timers apply at once here (other processes within 30s), and
     // customer/seller apps read fresh settings
     applyOrderTimeoutSettings(result);
+    applyDefaultCodCashLimit(result.deliveryCodCashLimit);
     await invalidate("cache:platform:settings:*").catch(() => {});
 
     return handleResponse(

@@ -480,7 +480,6 @@ const METHODS = [
   { key: "UPI", label: "UPI" },
   { key: "Card", label: "Card" },
   { key: "Credit", label: "Udhaar" },
-  { key: "Online", label: "PhonePe" },
 ];
 
 function PaymentModal({ api, portal, bill, totals, onClose, onDone, onQueued }) {
@@ -561,7 +560,7 @@ function PaymentModal({ api, portal, bill, totals, onClose, onDone, onQueued }) 
     <Modal isOpen onClose={onClose} title={editing ? "Update bill" : `Collect ${rupees(totals.total)}`} size="md"
       footer={<><Button variant="outline" onClick={onClose}>Back</Button><Button onClick={submit} isLoading={busy} className="min-w-[140px]">{editing ? "Update bill" : method === "Online" ? "Pay with PhonePe" : "Confirm & save"}</Button></>}>
       {!editing && (
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-4 gap-2">
           {METHODS.map((m) => (
             <button key={m.key} type="button" onClick={() => setMethod(m.key)} className={cn("rounded-xl border px-2 py-3 text-sm font-semibold", method === m.key ? "border-primary bg-primary/5 text-primary" : "border-slate-200 text-slate-600 hover:border-slate-300")}>{m.label}</button>
           ))}

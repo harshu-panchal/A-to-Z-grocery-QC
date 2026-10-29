@@ -127,6 +127,19 @@ function readRiderFields(body = {}, { partial = false } = {}) {
   }
   if (has("vehicleNumber")) out.vehicleNumber = String(body.vehicleNumber || "").trim().toUpperCase();
   if (has("currentArea")) out.currentArea = String(body.currentArea || "").trim();
+  // COD cash limit for this rider; blank = use the default from Fees & Charges
+  if (has("codCashLimit")) {
+    const raw = body.codCashLimit;
+    if (raw === null || raw === "") {
+      out.limit = null;
+    } else {
+      const n = Number(raw);
+      if (!Number.isFinite(n) || n < 100 || n > 1000000) {
+        throw new Error("COD cash limit must be between ₹100 and ₹10,00,000");
+      }
+      out.limit = Math.round(n);
+    }
+  }
   return out;
 }
 

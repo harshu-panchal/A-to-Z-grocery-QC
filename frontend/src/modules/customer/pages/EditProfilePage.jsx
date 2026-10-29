@@ -12,7 +12,7 @@ const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
 const EditProfilePage = () => {
     const navigate = useNavigate();
-    const { user, login } = useAuth();
+    const { user, updateUser } = useAuth();
     const [isLoading, setIsLoading] = useState(false);
     const [formData, setFormData] = useState({
         name: user?.name || '',
@@ -38,7 +38,7 @@ const EditProfilePage = () => {
             const url = up.data?.result?.url || up.data?.result?.secureUrl;
             if (!url) throw new Error('Upload failed');
             const res = await customerApi.updateProfile({ profileImage: url });
-            login({ ...user, ...(res.data?.result || {}), profileImage: url });
+            updateUser({ ...(res.data?.result || {}), profileImage: url });
             toast.success('Profile photo updated');
         } catch (error) {
             toast.error(error.response?.data?.message || 'Could not upload photo');
@@ -59,7 +59,7 @@ const EditProfilePage = () => {
             const updatedUser = response.data.result;
 
             // Update local auth state
-            login({ ...user, ...updatedUser });
+            updateUser(updatedUser);
 
             toast.success('Profile updated successfully!');
             // Back to My Profile instead of pushing it again: pushing made

@@ -14,12 +14,23 @@ import {
 import { withLock } from "../utils/distributedLock.js";
 import { buildKey, invalidate } from "../services/cacheService.js";
 import { roundCurrency } from "../utils/money.js";
+import logger from "../services/logger.js";
+import { reconcileCodCash } from "../services/finance/orderFinanceService.js";
+import {
+  createRazorpayOrder,
+  fetchRazorpayOrder,
+  getCapturedOrderPayment,
+  getRazorpayKeyId,
+  isValidRazorpaySignature,
+} from "../services/payment/razorpayClient.js";
 import { shouldThrottle as throttleLocationUpdate } from "../services/delivery/locationThrottleService.js";
 import {
   getDeliveryStats as getDeliveryStatsFromService,
   getDeliveryEarnings as getDeliveryEarningsFromService,
   getDeliveryWithdrawableBalance,
   getDeliveryCodCashSummary as getDeliveryCodCashSummaryFromService,
+  invalidateRiderCashCaches,
+  recordMissedCodCollections,
 } from "../services/delivery/deliveryEarningsService.js";
 
 /* ===============================
@@ -59,136 +70,197 @@ export const getDeliveryCodCashSummary = async (req, res) => {
     }
 };
 
-/* ===============================
-   SUBMIT DELIVERY COD CASH
-================================ */
-export const submitDeliveryCodCashToAdmin = async (req, res) => {
-    try {
-        const rawId = req.user?.id ?? req.user?._id;
-        if (!rawId) {
-            return handleResponse(res, 401, "Unauthorized");
-        }
-        if (!mongoose.Types.ObjectId.isValid(String(rawId))) {
-            return handleResponse(res, 401, "Invalid user id");
-        }
+const NO_COD_READY_MSG =
+    "No collected COD cash is ready to submit yet. Mark customer cash as collected first.";
 
-        const deliveryBoyId = new mongoose.Types.ObjectId(String(rawId));
-        const orders = await Order.find({
-            deliveryBoy: deliveryBoyId,
-            paymentMode: "COD",
-            status: { $ne: "cancelled" },
-            orderStatus: { $ne: "cancelled" },
-            "financeFlags.codMarkedCollected": true,
-            "paymentBreakdown.codPendingAmount": { $gt: 0 },
-        })
-            .select("orderId paymentBreakdown.codPendingAmount")
-            .sort({ createdAt: 1 })
-            .lean();
+function riderObjectId(req) {
+    const rawId = req.user?.id ?? req.user?._id;
+    if (!rawId) return { error: [401, "Unauthorized"] };
+    if (!mongoose.Types.ObjectId.isValid(String(rawId))) return { error: [401, "Invalid user id"] };
+    return { id: new mongoose.Types.ObjectId(String(rawId)) };
+}
 
-        if (!orders.length) {
-            return handleResponse(
-                res,
-                400,
-                "No collected COD cash is ready to submit yet. Mark customer cash as collected first.",
-            );
-        }
+/** Collected COD cash this rider still owes, oldest order first. */
+async function loadCollectedCod(deliveryBoyId) {
+    await recordMissedCodCollections(deliveryBoyId);
+    const orders = await Order.find({
+        deliveryBoy: deliveryBoyId,
+        paymentMode: "COD",
+        status: { $ne: "cancelled" },
+        orderStatus: { $ne: "cancelled" },
+        "financeFlags.codMarkedCollected": true,
+        "paymentBreakdown.codPendingAmount": { $gt: 0 },
+    })
+        .select("orderId paymentBreakdown.codPendingAmount")
+        .sort({ createdAt: 1 })
+        .lean();
+    const totalAvailable = roundCurrency(
+        orders.reduce((sum, order) => sum + Number(order?.paymentBreakdown?.codPendingAmount || 0), 0),
+    );
+    return { orders, totalAvailable };
+}
 
-        const totalAvailable = roundCurrency(
-            orders.reduce(
-                (sum, order) => sum + Number(order?.paymentBreakdown?.codPendingAmount || 0),
-                0,
-            ),
-        );
-        const requestedRaw = req.body?.amount;
-        const requestedAmount =
-            requestedRaw == null || requestedRaw === ""
-                ? null
-                : roundCurrency(requestedRaw);
+/** Amount check shared by cash and Razorpay; `error` is [status, message]. */
+function validateCodAmount(requestedRaw, totalAvailable) {
+    if (totalAvailable <= 0) return { error: [400, NO_COD_READY_MSG] };
+    const requested = requestedRaw == null || requestedRaw === "" ? null : roundCurrency(requestedRaw);
+    if (requested != null && (!Number.isFinite(Number(requestedRaw)) || requested <= 0)) {
+        return { error: [400, "Enter a valid amount to submit"] };
+    }
+    const amount = requested == null ? totalAvailable : requested;
+    if (amount > totalAvailable) {
+        return { error: [400, `You can submit up to ${String.fromCharCode(8377)}${totalAvailable.toLocaleString()}`] };
+    }
+    return { amount };
+}
 
-        if (requestedAmount != null && (!Number.isFinite(Number(requestedRaw)) || requestedAmount <= 0)) {
-            return handleResponse(res, 400, "Enter a valid amount to submit");
-        }
+/** Settle `amount` across the rider's collected COD orders and log one settlement. */
+async function settleCollectedCod(deliveryBoyId, orders, amount, { actorId, source, reference, meta = {} }) {
+    const settledOrders = [];
+    let totalSubmitted = 0;
+    let remaining = amount;
 
-        const amountToSubmit = requestedAmount == null ? totalAvailable : requestedAmount;
-        if (amountToSubmit <= 0) {
-            return handleResponse(
-                res,
-                400,
-                "No collected COD cash is ready to submit yet. Mark customer cash as collected first.",
-            );
-        }
-        if (amountToSubmit > totalAvailable) {
-            return handleResponse(
-                res,
-                400,
-                `You can submit up to ${String.fromCharCode(8377)}${totalAvailable.toLocaleString()}`,
-            );
-        }
+    for (const order of orders) {
+        const pending = roundCurrency(order?.paymentBreakdown?.codPendingAmount || 0);
+        if (pending <= 0 || remaining <= 0) continue;
+        const settleAmount = roundCurrency(Math.min(pending, remaining));
 
-        const settledOrders = [];
-        let totalSubmitted = 0;
-        let remaining = amountToSubmit;
+        await reconcileCodCash(order._id, settleAmount, deliveryBoyId, {
+            actorId,
+            metadata: { source, initiatedBy: "delivery_partner", ...meta },
+        });
 
-        for (const order of orders) {
-            const amount = roundCurrency(order?.paymentBreakdown?.codPendingAmount || 0);
-            if (amount <= 0 || remaining <= 0) continue;
-            const settleAmount = roundCurrency(Math.min(amount, remaining));
+        totalSubmitted = roundCurrency(totalSubmitted + settleAmount);
+        remaining = roundCurrency(remaining - settleAmount);
+        settledOrders.push({ orderId: order.orderId, amount: settleAmount });
+    }
 
-            await reconcileCodCash(
-                order._id,
-                settleAmount,
-                deliveryBoyId,
-                {
-                    actorId: req.user?.id || null,
-                    metadata: {
-                        source: "delivery_cod_cash_page",
-                        initiatedBy: "delivery_partner",
-                    },
-                },
-            );
-
-            totalSubmitted = roundCurrency(totalSubmitted + settleAmount);
-            remaining = roundCurrency(remaining - settleAmount);
-            settledOrders.push({
-                orderId: order.orderId,
-                amount: settleAmount,
-            });
-        }
-
-        if (totalSubmitted <= 0) {
-            return handleResponse(
-                res,
-                400,
-                "No collected COD cash is ready to submit yet. Mark customer cash as collected first.",
-            );
-        }
-
+    if (totalSubmitted > 0) {
         await Transaction.create({
             user: deliveryBoyId,
             userModel: "Delivery",
             type: "Cash Settlement",
             amount: -Math.abs(totalSubmitted),
             status: "Settled",
+            reference,
+            meta: { source, orders: settledOrders.map((item) => item.orderId), ...meta },
+        });
+    }
+
+    // the COD page / dashboard read these through a short cache
+    await invalidateRiderCashCaches(deliveryBoyId);
+    const wallet = await Wallet.findOne({ ownerType: "DELIVERY_PARTNER", ownerId: deliveryBoyId })
+        .select("cashInHand")
+        .lean();
+
+    return {
+        totalSubmitted,
+        orderCount: settledOrders.length,
+        orders: settledOrders,
+        cashInHand: roundCurrency(wallet?.cashInHand || 0),
+    };
+}
+
+/* ===============================
+   SUBMIT DELIVERY COD CASH
+================================ */
+export const submitDeliveryCodCashToAdmin = async (req, res) => {
+    try {
+        const rider = riderObjectId(req);
+        if (rider.error) return handleResponse(res, ...rider.error);
+        const deliveryBoyId = rider.id;
+
+        const { orders, totalAvailable } = await loadCollectedCod(deliveryBoyId);
+        const check = validateCodAmount(req.body?.amount, totalAvailable);
+        if (check.error) return handleResponse(res, ...check.error);
+
+        const result = await settleCollectedCod(deliveryBoyId, orders, check.amount, {
+            actorId: req.user?.id || null,
+            source: "delivery_cod_cash_page",
             reference: `CSH-SET-${deliveryBoyId}-${Date.now()}`,
-            meta: {
-                source: "delivery_cod_cash_page",
-                orders: settledOrders.map((item) => item.orderId),
-            },
+        });
+        if (result.totalSubmitted <= 0) return handleResponse(res, 400, NO_COD_READY_MSG);
+
+        return handleResponse(res, 200, "COD cash submitted to admin successfully", result);
+    } catch (error) {
+        return handleResponse(res, error.statusCode || 500, error.message);
+    }
+};
+
+/* ===============================
+   PAY COD CASH ONLINE (Razorpay)
+================================ */
+// Step 1: create a Razorpay order for the amount; the app opens the popup.
+export const createCodRazorpayOrder = async (req, res) => {
+    try {
+        const rider = riderObjectId(req);
+        if (rider.error) return handleResponse(res, ...rider.error);
+
+        const { totalAvailable } = await loadCollectedCod(rider.id);
+        const check = validateCodAmount(req.body?.amount, totalAvailable);
+        if (check.error) return handleResponse(res, ...check.error);
+
+        const order = await createRazorpayOrder({
+            amountPaise: Math.round(check.amount * 100),
+            receipt: `COD-${String(rider.id).slice(-8)}-${Date.now()}`,
+            notes: { purpose: "cod_cash", deliveryBoyId: String(rider.id) },
+        });
+        return handleResponse(res, 200, "Payment started", {
+            keyId: getRazorpayKeyId(),
+            razorpayOrderId: order.id,
+            amount: order.amount,
+            currency: order.currency,
+        });
+    } catch (error) {
+        return handleResponse(res, error.statusCode || 500, error.message);
+    }
+};
+
+// Step 2: after the popup, check the payment with Razorpay and settle it once.
+export const verifyCodRazorpayPayment = async (req, res) => {
+    try {
+        const rider = riderObjectId(req);
+        if (rider.error) return handleResponse(res, ...rider.error);
+        const deliveryBoyId = rider.id;
+
+        const orderId = String(req.body?.razorpay_order_id || "");
+        const paymentId = String(req.body?.razorpay_payment_id || "");
+        const signature = String(req.body?.razorpay_signature || "");
+        if (!orderId || !paymentId || !isValidRazorpaySignature({ orderId, paymentId, signature })) {
+            return handleResponse(res, 400, "Payment could not be verified");
+        }
+
+        const rzpOrder = await fetchRazorpayOrder(orderId);
+        if (rzpOrder?.notes?.purpose !== "cod_cash" || rzpOrder?.notes?.deliveryBoyId !== String(deliveryBoyId)) {
+            return handleResponse(res, 403, "This payment does not belong to you");
+        }
+        const paid = await getCapturedOrderPayment(orderId, paymentId);
+        if (!paid || paid.status !== "captured") return handleResponse(res, 400, "Payment is not complete yet");
+
+        const reference = `CSH-RZP-${paymentId}`;
+        const result = await withLock(`lock:cod-razorpay:${paymentId}`, 60000, async () => {
+            // a retried verify must not settle the same payment twice
+            if (await Transaction.exists({ reference })) return { alreadySettled: true };
+            const { orders } = await loadCollectedCod(deliveryBoyId);
+            return settleCollectedCod(deliveryBoyId, orders, roundCurrency(paid.amount / 100), {
+                actorId: req.user?.id || null,
+                source: "delivery_cod_razorpay",
+                reference,
+                meta: { method: "razorpay", razorpayOrderId: orderId, razorpayPaymentId: paymentId },
+            });
         });
 
-        const wallet = await Wallet.findOne({
-            ownerType: "DELIVERY_PARTNER",
-            ownerId: deliveryBoyId,
-        })
-            .select("cashInHand")
-            .lean();
-
-        return handleResponse(res, 200, "COD cash submitted to admin successfully", {
-            totalSubmitted,
-            orderCount: settledOrders.length,
-            orders: settledOrders,
-            cashInHand: roundCurrency(wallet?.cashInHand || 0),
-        });
+        if (result.alreadySettled) {
+            return handleResponse(res, 200, "Payment already recorded", result);
+        }
+        if (result.totalSubmitted <= 0) {
+            // paid but nothing left to settle (e.g. admin settled it meanwhile)
+            logger.warn("COD Razorpay payment had nothing to settle", {
+                deliveryBoyId: String(deliveryBoyId), paymentId, amount: paid.amount,
+            });
+            return handleResponse(res, 409, "Payment received, but no COD cash was pending. Please contact admin.");
+        }
+        return handleResponse(res, 200, "COD cash paid to admin via Razorpay", result);
     } catch (error) {
         return handleResponse(res, error.statusCode || 500, error.message);
     }

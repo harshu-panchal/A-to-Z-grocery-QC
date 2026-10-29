@@ -7,6 +7,13 @@ import CheckoutGroup from "../models/checkoutGroup.js";
 import { WORKFLOW_STATUS, PENDING_ORDER_QUERY } from "../constants/orderWorkflow.js";
 import { distanceMeters } from "../utils/geoUtils.js";
 import {
+  codOrderCashAmount,
+  fitsCodLimit,
+  getDefaultCodCashLimit,
+  isCodOrder,
+  riderCodLimit,
+} from "./delivery/codLimit.js";
+import {
   orderMatchQueryFlexible,
 } from "../utils/orderLookup.js";
 import { buildKey, getOrSet, getTTL } from "./cacheService.js";
@@ -281,15 +288,16 @@ async function resolveNearbySellerIds(deliveryPartner, userId) {
 function filterV2OrdersByRadius(v2Orders, deliveryCoords) {
   const [dlng, dlat] = deliveryCoords;
   return v2Orders.filter((order) => {
+    if (ignoreRiderRange()) return true;
     const coords = order.seller?.location?.coordinates;
     if (!Array.isArray(coords) || coords.length < 2) return true;
 
     const [slng, slat] = coords;
-    const searchR = deliverySearchRadiusM(order);
-    const serviceKm = Number(order.seller?.serviceRadius ?? 5);
-    const serviceM = Math.max(serviceKm, 0) * 1000;
-    const maxR = Math.min(searchR, serviceM);
-    return distanceMeters(dlat, dlng, slat, slng) <= maxR;
+    // Same rule as the broadcast (deliveryNearbyService) and the accept check
+    // (assertRiderWithinRange): only the order's current search radius. The
+    // store's serviceRadius limits customers, not riders; capping by it here
+    // hid orders that riders had just been offered and could still accept.
+    return distanceMeters(dlat, dlng, slat, slng) <= deliverySearchRadiusM(order);
   });
 }
 
@@ -528,21 +536,14 @@ export async function fetchAvailableOrdersForDelivery({
       isReturnPickup: true,
     }));
 
+  // COD orders only while this order's cash still fits under the rider's limit
   const currentCashInHand = Number(riderWallet?.cashInHand || 0);
-  const riderLimit = Number(deliveryPartner?.limit || 5000);
-  const isOverCashLimit = currentCashInHand >= riderLimit;
+  const riderLimit = riderCodLimit(deliveryPartner, await getDefaultCodCashLimit());
+  const withinCashLimit = (o) =>
+    !isCodOrder(o) || fitsCodLimit(currentCashInHand, riderLimit, codOrderCashAmount(o));
 
-  const isCodOrder = (o) =>
-    o.paymentMode === "COD" ||
-    o.payment?.method === "cod" ||
-    o.payment?.method === "cash";
-
-  const eligibleV2Orders = isOverCashLimit
-    ? v2Orders.filter((o) => !isCodOrder(o))
-    : v2Orders;
-  const eligibleLegacyOrders = isOverCashLimit
-    ? legacyOrders.filter((o) => !isCodOrder(o))
-    : legacyOrders;
+  const eligibleV2Orders = v2Orders.filter(withinCashLimit);
+  const eligibleLegacyOrders = legacyOrders.filter(withinCashLimit);
 
   const orders = mergeAvailableOrders(
     eligibleV2Orders,

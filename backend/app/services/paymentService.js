@@ -19,7 +19,7 @@ import { compensateOrderCancellation } from "./orderCompensation.js";
 import { emitNotificationEvent } from "../modules/notifications/notification.emitter.js";
 import { NOTIFICATION_EVENTS } from "../modules/notifications/notification.constants.js";
 import logger from "./logger.js";
-import { getActivePaymentProvider } from "./payment/providerRegistry.js";
+import { getActivePaymentProvider, getPaymentProviderByName } from "./payment/providerRegistry.js";
 
 const MAX_MERCHANT_ORDER_ID_LENGTH = 63;
 
@@ -522,6 +522,7 @@ export async function createPaymentOrderForOrderRef({
       return {
         payment: existingForKey,
         redirectUrl: existingForKey.rawGatewayResponse?.redirectUrl,
+        checkout: existingForKey.rawGatewayResponse?.checkout || null,
         duplicate: true,
       };
     }
@@ -534,10 +535,17 @@ export async function createPaymentOrderForOrderRef({
     },
   }).sort({ createdAt: -1 });
 
-  if (existingOpenPayment && existingOpenPayment.rawGatewayResponse?.redirectUrl) {
+  // reuse an open attempt with the active gateway (redirect link or popup order)
+  const provider = getActivePaymentProvider();
+  if (
+    existingOpenPayment &&
+    existingOpenPayment.gatewayName === provider.providerName &&
+    (existingOpenPayment.rawGatewayResponse?.redirectUrl || existingOpenPayment.rawGatewayResponse?.checkout)
+  ) {
     return {
       payment: existingOpenPayment,
       redirectUrl: existingOpenPayment.rawGatewayResponse.redirectUrl,
+      checkout: existingOpenPayment.rawGatewayResponse.checkout || null,
       duplicate: true,
     };
   }
@@ -550,7 +558,6 @@ export async function createPaymentOrderForOrderRef({
     attemptCount,
   );
 
-  const provider = getActivePaymentProvider();
   const redirectUrl = `${process.env.FRONTEND_URL}/payment-status?merchantOrderId=${merchantOrderId}`;
   const callbackUrl = `${process.env.FRONTEND_URL.replace('5173', process.env.PORT || '7000')}/api/payment/webhook/phonepe`;
 
@@ -577,6 +584,7 @@ export async function createPaymentOrderForOrderRef({
     correlationId,
     rawGatewayResponse: {
       redirectUrl: initResult.redirectUrl,
+      checkout: initResult.checkout || null,
       merchantOrderId: merchantOrderId,
       amount: amountPaise,
     },
@@ -602,7 +610,12 @@ export async function createPaymentOrderForOrderRef({
     provider: provider.providerName,
   });
 
-  return { payment, redirectUrl: initResult.redirectUrl, duplicate: false };
+  return {
+    payment,
+    redirectUrl: initResult.redirectUrl,
+    checkout: initResult.checkout || null,
+    duplicate: false,
+  };
 }
 
 export async function verifyPhonePePaymentStatus({
@@ -624,8 +637,8 @@ export async function verifyPhonePePaymentStatus({
       throw err;
   }
 
-  const provider = getActivePaymentProvider();
-  const statusResp = await provider.getPaymentStatus({ merchantOrderId });
+  const provider = getPaymentProviderByName(payment.gatewayName);
+  const statusResp = await provider.getPaymentStatus({ merchantOrderId, payment });
   const nextStatus = provider.mapStatusToInternal(statusResp.state);
 
   await transitionPaymentState(payment, {

@@ -14,7 +14,8 @@ import {
     Zap,
     MapPin,
     History,
-    Timer
+    Timer,
+    Wallet
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@shared/components/ui/Toast';
@@ -74,6 +75,7 @@ const BillingCharges = () => {
         sellerAcceptTimeoutSec: 60,
         deliveryAcceptTimeoutSec: 60,
         returnPickupAcceptTimeoutSec: 60,
+        deliveryCodCashLimit: 5000,
     });
 
     // Perf audit Phase 8: migrated the initial settings load to React
@@ -120,11 +122,16 @@ const BillingCharges = () => {
             ...Object.fromEntries(
                 ORDER_TIMERS.map(({ key }) => [key, Number(settingsData?.platform?.[key]) || prev[key]]),
             ),
+            deliveryCodCashLimit: Number(settingsData?.platform?.deliveryCodCashLimit) || prev.deliveryCodCashLimit,
         }));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [settingsData]);
 
     const handleSave = async () => {
+        if (config.deliveryCodCashLimit < 100) {
+            showToast('COD cash limit must be at least ₹100', 'error');
+            return;
+        }
         try {
             setIsSaving(true);
             await Promise.all([
@@ -132,6 +139,7 @@ const BillingCharges = () => {
                     sellerAcceptTimeoutSec: config.sellerAcceptTimeoutSec,
                     deliveryAcceptTimeoutSec: config.deliveryAcceptTimeoutSec,
                     returnPickupAcceptTimeoutSec: config.returnPickupAcceptTimeoutSec,
+                    deliveryCodCashLimit: config.deliveryCodCashLimit,
                 }),
                 adminApi.updateDeliveryFinanceSettings({
                     deliveryPricingMode: deliveryMode === 'fixed' ? 'fixed_price' : 'distance_based',
@@ -325,6 +333,34 @@ const BillingCharges = () => {
                                 <p className="text-sm font-medium text-slate-400">Flat fee charged for all deliveries below threshold.</p>
                             </div>
                         )}
+                    </div>
+                </Card>
+
+                {/* Delivery partner COD cash limit */}
+                <Card className="overflow-hidden p-0">
+                    <div className="border-b border-slate-100 bg-slate-50/30 p-5">
+                        <h3 className="flex items-center gap-2 text-sm font-bold uppercase tracking-widest text-slate-900">
+                            <Wallet className="h-4 w-4 text-slate-400" />
+                            Delivery COD Cash Limit
+                        </h3>
+                        <p className="mt-1 text-xs font-medium text-slate-400">
+                            Most COD cash a delivery partner may hold before paying admin. A COD order is offered and accepted only if the cash stays within this limit after collecting it. You can set a different limit for one partner in Delivery Boys → Edit.
+                        </p>
+                    </div>
+                    <div className="p-6">
+                        <label htmlFor="cod-cash-limit" className={labelClass}>Default limit per partner</label>
+                        <div className="relative mt-2">
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-slate-400">₹</span>
+                            <input
+                                id="cod-cash-limit"
+                                type="number"
+                                min="100"
+                                step="100"
+                                value={config.deliveryCodCashLimit}
+                                onChange={(e) => handleInputChange('deliveryCodCashLimit', e.target.value)}
+                                className={inputClass}
+                            />
+                        </div>
                     </div>
                 </Card>
 

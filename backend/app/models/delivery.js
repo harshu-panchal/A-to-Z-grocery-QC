@@ -109,6 +109,12 @@ const deliverySchema = new mongoose.Schema(
 
 
 
+        // COD cash limit (₹) for this rider; unset = the default in
+        // Admin → Fees & Charges (services/delivery/codLimit.js)
+        limit: {
+            type: Number,
+            min: 0,
+        },
         isOnline: {
             type: Boolean,
             default: true,

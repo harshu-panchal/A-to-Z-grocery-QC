@@ -82,10 +82,17 @@ async function computeDistanceKmForSeller({ sellerId, addressLocation, session =
   }
 
   const distanceKm = Number((distanceInMeters / 1000).toFixed(3));
-  
+
+  // Service area uses straight-line distance, the same rule that decides which
+  // stores' products a customer sees (customerVisibilityService). Checking the
+  // longer road distance here rejected orders for products shown as available
+  // near the edge of the radius. Road distance is still used for fees.
+  const straightKm = Number(
+    (distanceMeters(normalizedLocation.lat, normalizedLocation.lng, Number(sellerLat), Number(sellerLng)) / 1000).toFixed(3),
+  );
   const radius = Number(seller.serviceRadius || 5);
-  if (distanceKm > radius) {
-    const err = new Error(`${seller.shopName || "Store"} does not deliver to your current location (Distance: ${distanceKm}km, Service Radius: ${radius}km)`);
+  if (straightKm > radius) {
+    const err = new Error(`${seller.shopName || "Store"} does not deliver to your current location (Distance: ${straightKm}km, Service Radius: ${radius}km)`);
     err.statusCode = 400;
     throw err;
   }

@@ -4,9 +4,8 @@ import { IndianRupee, RotateCw } from "lucide-react";
 import { toast } from "sonner";
 import Card from "@/shared/components/ui/Card";
 import Button from "@/shared/components/ui/Button";
-import ConfirmDialog from "@/shared/components/ui/ConfirmDialog";
-import useConfirmDialog from "@/shared/hooks/useConfirmDialog";
 import { deliveryApi } from "../services/deliveryApi";
+import { openRazorpayCheckout } from "@/shared/utils/razorpay";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 const RUPEE = "\u20B9";
@@ -29,7 +28,6 @@ const CodCash = () => {
   const queryClient = useQueryClient();
   const [paying, setPaying] = React.useState(false);
   const [payAmount, setPayAmount] = React.useState("");
-  const payConfirm = useConfirmDialog();
 
   // Perf audit Phase 8: migrated to React Query. `data` defaults to
   // DEFAULT_COD_DATA so every render always has a defined object to read
@@ -93,44 +91,51 @@ const CodCash = () => {
   );
   const enteredPayAmount = safeMoney(payAmount);
 
-  const submitCashToAdmin = async () => {
-    try {
-      setPaying(true);
-      const res = await deliveryApi.payCodCashToAdmin({
-        amount: enteredPayAmount,
-      });
-      const result = res.data?.result || {};
-      toast.success(
-        `Submitted ${RUPEE}${safeMoney(result.totalSubmitted).toLocaleString()} to admin`,
-      );
-      await fetchSummary();
-    } catch (error) {
-      toast.error(error?.response?.data?.message || "Failed to submit COD cash");
-    } finally {
-      setPaying(false);
-    }
-  };
-
-  // Audit fix: this used to fire the cash-settlement API call directly on
-  // button click with only inline amount validation — no confirmation step
-  // before submitting what is effectively a real cash-settlement claim.
-  const handlePayNow = () => {
-    if (paying) return;
+  const validatePayAmount = () => {
     if (enteredPayAmount <= 0) {
       toast.error("Enter an amount to pay");
-      return;
+      return false;
     }
     if (enteredPayAmount > payableNowAmount) {
       toast.error(`You can pay up to ${RUPEE}${safeMoney(payableNowAmount).toLocaleString()}`);
-      return;
+      return false;
     }
+    return true;
+  };
 
-    payConfirm.open({
-      title: 'Submit cash to admin?',
-      message: `Confirm you are submitting ${RUPEE}${enteredPayAmount.toLocaleString()} in cash to admin. This cannot be undone from here.`,
-      confirmLabel: 'Submit',
-      onConfirm: submitCashToAdmin,
-    });
+  // "Pay Admin": the rider pays the COD cash online through Razorpay
+  const handlePayOnline = async () => {
+    if (paying || !validatePayAmount()) return;
+    setPaying(true);
+    try {
+      const orderRes = await deliveryApi.createCodRazorpayOrder({ amount: enteredPayAmount });
+      const checkout = orderRes.data?.result;
+      let response;
+      try {
+        response = await openRazorpayCheckout({
+          ...checkout,
+          description: "COD cash payment to admin",
+        });
+      } catch (popupError) {
+        if (popupError.dismissed) toast.info("Payment cancelled");
+        else toast.error(popupError.message);
+        return;
+      }
+      const res = await deliveryApi.verifyCodRazorpayPayment(response);
+      const result = res.data?.result || {};
+      toast.success(
+        result.alreadySettled
+          ? "Payment already recorded"
+          : `Paid ${RUPEE}${safeMoney(result.totalSubmitted).toLocaleString()} to admin online`,
+      );
+    } catch (error) {
+      toast.error(error?.response?.data?.message || "Online payment failed");
+    } finally {
+      setPaying(false);
+      // the dashboard's COD Cash card reads the same balance
+      queryClient.invalidateQueries({ queryKey: ["delivery", "stats"] });
+      await fetchSummary();
+    }
   };
 
   return (
@@ -241,7 +246,7 @@ const CodCash = () => {
                       </div>
                     </div>
                     <Button
-                      onClick={handlePayNow}
+                      onClick={handlePayOnline}
                       disabled={paying || enteredPayAmount <= 0}
                       className="shrink-0"
                     >
@@ -332,16 +337,6 @@ const CodCash = () => {
           </Card>
         </motion.div>
       </motion.div>
-      <ConfirmDialog
-        isOpen={payConfirm.isOpen}
-        title={payConfirm.title}
-        message={payConfirm.message}
-        confirmLabel={payConfirm.confirmLabel}
-        cancelLabel={payConfirm.cancelLabel}
-        onConfirm={payConfirm.handleConfirm}
-        onCancel={payConfirm.close}
-        loading={payConfirm.loading}
-      />
     </div>
   );
 };

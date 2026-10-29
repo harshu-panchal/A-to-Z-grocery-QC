@@ -45,6 +45,14 @@ import {
 } from "./orderSocketEmitter.js";
 import { distanceMeters } from "../utils/geoUtils.js";
 import { applyDeliveredSettlement } from "./orderSettlement.js";
+import {
+  codOrderCashAmount,
+  fitsCodLimit,
+  getDefaultCodCashLimit,
+  isCodOrder,
+  riderCodLimit,
+} from "./delivery/codLimit.js";
+import { invalidateRiderCashCaches } from "./delivery/deliveryEarningsService.js";
 import { requireCanonicalOrderId } from "../utils/orderLookup.js";
 import { emitNotificationEvent } from "../modules/notifications/notification.emitter.js";
 import logger from "./logger.js";
@@ -95,6 +103,8 @@ function deliveryBroadcastPayloadFromOrder(order, extra = {}) {
       total: order.pricing?.total ?? 0,
       earnings: order.paymentBreakdown?.riderPayoutTotal ?? order.riderEarnings ?? 0,
       paymentMode: order.paymentMode || null,
+      // cash the rider would owe the platform (checked against the COD limit)
+      codCash: isCodOrder(order) ? codOrderCashAmount(order) : 0,
       customerName,
     },
     deliverySearchExpiresAt: order.deliverySearchExpiresAt,
@@ -345,15 +355,10 @@ export async function deliveryAcceptAtomic(deliveryId, orderId, idempotencyKey) 
   // may take it (the popup is limited the same way; this also covers stale
   // lists / notifications and direct API calls).
   const pending = await Order.findOne({ orderId })
-    .select("seller deliverySearchMeta workflowStatus deliveryBoy paymentMode payment pricing")
+    .select("seller deliverySearchMeta workflowStatus deliveryBoy paymentMode payment pricing paymentBreakdown")
     .lean();
   if (pending && pending.workflowStatus === WORKFLOW_STATUS.DELIVERY_SEARCH && !pending.deliveryBoy) {
-    const isCodOrder =
-      pending.paymentMode === "COD" ||
-      pending.payment?.method === "cod" ||
-      pending.payment?.method === "cash";
-
-    if (isCodOrder && mongoose.connection?.readyState === 1) {
+    if (isCodOrder(pending) && mongoose.connection?.readyState === 1) {
       try {
         const [wallet, riderDoc] = await Promise.all([
           Wallet.findOne({ ownerType: "DELIVERY_PARTNER", ownerId: deliveryOid })
@@ -362,10 +367,12 @@ export async function deliveryAcceptAtomic(deliveryId, orderId, idempotencyKey) 
           Delivery.findById(deliveryOid).select("limit").lean(),
         ]);
         const currentCash = roundCurrency(wallet?.cashInHand || 0);
-        const maxCashLimit = Number(riderDoc?.limit || 5000);
-        if (currentCash >= maxCashLimit) {
+        const maxCashLimit = riderCodLimit(riderDoc, await getDefaultCodCashLimit());
+        const orderCash = codOrderCashAmount(pending);
+        // the limit must still hold after collecting this order's cash
+        if (!fitsCodLimit(currentCash, maxCashLimit, orderCash)) {
           const err = new Error(
-            `Cash limit reached (₹${maxCashLimit.toLocaleString()}). Please deposit collected cash with admin to accept more Cash on Delivery (COD) orders.`
+            `This order would take your COD cash to ₹${roundCurrency(currentCash + orderCash).toLocaleString()}, above your limit of ₹${maxCashLimit.toLocaleString()}. Please pay collected cash to admin to accept more Cash on Delivery (COD) orders.`
           );
           err.statusCode = 403;
           throw err;
@@ -1501,6 +1508,9 @@ export async function verifyHandoffOtpAndDeliver(deliveryId, orderId, code, cash
       message: settlementError.message,
     };
   }
+
+  // COD cash / earnings just changed: drop the rider's cached summaries
+  invalidateRiderCashCaches(deliveryId).catch(() => {});
 
   // Realtime tracking nodes for this order are no longer interesting —
   // drop them so the customer's live-map and the fleet view stop

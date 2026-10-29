@@ -53,7 +53,7 @@ const ActiveDeliveryBoys = () => {
 
     // Form states
     const [formState, setFormState] = useState({
-        name: '', phone: '', email: '', vehicle: '', vehicleNum: '', location: ''
+        name: '', phone: '', email: '', vehicle: '', vehicleNum: '', location: '', codCashLimit: ''
     });
 
     // Perf audit Phase 8: migrated to React Query — same 500ms debounce,
@@ -99,6 +99,7 @@ const ActiveDeliveryBoys = () => {
                 totalOrders: 0, // Mock total orders
                 todayEarnings: 0, // Mock earnings
                 location: r.currentArea || 'Unknown',
+                codCashLimit: r.limit ? String(r.limit) : '',
                 lastSync: 'Now',
                 joinDate: new Date(r.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })
             }));
@@ -131,6 +132,8 @@ const ActiveDeliveryBoys = () => {
         vehicleType: formState.vehicle,
         vehicleNumber: formState.vehicle === 'cycle' ? '' : formState.vehicleNum.trim(),
         currentArea: formState.location.trim(),
+        // blank = the default limit from Fees & Charges
+        codCashLimit: String(formState.codCashLimit || '').trim() === '' ? null : Number(formState.codCashLimit),
     });
 
     // Filtering logic
@@ -192,7 +195,7 @@ const ActiveDeliveryBoys = () => {
         try {
             await adminApi.createDeliveryPartner(riderPayload());
             setIsOnboardModalOpen(false);
-            setFormState({ name: '', phone: '', email: '', vehicle: '', vehicleNum: '', location: '' });
+            setFormState({ name: '', phone: '', email: '', vehicle: '', vehicleNum: '', location: '', codCashLimit: '' });
             toast.success("Rider added. They can log in with OTP on this number.");
             refreshRiders();
         } catch (err) {
@@ -585,6 +588,18 @@ const ActiveDeliveryBoys = () => {
                                         onChange={(e) => setFormState({ ...formState, location: e.target.value })}
                                         className="w-full rounded-md border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
                                         placeholder="e.g. Bandra West, Mumbai"
+                                    />
+                                </div>
+                                <div className="space-y-1.5">
+                                    <label className="text-sm font-medium text-slate-700">COD Cash Limit (₹)</label>
+                                    <input
+                                        type="number"
+                                        min="100"
+                                        step="100"
+                                        value={formState.codCashLimit}
+                                        onChange={(e) => setFormState({ ...formState, codCashLimit: e.target.value })}
+                                        className="w-full rounded-md border border-slate-200 bg-white px-3.5 py-2.5 text-sm outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
+                                        placeholder="Leave blank to use the default from Fees & Charges"
                                     />
                                 </div>
 

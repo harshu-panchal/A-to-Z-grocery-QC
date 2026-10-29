@@ -19,7 +19,9 @@ import Order from "../../models/order.js";
 import Transaction from "../../models/transaction.js";
 import Wallet from "../../models/wallet.js";
 import { roundCurrency } from "../../utils/money.js";
-import { buildKey, getOrSet, getTTL } from "../cacheService.js";
+import { buildKey, getOrSet, getTTL, invalidate } from "../cacheService.js";
+import { applyDeliveredSettlement } from "../orderSettlement.js";
+import logger from "../logger.js";
 
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -37,6 +39,55 @@ function toDeliveryBoyId(rawId) {
     throw svcErr("Invalid user id", 401);
   }
   return new mongoose.Types.ObjectId(String(rawId));
+}
+
+/** Clear the rider's cached cash / stats / earnings after money moves. */
+export async function invalidateRiderCashCaches(rawId) {
+  const id = String(rawId);
+  await Promise.all(
+    ["codSummary", "stats", "earnings"].map((entity) =>
+      invalidate(buildKey("delivery", entity, id)).catch(() => {}),
+    ),
+  );
+}
+
+const DELIVERED_QUERY = {
+  $or: [{ status: "delivered" }, { orderStatus: "delivered" }, { workflowStatus: "DELIVERED" }],
+};
+
+/**
+ * Delivered COD orders whose cash was never recorded. Delivery runs the
+ * settlement after the order is already marked delivered and only logs a
+ * failure, which left the order under "To collect" forever and the amount
+ * to pay at 0. Re-run that same (idempotent) settlement for them.
+ */
+export async function recordMissedCodCollections(rawId) {
+  const deliveryBoyId = toDeliveryBoyId(rawId);
+  const missed = await Order.find({
+    deliveryBoy: deliveryBoyId,
+    paymentMode: "COD",
+    orderStatus: { $ne: "cancelled" },
+    "financeFlags.codMarkedCollected": { $ne: true },
+    ...DELIVERED_QUERY,
+  })
+    .select("_id orderId")
+    .limit(50)
+    .lean();
+  let fixed = 0;
+  for (const order of missed) {
+    try {
+      await applyDeliveredSettlement(order, order.orderId);
+      fixed += 1;
+    } catch (error) {
+      logger.error("Could not record COD cash for a delivered order", {
+        scope: "recordMissedCodCollections",
+        orderId: order.orderId,
+        error: error.message,
+      });
+    }
+  }
+  if (fixed) await invalidateRiderCashCaches(deliveryBoyId);
+  return fixed;
 }
 
 /**
@@ -279,7 +330,11 @@ export async function getDeliveryCodCashSummary(rawId) {
   );
 }
 
+const ACTIVE_COD_WORKFLOW = ["DELIVERY_ASSIGNED", "PICKUP_READY", "OUT_FOR_DELIVERY"];
+const ACTIVE_COD_LEGACY = ["confirmed", "packed", "out_for_delivery"];
+
 async function computeDeliveryCodCashSummary(deliveryBoyId) {
+  await recordMissedCodCollections(deliveryBoyId);
   const wallet = await Wallet.findOne({
     ownerType: "DELIVERY_PARTNER",
     ownerId: deliveryBoyId,
@@ -292,9 +347,10 @@ async function computeDeliveryCodCashSummary(deliveryBoyId) {
     paymentMode: "COD",
     status: { $ne: "cancelled" },
     orderStatus: { $ne: "cancelled" },
+    workflowStatus: { $ne: "CANCELLED" },
   })
     .select(
-      "orderId status orderStatus deliveredAt createdAt financeFlags paymentBreakdown pricing",
+      "orderId status orderStatus workflowStatus deliveredAt createdAt financeFlags paymentBreakdown pricing",
     )
     .sort({ createdAt: -1 })
     .limit(200)
@@ -304,6 +360,10 @@ async function computeDeliveryCodCashSummary(deliveryBoyId) {
     const codMarkedCollected = Boolean(
       order.financeFlags?.codMarkedCollected,
     );
+    const delivered =
+      order.status === "delivered" ||
+      order.orderStatus === "delivered" ||
+      order.workflowStatus === "DELIVERED";
     const gross = roundCurrency(
       order.paymentBreakdown?.grandTotal ?? order.pricing?.total ?? 0,
     );
@@ -315,7 +375,15 @@ async function computeDeliveryCodCashSummary(deliveryBoyId) {
     const pendingNet = roundCurrency(
       order.paymentBreakdown?.codPendingAmount ?? 0,
     );
-    const contribution = codMarkedCollected ? pendingNet : estimatedNet;
+    // Only cash actually collected is owed. Orders not delivered yet used to
+    // add their expected amount here too, so a rider with assigned (or stuck)
+    // orders saw a "cash to submit" far above what they really hold.
+    const contribution = codMarkedCollected ? pendingNet : 0;
+    // still to be collected: assigned to this rider and on the way
+    const onTheWay =
+      !delivered &&
+      (ACTIVE_COD_WORKFLOW.includes(order.workflowStatus) ||
+        (!order.workflowStatus && ACTIVE_COD_LEGACY.includes(order.status)));
 
     return {
       orderId: order.orderId,
@@ -324,6 +392,8 @@ async function computeDeliveryCodCashSummary(deliveryBoyId) {
       deliveredAt: order.deliveredAt || null,
       createdAt: order.createdAt || null,
       codMarkedCollected,
+      delivered,
+      onTheWay,
       amountGross: gross,
       riderCommission,
       amountNetExpected: estimatedNet,
@@ -345,10 +415,12 @@ async function computeDeliveryCodCashSummary(deliveryBoyId) {
     )
     .slice(0, 50);
 
+  // only orders still on the way: a delivered order's cash is already taken,
+  // and an order stuck in another state is not something to collect
   const toCollect = normalized
     .filter(
       (row) =>
-        !row.codMarkedCollected && Number(row.amountNetExpected || 0) > 0,
+        !row.codMarkedCollected && row.onTheWay && Number(row.amountNetExpected || 0) > 0,
     )
     .slice(0, 50);
 

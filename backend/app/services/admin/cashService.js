@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { getDefaultCodCashLimit, riderCodLimit } from "../delivery/codLimit.js";
 import Delivery from "../../models/delivery.js";
 import Transaction from "../../models/transaction.js";
 import Notification from "../../models/notification.js";
@@ -33,7 +34,7 @@ export async function getDeliveryCashBalancesData({ page, limit, skip }) {
         name: 1,
         phone: 1,
         avatar: 1,
-        limit: { $ifNull: ["$limit", 5000] },
+        limit: 1,
         documents: 1,
         currentCash: {
           $reduce: {
@@ -159,7 +160,12 @@ export async function getDeliveryCashBalancesData({ page, limit, skip }) {
 
   const [aggregateResult] = await Delivery.aggregate(ridersPipeline);
   const meta = aggregateResult?.meta?.[0];
-  const riders = aggregateResult?.items ?? [];
+  // each rider's own COD limit, else the default from Fees & Charges
+  const defaultLimit = await getDefaultCodCashLimit();
+  const riders = (aggregateResult?.items ?? []).map((rider) => ({
+    ...rider,
+    limit: riderCodLimit(rider, defaultLimit),
+  }));
   const total = meta?.total ?? 0;
 
   const totalInHand = riders.reduce(
@@ -167,7 +173,7 @@ export async function getDeliveryCashBalancesData({ page, limit, skip }) {
     0,
   );
   const overLimitCount = riders.filter(
-    (rider) => (rider.currentCash || 0) >= (rider.limit || 5000),
+    (rider) => (rider.currentCash || 0) >= rider.limit,
   ).length;
 
   return {

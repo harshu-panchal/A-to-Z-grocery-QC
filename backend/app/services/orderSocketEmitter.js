@@ -3,6 +3,7 @@
  */
 
 import mongoose from "mongoose";
+import { fitsCodLimit, getDefaultCodCashLimit, riderCodLimit } from "./delivery/codLimit.js";
 import Notification from "../models/notification.js";
 import Order from "../models/order.js";
 import Wallet from "../models/wallet.js";
@@ -162,7 +163,7 @@ export async function emitDeliveryBroadcastForSeller(sellerId, payload) {
     payload.radiusMeters,
   );
 
-  // If the order is COD, filter out riders who reached their safety cash limit (default ₹5,000)
+  // COD order: skip riders whose cash would go over their COD limit with it
   const isCod =
     payload.paymentMode === "COD" ||
     payload.preview?.paymentMode === "COD" ||
@@ -191,9 +192,11 @@ export async function emitDeliveryBroadcastForSeller(sellerId, payload) {
             .lean(),
         ]);
 
+        const defaultLimit = await getDefaultCodCashLimit();
+        const orderCash = Number(payload.preview?.codCash ?? 0);
         const limitMap = new Map();
         for (const r of (riders || [])) {
-          limitMap.set(String(r._id), Number(r.limit || 5000));
+          limitMap.set(String(r._id), riderCodLimit(r, defaultLimit));
         }
         const cashMap = new Map();
         for (const w of (wallets || [])) {
@@ -202,8 +205,8 @@ export async function emitDeliveryBroadcastForSeller(sellerId, payload) {
 
         eligibleIds = ids.filter((id) => {
           const cash = cashMap.get(String(id)) || 0;
-          const limit = limitMap.get(String(id)) || 5000;
-          return cash < limit;
+          const limit = limitMap.get(String(id)) ?? defaultLimit;
+          return fitsCodLimit(cash, limit, orderCash);
         });
       }
     } catch (e) {

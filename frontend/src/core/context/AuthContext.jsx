@@ -243,6 +243,12 @@ export const AuthProvider = ({ children }) => {
         else window.location.href = '/login';
     };
 
+    // Merge fresh profile fields (e.g. after an edit) into the signed-in user.
+    // login() is not for this: it needs a token and ignores the call without one.
+    const updateUser = (fields) => {
+        setUser((prev) => (prev ? { ...prev, ...(fields || {}) } : prev));
+    };
+
     const refreshUser = async () => {
         if (token) {
             try {
@@ -265,7 +271,8 @@ export const AuthProvider = ({ children }) => {
         authData,
         login,
         logout,
-        refreshUser
+        refreshUser,
+        updateUser
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }), [user, token, currentRole, isAuthenticated, isLoading, authData]);
 

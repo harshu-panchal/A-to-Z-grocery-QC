@@ -55,6 +55,7 @@ import CheckoutCouponSection from "./checkout/components/CheckoutCouponSection";
 import CheckoutRecommendedProducts from "./checkout/components/CheckoutRecommendedProducts";
 import CheckoutWishlistSection from "./checkout/components/CheckoutWishlistSection";
 import CheckoutOrderSuccess from "./checkout/components/CheckoutOrderSuccess";
+import { openRazorpayCheckout } from "@/shared/utils/razorpay";
 
 const placesLibrary = ["places"];
 
@@ -829,9 +830,33 @@ const CheckoutPage = () => {
               orderRef: paymentRef,
               orderId: mainOrderId,
             });
-            if (paymentRes.data.success && paymentRes.data.result?.redirectUrl) {
+            const payResult = paymentRes.data.result || {};
+            if (paymentRes.data.success && payResult.checkout?.provider === "razorpay") {
+              // Razorpay pays in a popup; the order already exists, so the
+              // cart is cleared whatever happens next
               clearCart();
-              window.location.href = paymentRes.data.result.redirectUrl;
+              try {
+                await openRazorpayCheckout({
+                  ...payResult.checkout,
+                  description: `Order #${mainOrderId}`,
+                  prefill: { name: displayName || undefined },
+                });
+                navigate(`/payment-status?merchantOrderId=${encodeURIComponent(payResult.merchantOrderId)}`);
+              } catch (popupError) {
+                setIsPlacingOrder(false);
+                showToast(
+                  popupError.dismissed
+                    ? "Payment not completed. You can pay from the order page."
+                    : popupError.message,
+                  "warning"
+                );
+                navigate(`/orders/${mainOrderId}`);
+              }
+              return;
+            }
+            if (paymentRes.data.success && payResult.redirectUrl) {
+              clearCart();
+              window.location.href = payResult.redirectUrl;
               return;
             } else {
               throw new Error(

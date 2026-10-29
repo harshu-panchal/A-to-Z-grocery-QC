@@ -270,7 +270,7 @@ describe("Phase 0 atomic order placement", () => {
       customerId: "67f0000000000000000000c1",
       payload: {
         items: [{ product: "67f000000000000000000011", quantity: 1 }],
-        address: { city: "Indore" },
+        address: { city: "Indore", location: { lat: 22.7196, lng: 75.8577 } },
         paymentMode: "ONLINE",
       },
       idempotencyKey: "cccccccccccccccccccccccccccccccc",
@@ -291,7 +291,7 @@ describe("Phase 0 atomic order placement", () => {
         customerId: "67f0000000000000000000c1",
         payload: {
           items: [{ product: "67f000000000000000000011", quantity: 5 }],
-          address: { city: "Indore" },
+          address: { city: "Indore", location: { lat: 22.7196, lng: 75.8577 } },
           paymentMode: "ONLINE",
         },
         idempotencyKey: "dddddddddddddddddddddddddddddddd",

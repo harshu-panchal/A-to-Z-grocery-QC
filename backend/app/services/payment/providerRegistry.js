@@ -16,6 +16,7 @@
  */
 
 import { PhonePeAdapter } from "./providers/phonepe.adapter.js";
+import { RazorpayAdapter } from "./providers/razorpay.adapter.js";
 
 let _provider = null;
 let _providerName = null;
@@ -28,7 +29,8 @@ function buildProvider(name) {
   switch (name) {
     case "phonepe":
       return new PhonePeAdapter();
-    // future: case "razorpay": return new RazorpayAdapter();
+    case "razorpay":
+      return new RazorpayAdapter();
     // future: case "stripe":   return new StripeAdapter();
     default:
       throw new Error(`Unknown payment provider: ${name}`);
@@ -47,6 +49,16 @@ export function getActivePaymentProvider() {
   _provider = buildProvider(desired);
   _providerName = desired;
   return _provider;
+}
+
+/**
+ * The provider a stored payment was made with (its `gatewayName`), so an
+ * older payment is still checked with its own gateway after a switch.
+ */
+export function getPaymentProviderByName(gatewayName) {
+  const name = String(gatewayName || "").toLowerCase().trim();
+  if (!name || name === resolveProviderName()) return getActivePaymentProvider();
+  return buildProvider(name);
 }
 
 /**

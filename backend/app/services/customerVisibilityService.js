@@ -26,13 +26,19 @@ export function parseCustomerCoordinates(query = {}) {
 function buildNearbySellersKey(lat, lng) {
   const rLat = Number(lat).toFixed(4);
   const rLng = Number(lng).toFixed(4);
-  return buildKey("sellers", "nearby", `${rLat}:${rLng}`);
+  // Under "seller:nearby:" so NEARBY_SELLERS_CACHE_PATTERN (cleared when a
+  // store's location / radius / approval changes) clears this too. It used to
+  // be "sellers:nearby:", which nothing cleared, so products kept the old
+  // radius for up to the cache TTL. "ids:" keeps it apart from the store list.
+  return buildKey("seller", "nearby", `ids:${rLat}:${rLng}`);
 }
 
 export async function getNearbySellerIdsForCustomer(lat, lng) {
   const fetchFn = async () => {
+    // same stores as the customer's store list (sellerController.getNearbySellers)
     const sellers = await Seller.find({
       isActive: true,
+      isVerified: true,
       location: {
         $near: {
           $geometry: {

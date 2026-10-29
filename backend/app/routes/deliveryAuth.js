@@ -11,6 +11,8 @@ import {
   getDeliveryEarnings,
   getDeliveryCodCashSummary,
   submitDeliveryCodCashToAdmin,
+  createCodRazorpayOrder,
+  verifyCodRazorpayPayment,
   getMyDeliveryOrders,
   requestWithdrawal,
   updateDeliveryLocation,
@@ -55,6 +57,8 @@ router.get("/stats", verifyToken, getDeliveryStats);
 router.get("/earnings", verifyToken, getDeliveryEarnings);
 router.get("/cod/summary", verifyToken, allowRoles("delivery"), getDeliveryCodCashSummary);
 router.post("/cod/pay", verifyToken, allowRoles("delivery"), submitDeliveryCodCashToAdmin);
+router.post("/cod/razorpay/order", verifyToken, allowRoles("delivery"), createCodRazorpayOrder);
+router.post("/cod/razorpay/verify", verifyToken, allowRoles("delivery"), verifyCodRazorpayPayment);
 router.get("/wallet/summary", verifyToken, allowRoles("delivery"), getRiderWalletSummaryController);
 router.get(
   "/order-history",

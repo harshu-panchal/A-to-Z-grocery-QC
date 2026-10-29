@@ -134,6 +134,9 @@ describe("orderQueryService", () => {
     });
 
     expect(result.requiresLocation).toBe(false);
-    expect(result.orders.map((order) => order.orderId)).toEqual(["ORD-1", "ORD-3"]);
+    // ORD-2 is 4 km away: inside its 5 km search radius, so it is listed even
+    // though the store serves customers only within 1 km (riders use the search
+    // radius, same as the broadcast and the accept check)
+    expect(result.orders.map((order) => order.orderId)).toEqual(["ORD-1", "ORD-2", "ORD-3"]);
   });
 });

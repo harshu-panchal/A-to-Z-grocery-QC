@@ -161,6 +161,9 @@ const settingSchema = new mongoose.Schema(
         // Accept windows in seconds (Admin → Fees & Charges → Order timers).
         // When one runs out the order is cancelled / the offer moves on.
         sellerAcceptTimeoutSec: { type: Number, default: 60, min: 15, max: 600 },
+        // Default COD cash a delivery partner may hold (₹); a rider's own
+        // limit overrides it (services/delivery/codLimit.js)
+        deliveryCodCashLimit: { type: Number, default: 5000, min: 100, max: 1000000 },
         deliveryAcceptTimeoutSec: { type: Number, default: 60, min: 15, max: 600 },
         returnPickupAcceptTimeoutSec: { type: Number, default: 60, min: 15, max: 600 },
         productApproval: {

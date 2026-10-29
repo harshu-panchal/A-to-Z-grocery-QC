@@ -15,12 +15,12 @@ function resolvePaymentErrorMessage(error) {
   if (directMessage) return directMessage;
 
   const responseStatusText = String(error?.response?.statusText || "").trim();
-  if (responseStatusText) return `PhonePe gateway error: ${responseStatusText}`;
+  if (responseStatusText) return `Payment gateway error: ${responseStatusText}`;
 
   const causeCode = String(error?.cause?.code || error?.code || "").trim();
-  if (causeCode) return `PhonePe gateway request failed (${causeCode})`;
+  if (causeCode) return `Payment gateway request failed (${causeCode})`;
 
-  return "Unable to initiate payment with PhonePe right now";
+  return "Unable to start the payment right now";
 }
 
 export const createPaymentOrder = async (req, res) => {
@@ -40,6 +40,8 @@ export const createPaymentOrder = async (req, res) => {
       {
         payment: result.payment,
         redirectUrl: result.redirectUrl,
+        // Razorpay: the browser opens the payment popup with this
+        checkout: result.checkout || null,
         merchantOrderId: result.payment.gatewayOrderId,
       },
     );
