@@ -782,6 +782,39 @@ const CheckoutPage = () => {
       .catch(() => {});
   }, [cartProductIdKey, currentLocation?.latitude, currentLocation?.longitude]);
 
+  // Same success screen for COD and a confirmed online payment, then the order.
+  const showOrderPlaced = (orderIdToShow, message) => {
+    clearCart();
+    showToast(message, "success");
+    setOrderId(orderIdToShow);
+    setShowSuccess(true);
+    if (postOrderNavigateRef.current) {
+      clearTimeout(postOrderNavigateRef.current);
+    }
+    postOrderNavigateRef.current = setTimeout(() => {
+      postOrderNavigateRef.current = null;
+      setIsPlacingOrder(false);
+      navigate(`/orders/${orderIdToShow}`);
+    }, 3000);
+  };
+
+  // After the Razorpay popup: ask the server until the payment is captured
+  // (usually a second or two). "pending" if it takes longer than ~15s.
+  const confirmOnlinePayment = async (merchantOrderId) => {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      try {
+        const res = await customerApi.verifyPaymentStatus(merchantOrderId);
+        const status = res.data?.result?.status;
+        if (status === "CAPTURED") return "paid";
+        if (status === "FAILED" || status === "CANCELLED") return "failed";
+      } catch {
+        // network hiccup: try again
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    return "pending";
+  };
+
   const handlePlaceOrder = async () => {
     setIsPlacingOrder(true);
     try {
@@ -841,7 +874,17 @@ const CheckoutPage = () => {
                   description: `Order #${mainOrderId}`,
                   prefill: { name: displayName || undefined },
                 });
-                navigate(`/payment-status?merchantOrderId=${encodeURIComponent(payResult.merchantOrderId)}`);
+                const paid = await confirmOnlinePayment(payResult.merchantOrderId);
+                if (paid === "paid") {
+                  showOrderPlaced(mainOrderId, "Payment received. Order placed, waiting for seller to accept.");
+                } else if (paid === "failed") {
+                  setIsPlacingOrder(false);
+                  showToast("Payment failed. You can pay again from the order page.", "error");
+                  navigate(`/orders/${mainOrderId}`);
+                } else {
+                  // bank is slow to confirm: the status page keeps checking
+                  navigate(`/payment-status?merchantOrderId=${encodeURIComponent(payResult.merchantOrderId)}`);
+                }
               } catch (popupError) {
                 setIsPlacingOrder(false);
                 showToast(
@@ -876,19 +919,7 @@ const CheckoutPage = () => {
         }
 
         // COD flow
-        clearCart();
-        showToast("Order placed — waiting for seller to accept.", "success");
-        setOrderId(mainOrderId);
-        setShowSuccess(true);
-
-        if (postOrderNavigateRef.current) {
-          clearTimeout(postOrderNavigateRef.current);
-        }
-        postOrderNavigateRef.current = setTimeout(() => {
-          postOrderNavigateRef.current = null;
-          setIsPlacingOrder(false);
-          navigate(`/orders/${mainOrderId}`);
-        }, 3000);
+        showOrderPlaced(mainOrderId, "Order placed — waiting for seller to accept.");
       } else {
         setIsPlacingOrder(false);
         showToast(response.data.message || "Could not place order.", "error");

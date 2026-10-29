@@ -421,6 +421,8 @@ export async function deliveryAcceptAtomic(deliveryId, orderId, idempotencyKey) 
     if (o.deliverySearchExpiresAt && new Date(o.deliverySearchExpiresAt) <= now) {
       msg =
         "Accept window has expired. Wait for the next delivery request.";
+    } else if (o.deliveryBoy && String(o.deliveryBoy) === String(deliveryOid)) {
+      msg = "You have already accepted this order.";
     } else if (o.deliveryBoy) {
       msg = "Another rider already accepted this order.";
     } else if (o.workflowStatus !== WORKFLOW_STATUS.DELIVERY_SEARCH) {

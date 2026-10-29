@@ -19,6 +19,17 @@ jest.unstable_mockModule("../app/models/transaction.js", () => ({
   default: { find: mockTxFind, create: mockTxCreate },
 }));
 
+// Withdrawable = settled wallet money minus withdrawals already requested.
+// The fake reads the Withdrawal rows the controller has created so far.
+const fakeLedger = { walletAvailable: 0, withdrawals: [] };
+jest.unstable_mockModule("../app/services/finance/withdrawableBalance.js", () => ({
+  getWithdrawableBalance: jest.fn(async () => {
+    await new Promise((r) => setImmediate(r));
+    const requested = fakeLedger.withdrawals.reduce((a, w) => a + Math.abs(w.amount), 0);
+    return { withdrawable: Math.max(0, fakeLedger.walletAvailable - requested), pendingWithdrawals: requested };
+  }),
+}));
+
 jest.unstable_mockModule("../app/config/redis.js", () => ({
   getRedisClient: () => null,
   isRedisEnabled: () => false,
@@ -184,8 +195,10 @@ describe("seller withdrawal", () => {
     await requestWithdrawal({ user: { id: "s1" }, body: { amount } }, res);
     return res;
   };
-  const balance = (settled) =>
-    mockTxFind.mockReturnValue({ select: () => ({ lean: async () => [{ status: "Settled", amount: settled, type: "Order Payment" }] }) });
+  const balance = (available) => {
+    fakeLedger.walletAvailable = available;
+    fakeLedger.withdrawals = [];
+  };
 
   test.each([[0], [0.5], [-10], ["abc"], [100.555]])("amount %p is refused", async (amount) => {
     balance(1000);
@@ -202,16 +215,9 @@ describe("seller withdrawal", () => {
   });
 
   test("without Redis, two parallel requests can't both spend the same balance", async () => {
-    // balance 100 settled; each request reads all Withdrawal rows created so far
-    const created = [];
-    mockTxFind.mockImplementation(() => ({
-      select: () => ({
-        lean: async () => {
-          await new Promise((r) => setImmediate(r));
-          return [{ status: "Settled", amount: 100, type: "Order Payment" }, ...created];
-        },
-      }),
-    }));
+    // ₹100 settled in the wallet; each request sees the withdrawals created so far
+    balance(100);
+    const created = fakeLedger.withdrawals;
     mockTxCreate.mockImplementation(async (doc) => {
       created.push(doc);
       return doc;

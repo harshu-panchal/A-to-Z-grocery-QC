@@ -34,7 +34,7 @@ import {
   emitToSeller,
 } from "../orderSocketEmitter.js";
 import * as walletService from "../finance/walletService.js";
-import { cancelPendingPayoutForOrder } from "../finance/payoutService.js";
+import Payout from "../../models/payout.js";
 import { LEDGER_TRANSACTION_TYPE, OWNER_TYPE } from "../../constants/finance.js";
 import { clearOrderTracking } from "../firebaseService.js";
 import logger from "../logger.js";
@@ -72,6 +72,67 @@ export function computeReturnRefund(order, returnItems = []) {
 const MAX_RETURN_TEXT = 1000;
 const isImageRef = (v) => typeof v === "string" && v.length <= 2048 && (/^https?:\/\//i.test(v) || v.startsWith("/uploads/"));
 
+/**
+ * Take `amount` back from the seller for a return: first out of the order's
+ * payout that is still waiting to be settled (only that much, the rest of the
+ * payout stays), then out of the seller's available wallet. Never cancels
+ * money for items that were not returned.
+ */
+async function recoverFromSeller({ order, amount, session, correlationId, metadata }) {
+  let left = Math.round(amount * 100) / 100;
+  if (left <= 0) return;
+
+  const payout = await Payout.findOne(
+    { payoutType: "SELLER", relatedOrderIds: order._id, status: { $in: ["PENDING", "PROCESSING"] } },
+    null,
+    { session },
+  );
+  if (payout) {
+    const take = Math.min(left, Number(payout.amount) || 0);
+    if (take > 0) {
+      const wallet = await walletService.getOrCreateWallet(OWNER_TYPE.SELLER, order.seller, { session });
+      wallet.pendingBalance = Math.max(0, Math.round(((wallet.pendingBalance || 0) - take) * 100) / 100);
+      wallet.totalDebited = Math.round(((wallet.totalDebited || 0) + take) * 100) / 100;
+      await wallet.save({ session });
+      payout.amount = Math.round((payout.amount - take) * 100) / 100;
+      payout.remarks = `${payout.remarks ? `${payout.remarks} ` : ""}Reduced by ₹${take} for a return.`.trim();
+      if (payout.amount <= 0) {
+        payout.status = "CANCELLED";
+        payout.cancelledAt = new Date();
+      }
+      await payout.save({ session });
+      left = Math.round((left - take) * 100) / 100;
+    }
+  }
+
+  if (left > 0) {
+    const wallet = await walletService.getOrCreateWallet(OWNER_TYPE.SELLER, order.seller, { session });
+    const take = Math.min(left, Number(wallet.availableBalance) || 0);
+    if (take > 0) {
+      await walletService.debitWallet({
+        ownerType: OWNER_TYPE.SELLER,
+        ownerId: order.seller,
+        amount: take,
+        bucket: "available",
+        session,
+        ledgerType: LEDGER_TRANSACTION_TYPE.REFUND,
+        ledgerReference: `REF-SELL-${order.orderId}`,
+        ledgerDescription: "Seller wallet debited to recover refund + return commission",
+        orderId: order._id,
+        idempotencyKey: `RET-SELL-DEBIT-${order._id}`,
+        correlationId,
+        metadata,
+      });
+      left = Math.round((left - take) * 100) / 100;
+    }
+    if (left > 0) {
+      logger.warn("Return refund could not be fully recovered from seller", {
+        scope: "ReturnFinance", sellerId: String(order.seller), orderId: order.orderId, shortBy: left,
+      });
+    }
+  }
+}
+
 export class OrderReturnService {
   /**
    * Creates a new return request on a delivered order.
@@ -97,6 +158,13 @@ export class OrderReturnService {
     const cleanImages = (images || []).filter(isImageRef).slice(0, 5);
     if ((images || []).length && !cleanImages.length) {
       throw err("Return photos did not upload. Please add them again.", 400);
+    }
+    // same rules as the app: at least one photo, and the customer confirms condition
+    if (!cleanImages.length) {
+      throw err("Please add at least 1 photo of the product.", 400);
+    }
+    if (conditionAssurance !== true && conditionAssurance !== "true") {
+      throw err("Please confirm the product is in good condition with its accessories.", 400);
     }
 
     const orderKey = orderMatchQueryFromRouteParam(orderId);
@@ -503,7 +571,7 @@ export class OrderReturnService {
    * Contract preservation: same input (Order document), same return value
    * (the order, mutated to `returnStatus = "refund_completed"`).
    */
-  static async completeReturnAndRefund(orderInput, { correlationId = null } = {}) {
+  static async completeReturnAndRefund(orderInput, { correlationId = null, refundMethod = "wallet", refundReference = "" } = {}) {
     if (!orderInput) return null;
 
     // Re-fetch by id inside the transaction so the read concern is
@@ -547,7 +615,27 @@ export class OrderReturnService {
           // owned by walletService — passing `syncUserWalletBalance: true`
           // (the default) means the legacy mirror is updated inside the
           // same Mongo session. We no longer touch the User doc here.
-          if (order.customer && walletRefundTotal > 0) {
+          order.returnRefundMethod = refundMethod === "manual" ? "manual" : "wallet";
+          if (refundMethod === "manual") order.returnRefundReference = String(refundReference || "").trim().slice(0, 120);
+
+          if (order.customer && walletRefundTotal > 0 && refundMethod === "manual") {
+            // Admin paid the customer outside the app (UPI / bank); only record it.
+            await Transaction.create(
+              [
+                {
+                  user: order.customer,
+                  userModel: "User",
+                  order: order._id,
+                  type: "Refund",
+                  amount: Number(walletRefundTotal.toFixed(2)),
+                  status: "Settled",
+                  reference: `REF-MANUAL-${order.orderId}`,
+                  meta: { orderId: order._id, type: "return_manual", paidReference: order.returnRefundReference },
+                },
+              ],
+              { session },
+            );
+          } else if (order.customer && walletRefundTotal > 0) {
             const refundRounded = Number(walletRefundTotal.toFixed(2));
 
             await walletService.creditWallet({
@@ -582,77 +670,17 @@ export class OrderReturnService {
             );
           }
 
-          // 2. Seller adjustment.
+          // 2. Seller adjustment: recover only the refund + return fee.
+          // Partial returns must not cancel the seller's whole payout, and a
+          // payout the admin already settled is recovered from the wallet.
           if (order.seller && (refundAmount > 0 || commission > 0)) {
-            const isHeld =
-              order.settlementStatus?.sellerPayout === "HOLD" ||
-              order.financeFlags?.sellerPayoutHeld;
-
-            if (isHeld) {
-              try {
-                const cancelled = await cancelPendingPayoutForOrder(
-                  order._id,
-                  "SELLER",
-                  {
-                    remarks: "Payout cancelled due to return QC passed.",
-                    session,
-                  },
-                );
-
-                if (cancelled) {
-                  await Order.updateOne(
-                    { _id: order._id },
-                    {
-                      $set: {
-                        "settlementStatus.sellerPayout": "CANCELLED",
-                        "financeFlags.sellerPayoutHeld": false,
-                      },
-                    },
-                    { session },
-                  );
-                }
-              } catch (error) {
-                // Inside withTransaction(): bubble up so the txn aborts.
-                logger.error("Payout cancellation failed for seller", {
-                  scope: "ReturnFinance",
-                  sellerId: order.seller,
-                  error: error.message,
-                });
-                throw error;
-              }
-            } else {
-              const adjustment = Math.max(0, refundAmount + commission);
-              if (adjustment > 0) {
-                try {
-                  await walletService.debitWallet({
-                    ownerType: OWNER_TYPE.SELLER,
-                    ownerId: order.seller,
-                    amount: adjustment,
-                    bucket: "available",
-                    session,
-                    ledgerType: LEDGER_TRANSACTION_TYPE.REFUND,
-                    ledgerReference: `REF-SELL-${order.orderId}`,
-                    ledgerDescription:
-                      "Seller wallet debited to recover refund + return commission",
-                    orderId: order._id,
-                    idempotencyKey: `RET-SELL-DEBIT-${order._id}`,
-                    correlationId,
-                    metadata: { refundAmount, commission },
-                  });
-                } catch (error) {
-                  // Insufficient balance is a legitimate business
-                  // failure — must abort the whole refund flow so the
-                  // customer is not silently over-credited.
-                  logger.error("Wallet debit failed for seller", {
-                    scope: "ReturnFinance",
-                    sellerId: order.seller,
-                    error: error.message,
-                  });
-                  throw error;
-                }
-              }
-            }
-
+            await recoverFromSeller({
+              order,
+              amount: Math.max(0, refundAmount + commission),
+              session,
+              correlationId,
+              metadata: { refundAmount, commission },
+            });
             const adjustment = Math.max(0, refundAmount + commission);
             await Transaction.create(
               [

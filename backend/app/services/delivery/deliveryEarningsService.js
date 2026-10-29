@@ -19,6 +19,8 @@ import Order from "../../models/order.js";
 import Transaction from "../../models/transaction.js";
 import Wallet from "../../models/wallet.js";
 import { roundCurrency } from "../../utils/money.js";
+import { OWNER_TYPE } from "../../constants/finance.js";
+import { getWithdrawableBalance } from "../finance/withdrawableBalance.js";
 import { buildKey, getOrSet, getTTL, invalidate } from "../cacheService.js";
 import { applyDeliveredSettlement } from "../orderSettlement.js";
 import logger from "../logger.js";
@@ -157,44 +159,14 @@ async function computeDeliveryStats(deliveryBoyId) {
 }
 
 /**
- * What a rider can withdraw: settled sum (withdrawals are negative) minus
- * withdrawals still waiting to be paid. Summed in Mongo over all of the
- * rider's transactions. Uncached: requestWithdrawal checks against it.
+ * What a rider can withdraw (see finance/withdrawableBalance.js).
+ * Uncached: requestWithdrawal checks against it.
  */
 export async function getDeliveryWithdrawableBalance(rawId) {
-  const deliveryBoyId = toDeliveryBoyId(rawId);
-  const [agg] = await Transaction.aggregate([
-    { $match: { user: deliveryBoyId, userModel: "Delivery" } },
-    {
-      $group: {
-        _id: null,
-        settled: {
-          $sum: { $cond: [{ $eq: ["$status", "Settled"] }, "$amount", 0] },
-        },
-        pending: {
-          $sum: {
-            $cond: [
-              {
-                $and: [
-                  { $eq: ["$type", "Withdrawal"] },
-                  { $in: ["$status", ["Pending", "Processing"]] },
-                ],
-              },
-              { $abs: "$amount" },
-              0,
-            ],
-          },
-        },
-      },
-    },
-  ]);
-  const pendingWithdrawals = roundCurrency(agg?.pending || 0);
-  return {
-    availableBalance: roundCurrency(
-      Math.max((agg?.settled || 0) - pendingWithdrawals, 0),
-    ),
-    pendingWithdrawals,
-  };
+  // From the wallet: earnings the admin has settled, never the COD cash the
+  // rider is carrying for the customer (that used to be counted here).
+  const b = await getWithdrawableBalance(OWNER_TYPE.DELIVERY_PARTNER, toDeliveryBoyId(rawId));
+  return { availableBalance: b.withdrawable, pendingWithdrawals: b.pendingWithdrawals };
 }
 
 /**

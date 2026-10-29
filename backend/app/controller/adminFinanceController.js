@@ -4,6 +4,7 @@ import Seller from "../models/seller.js";
 import Delivery from "../models/delivery.js";
 import handleResponse from "../utils/helper.js";
 import { getAdminFinanceSummary } from "../services/finance/walletService.js";
+import { getWithdrawableBalance } from "../services/finance/withdrawableBalance.js";
 import { getLedgerEntries } from "../services/finance/ledgerService.js";
 import { bulkProcessPayouts } from "../services/finance/payoutService.js";
 import { exportFinanceStatement } from "../services/finance/statementService.js";
@@ -230,8 +231,9 @@ export const getSellerWalletSummaryController = async (req, res) => {
   try {
     const sellerId = req.user?.id;
     const wallet = await Wallet.findOne({ ownerType: "SELLER", ownerId: sellerId }).lean();
+    const { withdrawable } = await getWithdrawableBalance(OWNER_TYPE.SELLER, sellerId);
     return handleResponse(res, 200, "Seller wallet summary fetched", {
-      availableBalance: wallet?.availableBalance || 0,
+      availableBalance: withdrawable, // after withdrawals already requested / paid
       pendingBalance: wallet?.pendingBalance || 0,
       totalCredited: wallet?.totalCredited || 0,
       totalDebited: wallet?.totalDebited || 0,
@@ -248,8 +250,9 @@ export const getRiderWalletSummaryController = async (req, res) => {
       ownerType: "DELIVERY_PARTNER",
       ownerId: riderId,
     }).lean();
+    const { withdrawable } = await getWithdrawableBalance(OWNER_TYPE.DELIVERY_PARTNER, riderId);
     return handleResponse(res, 200, "Rider wallet summary fetched", {
-      availableBalance: wallet?.availableBalance || 0,
+      availableBalance: withdrawable, // after withdrawals already requested / paid
       pendingBalance: wallet?.pendingBalance || 0,
       cashInHand: wallet?.cashInHand || 0,
       totalCredited: wallet?.totalCredited || 0,

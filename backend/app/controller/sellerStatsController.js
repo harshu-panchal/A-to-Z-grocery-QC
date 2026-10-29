@@ -2,7 +2,9 @@ import Order from "../models/order.js";
 import Transaction from "../models/transaction.js";
 import handleResponse from "../utils/helper.js";
 import mongoose from "mongoose";
-import Wallet from "../models/wallet.js";
+import { getWithdrawableBalance } from "../services/finance/withdrawableBalance.js";
+import { OWNER_TYPE } from "../constants/finance.js";
+import { roundCurrency } from "../utils/money.js";
 import { getSellerStats as getSellerStatsFromService } from "../services/seller/sellerStatsService.js";
 import { buildKey, getOrSet, getTTL } from "../services/cacheService.js";
 
@@ -56,18 +58,15 @@ async function fetchSellerEarnings(sellerId) {
             .populate("order", "orderId")
             .lean();
 
-        const settledBalance = transactions
-            .filter(t => t.status === 'Settled')
-            .reduce((acc, t) => acc + t.amount, 0);
-
-        const pendingPayouts = transactions
-            .filter(t => t.type === 'Withdrawal' && (t.status === 'Pending' || t.status === 'Processing'))
-            .reduce((acc, t) => acc + Math.abs(t.amount), 0);
-
-        // Fetch wallet for live pending balance (money on hold due to return window)
-        const wallet = await Wallet.findOne({ ownerType: 'SELLER', ownerId: sellerId });
-        const onHoldBalance = wallet ? wallet.pendingBalance : 0;
-        const liveAvailableBalance = wallet ? wallet.availableBalance : settledBalance;
+        // Balances come from the wallet (see finance/withdrawableBalance.js):
+        // availableBalance = what can be withdrawn now; onHoldBalance = not yet
+        // settled (return window / admin settlement). settledBalance is kept as
+        // available + requested-but-unpaid, which is how the screens use it.
+        const wb = await getWithdrawableBalance(OWNER_TYPE.SELLER, sellerId);
+        const pendingPayouts = wb.pendingWithdrawals;
+        const liveAvailableBalance = wb.withdrawable;
+        const settledBalance = roundCurrency(wb.withdrawable + wb.pendingWithdrawals);
+        const onHoldBalance = wb.onHold;
 
         // Keep "Total Revenue" aligned with Dashboard definition:
         // sum of non-cancelled seller orders from Order collection.
@@ -81,7 +80,8 @@ async function fetchSellerEarnings(sellerId) {
             {
                 $group: {
                     _id: null,
-                    totalRevenue: { $sum: { $ifNull: ["$pricing.total", 0] } },
+                    // the seller's share, not the delivery fee / tip the customer paid
+                    totalRevenue: { $sum: { $ifNull: ["$paymentBreakdown.sellerPayoutTotal", { $ifNull: ["$pricing.subtotal", 0] }] } },
                 },
             },
         ]);

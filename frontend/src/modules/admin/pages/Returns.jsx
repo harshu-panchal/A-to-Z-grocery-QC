@@ -31,6 +31,9 @@ const Returns = () => {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [actionModal, setActionModal] = useState({ open: false, mode: null });
   const [actionNote, setActionNote] = useState("");
+  // QC pass: refund to the customer's wallet, or record a refund paid outside the app
+  const [refundMethod, setRefundMethod] = useState("wallet");
+  const [refundRef, setRefundRef] = useState("");
   const [submittingAction, setSubmittingAction] = useState(false);
   const [assigningPickup, setAssigningPickup] = useState(false);
 
@@ -202,10 +205,22 @@ const Returns = () => {
     }
   };
 
-  const handleQcPass = async (orderId) => {
+  const handleQcPass = async () => {
+    if (!selectedReturn) return;
+    if (refundMethod === "manual" && !refundRef.trim()) return;
     try {
-      await adminApi.updateReturnQc(orderId, { qcStatus: "qc_passed" });
-      showToast("QC passed. Refund processed.", "success");
+      setSubmittingAction(true);
+      await adminApi.updateReturnQc(selectedReturn.orderId, {
+        qcStatus: "qc_passed",
+        refundMethod,
+        ...(refundMethod === "manual" ? { refundReference: refundRef.trim() } : {}),
+        ...(actionNote.trim() ? { note: actionNote.trim() } : {}),
+      });
+      showToast(refundMethod === "manual" ? "QC passed. Manual refund recorded." : "QC passed. Refund added to customer's wallet.", "success");
+      setActionModal({ open: false, mode: null });
+      setActionNote("");
+      setRefundRef("");
+      setRefundMethod("wallet");
       setIsDetailsOpen(false);
       await fetchReturns();
     } catch (error) {
@@ -214,6 +229,8 @@ const Returns = () => {
         error.response?.data?.message || "Failed to complete QC",
         "error",
       );
+    } finally {
+      setSubmittingAction(false);
     }
   };
 
@@ -560,6 +577,13 @@ const Returns = () => {
                         </p>
                       </div>
                     </div>
+                    {selectedReturn.returnStatus === "qc_passed" && (
+                      <p className="text-sm font-semibold text-slate-700">
+                        Refund: {selectedReturn.returnRefundMethod === "manual"
+                          ? `paid manually${selectedReturn.returnRefundReference ? ` (ref ${selectedReturn.returnRefundReference})` : ""}`
+                          : "to customer's wallet"}
+                      </p>
+                    )}
                     {selectedReturn.returnQcNote && (
                       <div className="rounded-lg border border-black/5 bg-white/60 p-3">
                         <p className="mb-1 text-[11px] font-bold uppercase tracking-widest text-slate-500">QC Decision Note:</p>
@@ -713,7 +737,7 @@ const Returns = () => {
                       <Button
                         variant="primary"
                         className="bg-success hover:bg-success/90"
-                        onClick={() => handleQcPass(selectedReturn.orderId)}
+                        onClick={() => setActionModal({ open: true, mode: "qc_pass" })}
                       >
                         QC Passed
                       </Button>
@@ -743,17 +767,44 @@ const Returns = () => {
               className="relative z-10 w-full max-w-md space-y-4 rounded-2xl bg-white p-6 shadow-2xl"
             >
               <h3 className="text-xl font-black text-slate-900">
-                {actionModal.mode === "qc_fail" ? "QC Failed" : "Reject Return"}
+                {actionModal.mode === "qc_pass" ? "QC Passed: refund" : actionModal.mode === "qc_fail" ? "QC Failed" : "Reject Return"}
               </h3>
               <p className="text-sm font-medium text-slate-600">
-                {actionModal.mode === "qc_fail"
+                {actionModal.mode === "qc_pass"
+                  ? `Refund ₹${Number(selectedReturn?.returnRefundAmount || 0).toLocaleString()} to the customer. How do you want to pay it?`
+                  : actionModal.mode === "qc_fail"
                   ? "Add a note for QC failure. This will be visible to the customer."
                   : "Please provide a reason for rejecting this return request."}
               </p>
 
+              {actionModal.mode === "qc_pass" && (
+                <div className="space-y-2">
+                  {[
+                    { key: "wallet", title: "Customer's wallet", hint: "Added instantly; they can use it on their next order." },
+                    { key: "manual", title: "Manual online payment", hint: "You pay by UPI / bank yourself; enter the reference." },
+                  ].map((o) => (
+                    <label key={o.key} className={cn("flex cursor-pointer gap-3 rounded-xl border p-3", refundMethod === o.key ? "border-primary bg-primary/5" : "border-slate-200")}>
+                      <input type="radio" name="refundMethod" className="mt-1" checked={refundMethod === o.key} onChange={() => setRefundMethod(o.key)} />
+                      <span>
+                        <span className="block text-sm font-bold text-slate-900">{o.title}</span>
+                        <span className="block text-xs text-slate-500">{o.hint}</span>
+                      </span>
+                    </label>
+                  ))}
+                  {refundMethod === "manual" && (
+                    <input
+                      className="w-full rounded-xl border border-slate-200 p-3 text-sm font-medium outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                      placeholder="UPI / bank reference (required)"
+                      value={refundRef}
+                      onChange={(e) => setRefundRef(e.target.value)}
+                    />
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2">
                 <label className="text-xs font-bold uppercase tracking-widest text-slate-500">
-                  Note
+                  {actionModal.mode === "qc_pass" ? "Note (optional)" : "Note"}
                 </label>
                 <textarea
                   className="w-full resize-none rounded-xl border border-slate-200 p-3.5 text-sm font-medium outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
@@ -773,15 +824,27 @@ const Returns = () => {
                 >
                   Cancel
                 </Button>
-                <Button
-                  variant="danger"
-                  className="flex-1"
-                  onClick={actionModal.mode === "qc_fail" ? handleQcFail : handleReject}
-                  isLoading={submittingAction}
-                  disabled={!actionNote.trim() || submittingAction}
-                >
-                  Submit
-                </Button>
+                {actionModal.mode === "qc_pass" ? (
+                  <Button
+                    variant="primary"
+                    className="flex-1 bg-success hover:bg-success/90"
+                    onClick={handleQcPass}
+                    isLoading={submittingAction}
+                    disabled={submittingAction || (refundMethod === "manual" && !refundRef.trim())}
+                  >
+                    Pass QC &amp; refund
+                  </Button>
+                ) : (
+                  <Button
+                    variant="danger"
+                    className="flex-1"
+                    onClick={actionModal.mode === "qc_fail" ? handleQcFail : handleReject}
+                    isLoading={submittingAction}
+                    disabled={!actionNote.trim() || submittingAction}
+                  >
+                    Submit
+                  </Button>
+                )}
               </div>
             </motion.div>
           </div>

@@ -129,7 +129,7 @@ const deliveredOrder = (extra = {}) => ({
   ...extra,
 });
 const request = (payload) =>
-  OrderReturnService.createReturnRequest("cust-1", "ORD-1", { reason: "Damaged", images: ["https://cdn.example.com/a.jpg"], ...payload });
+  OrderReturnService.createReturnRequest("cust-1", "ORD-1", { reason: "Damaged", images: ["https://cdn.example.com/a.jpg"], conditionAssurance: true, ...payload });
 
 describe("createReturnRequest", () => {
   beforeEach(() => {
@@ -137,6 +137,12 @@ describe("createReturnRequest", () => {
     mockOrderFindOne.mockResolvedValue(deliveredOrder());
     mockOrderFindOneAndUpdate.mockImplementation(async (_f, update) => ({ ...deliveredOrder(), ...update.$set }));
   });
+
+  test("a photo and the condition confirmation are required (the app asks for both)", async () => {
+    await expect(request({ items: [{ itemIndex: 1 }], images: [] })).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining("photo") });
+    await expect(request({ items: [{ itemIndex: 1 }], conditionAssurance: false })).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining("condition") });
+  });
+
 
   test("the same item twice is refused (it doubled the refund)", async () => {
     await expect(request({ items: [{ itemIndex: 0, quantity: 2 }, { itemIndex: 0, quantity: 2 }] }))

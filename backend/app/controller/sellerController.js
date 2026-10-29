@@ -5,6 +5,8 @@ import { handleResponse, calculateDistance } from "../utils/helper.js";
 import { invalidateSellerName } from "../services/entityNameCache.js";
 import { getSellerSidebarBadges } from "../services/sidebarBadgesService.js";
 import { withLock } from "../utils/distributedLock.js";
+import { getWithdrawableBalance } from "../services/finance/withdrawableBalance.js";
+import { OWNER_TYPE } from "../constants/finance.js";
 import { buildKey, getOrSet, getTTL, invalidate } from "../services/cacheService.js";
 
 // Cache key grid resolution: rounding to 2 decimal places (~1.1km at the
@@ -109,28 +111,10 @@ export const requestWithdrawal = async (req, res) => {
       `withdrawal:lock:seller:${sellerId}`,
       10_000,
       async () => {
-        // 1. Calculate current available balance
-        // Consistent with getSellerEarnings logic in sellerStatsController.js
-        const transactions = await Transaction.find({
-          user: sellerId,
-          userModel: "Seller",
-        })
-          .select("status amount type")
-          .lean();
-
-        const settledBalance = transactions
-          .filter((t) => t.status === "Settled")
-          .reduce((acc, t) => acc + (t.amount || 0), 0);
-
-        const pendingPayouts = transactions
-          .filter(
-            (t) =>
-              t.type === "Withdrawal" &&
-              (t.status === "Pending" || t.status === "Processing"),
-          )
-          .reduce((acc, t) => acc + Math.abs(t.amount || 0), 0);
-
-        const availableBalance = settledBalance - pendingPayouts;
+        // 1. Current available balance: settled payouts in the wallet minus
+        // withdrawals already requested/paid. Money still on hold for the
+        // return window and the delivery fee are never included.
+        const { withdrawable: availableBalance } = await getWithdrawableBalance(OWNER_TYPE.SELLER, sellerId);
 
         if (requestAmount > availableBalance) {
           const err = new Error(

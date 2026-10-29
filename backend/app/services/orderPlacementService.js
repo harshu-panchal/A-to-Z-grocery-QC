@@ -652,7 +652,8 @@ export async function placeOrderAtomic({
       userModel: "Seller",
       order: order._id,
       type: "Order Payment",
-      amount: Number(order.paymentBreakdown?.grandTotal || order.pricing?.total || 0),
+      // the seller's share; delivery fee, tip and platform fees are not theirs
+      amount: Number(order.paymentBreakdown?.sellerPayoutTotal ?? order.pricing?.subtotal ?? 0),
       status: "Pending",
       reference: order.orderId,
       meta: {

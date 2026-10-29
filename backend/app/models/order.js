@@ -542,6 +542,16 @@ const orderSchema = new mongoose.Schema(
     returnQcNote: {
       type: String,
     },
+    // How the admin refunded a passed return: "wallet" (credited in the app)
+    // or "manual" (paid outside, e.g. UPI/bank; reference kept here).
+    returnRefundMethod: {
+      type: String,
+      enum: ["wallet", "manual"],
+    },
+    returnRefundReference: {
+      type: String,
+      trim: true,
+    },
     returnPickupImages: [{ type: String }],
     returnPickupCondition: {
       type: String,

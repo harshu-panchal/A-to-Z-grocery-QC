@@ -451,6 +451,11 @@ export async function generateReturnPickupOtp(orderId, requester = {}) {
           type: 'return_pickup',
         },
       });
+      // the customer app's "Return Pickup OTP" popup listens for this one
+      emitToCustomer(customerId, {
+        event: 'return:pickup:otp',
+        payload: { orderId, otp, expiresAt },
+      });
       emitOrderStatusUpdate(orderId, { returnOtpSent: true }, order.customer);
     }
 

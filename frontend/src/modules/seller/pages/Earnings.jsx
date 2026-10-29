@@ -37,13 +37,13 @@ const Earnings = () => {
 
   React.useEffect(() => {
     if (data?.balances != null && withdrawAmount === "") {
-      const settled = Number(data.balances?.settledBalance ?? 0);
+      const settled = Number(data.balances?.availableBalance ?? 0);
       setWithdrawAmount(settled > 0 ? String(settled) : "");
     }
   }, [data?.balances]);
 
   const handleWithdraw = () => {
-    const totalBalance = Number(data?.balances?.settledBalance ?? 0);
+    const totalBalance = Number(data?.balances?.availableBalance ?? 0);
     const amount = parseFloat(withdrawAmount);
     if (isNaN(amount) || amount <= 0 || amount > totalBalance) {
       alert(
@@ -164,7 +164,7 @@ const Earnings = () => {
             <div>
               <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Available to Withdraw</p>
               <p className="text-sm font-black text-slate-900">
-                ₹{Number(data?.balances?.settledBalance ?? 0).toLocaleString()}
+                ₹{Number(data?.balances?.availableBalance ?? 0).toLocaleString()}
               </p>
             </div>
           </div>
@@ -217,7 +217,7 @@ const Earnings = () => {
               <p className="text-sm text-slate-500 font-medium mb-8">
                 Available Balance:{" "}
                 <span className="text-primary font-bold">
-                  ₹{Number(data?.balances?.settledBalance ?? 0).toLocaleString()}
+                  ₹{Number(data?.balances?.availableBalance ?? 0).toLocaleString()}
                 </span>
               </p>
 

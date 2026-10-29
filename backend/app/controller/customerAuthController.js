@@ -157,7 +157,8 @@ export const getCustomerTransactions = async (req, res) => {
         const items = transactions.map((t) => ({
             _id: t._id,
             type: t.type === "Refund" ? "credit" : "debit",
-            title: t.type === "Refund" ? "Refund" : t.type,
+            // a manual return refund was paid to the customer's bank/UPI, not the wallet
+            title: t.meta?.type === "return_manual" ? "Refund (paid to your bank/UPI)" : t.type === "Refund" ? "Refund" : t.type,
             amount: Math.abs(t.amount),
             date: t.createdAt,
             reference: t.reference,

@@ -790,7 +790,7 @@ export const rejectReturnRequest = async (req, res) => {
 export const updateReturnQcStatus = async (req, res) => {
   try {
     const { orderId } = req.params;
-    const { qcStatus, note } = req.body || {};
+    const { qcStatus, note, refundMethod = "wallet", refundReference = "" } = req.body || {};
     const { id: userId, role } = req.user;
 
     if (role !== "admin") {
@@ -799,6 +799,12 @@ export const updateReturnQcStatus = async (req, res) => {
 
     if (!["qc_passed", "qc_failed"].includes(qcStatus)) {
       return handleResponse(res, 400, "Invalid qcStatus value.");
+    }
+    if (qcStatus === "qc_passed" && !["wallet", "manual"].includes(refundMethod)) {
+      return handleResponse(res, 400, "Choose how to refund: wallet or manual.");
+    }
+    if (qcStatus === "qc_passed" && refundMethod === "manual" && !String(refundReference).trim()) {
+      return handleResponse(res, 400, "Enter the UPI / bank reference of the refund you paid.");
     }
 
     const orderKey = orderMatchQueryFromRouteParam(orderId);
@@ -840,8 +846,8 @@ export const updateReturnQcStatus = async (req, res) => {
     Object.assign(order, qcSet);
 
     if (qcStatus === "qc_passed") {
-      const updated = await completeReturnAndRefund(order);
-      return handleResponse(res, 200, "QC passed and refund processed", updated);
+      const updated = await completeReturnAndRefund(order, { refundMethod, refundReference });
+      return handleResponse(res, 200, refundMethod === "manual" ? "QC passed and manual refund recorded" : "QC passed and refund credited to wallet", updated);
     }
 
     // QC failed: allow seller payout release if on hold
@@ -1194,10 +1200,10 @@ function isTransactionalRefundEnabled() {
   return String(raw).toLowerCase() !== "false";
 }
 
-export const completeReturnAndRefund = async (order) => {
+export const completeReturnAndRefund = async (order, refundOptions = {}) => {
   if (!order) return null;
-  if (isTransactionalRefundEnabled()) {
-    return OrderReturnService.completeReturnAndRefund(order);
+  if (isTransactionalRefundEnabled() || refundOptions.refundMethod === "manual") {
+    return OrderReturnService.completeReturnAndRefund(order, refundOptions);
   }
   return completeReturnAndRefundLegacy(order);
 };
