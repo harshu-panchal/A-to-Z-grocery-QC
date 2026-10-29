@@ -26,11 +26,9 @@ export function makePosApi(portal) {
     listOrders: (params) => get("/orders", params),
     getOrder: (id) => get(`/orders/${id}`),
     createOrder: (body) => post("/orders", body),
-    startOnlineOrder: (body) => post("/orders/online", body),
     updateOrder: (id, body) => patch(`/orders/${id}/items`, body),
     cancelOrder: (id, params) => del(`/orders/${id}`, params),
     bulkCancel: (ids, restoreStock = true) => post("/orders/bulk-cancel", { ids, restoreStock }),
-    verifyPayment: (merchantOrderId) => post("/payment/verify", { merchantOrderId }),
     exchange: (body) => post("/exchange", body),
     // inventory tools
     barcodeCheck: (params) => get("/barcode-check", params),
@@ -50,7 +48,6 @@ export function makePosApi(portal) {
     customerOrders: (id, params) => get(`/customers/${id}/orders`, params),
     addCredit: (body) => post("/credit/add", body),
     receivePayment: (body) => post("/credit/payment", body),
-    startCreditPayment: (body) => post("/credit/payment/initiate", body),
     // suppliers
     suppliers: (params) => get("/suppliers", params),
     createSupplier: (body) => post("/suppliers", body),

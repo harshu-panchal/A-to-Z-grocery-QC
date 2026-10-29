@@ -155,7 +155,6 @@ export const REQUIRED_MODELS = Object.freeze([
   "PosGstRegisterEntry",
   "PosState",
   "PosSettings",
-  "PosPaymentIntent",
   "PosBatch",
 
   // Staff accounts (sellers / admins delegate work with limited access)

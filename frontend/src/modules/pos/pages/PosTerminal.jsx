@@ -510,17 +510,6 @@ function PaymentModal({ api, portal, bill, totals, onClose, onDone, onQueued }) 
         toast.success("Bill updated");
         return onDone(order);
       }
-      if (method === "Online" && !navigator.onLine) {
-        toast.error("PhonePe needs internet. Use Cash/UPI/Card while offline.");
-        return undefined;
-      }
-      if (method === "Online") {
-        const res = await api.startOnlineOrder(payload);
-        // remember which tab to clear once PhonePe sends us back
-        saveLocal(storageKey(portal, "pending_online"), { billId: bill.id, merchantOrderId: res.merchantOrderId });
-        window.location.href = res.redirectUrl;
-        return undefined;
-      }
       const body = { ...payload, paymentMethod: method, amountReceived: method === "Cash" ? Number(received) : undefined, clientRef };
       try {
         const order = await api.createOrder(body);
@@ -558,7 +547,7 @@ function PaymentModal({ api, portal, bill, totals, onClose, onDone, onQueued }) 
 
   return (
     <Modal isOpen onClose={onClose} title={editing ? "Update bill" : `Collect ${rupees(totals.total)}`} size="md"
-      footer={<><Button variant="outline" onClick={onClose}>Back</Button><Button onClick={submit} isLoading={busy} className="min-w-[140px]">{editing ? "Update bill" : method === "Online" ? "Pay with PhonePe" : "Confirm & save"}</Button></>}>
+      footer={<><Button variant="outline" onClick={onClose}>Back</Button><Button onClick={submit} isLoading={busy} className="min-w-[140px]">{editing ? "Update bill" : "Confirm & save"}</Button></>}>
       {!editing && (
         <div className="grid grid-cols-4 gap-2">
           {METHODS.map((m) => (
@@ -584,7 +573,6 @@ function PaymentModal({ api, portal, bill, totals, onClose, onDone, onQueued }) 
             : <p className="font-semibold text-red-600">Pick a saved customer in the bill to give udhaar.</p>
         )}
         {!editing && (method === "UPI" || method === "Card") && <p className="text-slate-600">Collect {rupees(totals.total)} by {method} on your machine/app, then confirm.</p>}
-        {!editing && method === "Online" && <p className="text-slate-600">You'll be taken to PhonePe to collect {rupees(totals.total)}. Stock is reduced after the payment succeeds.</p>}
       </div>
     </Modal>
   );

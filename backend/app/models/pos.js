@@ -117,11 +117,6 @@ const posOrderSchema = new Schema(
     },
     notes: { type: String, trim: true },
     quotation: { type: ObjectId, ref: "PosPurchaseEntry", default: null },
-    phonepe: {
-      merchantOrderId: String,
-      transactionId: String,
-      state: String,
-    },
     editCount: { type: Number, default: 0 },
     returnedValue: money, // refunded through exchanges (at the price paid)
     // Offline billing: id made on the device so a re-sent bill isn't saved twice
@@ -136,7 +131,6 @@ const posOrderSchema = new Schema(
 posOrderSchema.index({ owner: 1, channel: 1, createdAt: -1 });
 posOrderSchema.index({ owner: 1, invoiceNumber: 1 }, { unique: true });
 posOrderSchema.index({ customer: 1, createdAt: -1 });
-posOrderSchema.index({ "phonepe.merchantOrderId": 1 }, { sparse: true });
 posOrderSchema.index(
   { owner: 1, clientRef: 1 },
   { unique: true, partialFilterExpression: { clientRef: { $type: "string" } } },
@@ -302,19 +296,3 @@ posBatchSchema.index({ product: 1, variantSku: 1, receivedAt: -1 });
 posBatchSchema.index({ seller: 1, expiry: 1 });
 export const PosBatch = mongoose.model("PosBatch", posBatchSchema);
 
-// -------------------------------------------------- PhonePe payment intents
-const posPaymentIntentSchema = new Schema(
-  {
-    owner,
-    kind: { type: String, enum: ["sale", "credit"], required: true },
-    merchantOrderId: { type: String, required: true, unique: true },
-    amount: { type: Number, required: true }, // rupees
-    posOrder: { type: ObjectId, ref: "PosOrder", default: null },
-    customer: { type: ObjectId, ref: "PosCustomer", default: null },
-    status: { type: String, enum: ["pending", "completed", "failed"], default: "pending" },
-    transactionId: String,
-    createdBy: { type: ObjectId },
-  },
-  { timestamps: true },
-);
-export const PosPaymentIntent = mongoose.model("PosPaymentIntent", posPaymentIntentSchema);

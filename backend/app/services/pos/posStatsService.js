@@ -3,7 +3,7 @@
  *
  * POS bills live in their own collection (PosOrder) and never become online
  * `Order`s, so dashboards read them separately and show them next to online
- * sales. Only completed bills count; cancelled and unpaid PhonePe bills don't.
+ * sales. Only completed bills count; cancelled and unpaid online bills don't.
  */
 import mongoose from "mongoose";
 import { PosOrder } from "../../models/pos.js";

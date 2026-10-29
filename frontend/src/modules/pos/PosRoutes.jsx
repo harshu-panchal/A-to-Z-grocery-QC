@@ -3,7 +3,6 @@ import { Routes, Route, Navigate } from "react-router-dom";
 
 const PosTerminal = React.lazy(() => import("./pages/PosTerminal"));
 const PosReport = React.lazy(() => import("./pages/PosReport"));
-const PosPaymentReturn = React.lazy(() => import("./pages/PosPaymentReturn"));
 const PosCustomers = React.lazy(() => import("./pages/PosParties").then((m) => ({ default: m.PosCustomers })));
 const PosCustomerDetail = React.lazy(() => import("./pages/PosParties").then((m) => ({ default: m.PosCustomerDetail })));
 const PosSuppliers = React.lazy(() => import("./pages/PosParties").then((m) => ({ default: m.PosSuppliers })));
@@ -21,7 +20,6 @@ export default function PosRoutes({ portal }) {
     <Routes>
       <Route index element={<PosTerminal portal={portal} />} />
       <Route path="report" element={<PosReport portal={portal} />} />
-      <Route path="payment-return" element={<PosPaymentReturn portal={portal} />} />
       <Route path="customers" element={<PosCustomers portal={portal} />} />
       <Route path="customers/:id" element={<PosCustomerDetail portal={portal} />} />
       <Route path="suppliers" element={<PosSuppliers portal={portal} />} />

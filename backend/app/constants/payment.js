@@ -1,5 +1,6 @@
 export const PAYMENT_GATEWAY = {
   RAZORPAY: "RAZORPAY",
+  // gateway of older payment records only; no longer used for new payments
   PHONEPE: "PHONEPE",
 };
 

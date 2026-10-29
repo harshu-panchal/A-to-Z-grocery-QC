@@ -31,12 +31,10 @@ export function buildPosRouter(role) {
   router.get("/summary", orders.posSummary);
   router.get("/orders", orders.listPosOrders);
   router.post("/orders", orders.createPosOrder);
-  router.post("/orders/online", orders.initiateOnlinePosOrder);
   router.post("/orders/bulk-cancel", orders.bulkCancelPosOrders);
   router.get("/orders/:id", orders.getPosOrder);
   router.patch("/orders/:id/items", orders.updatePosOrderItems);
   router.delete("/orders/:id", orders.cancelPosOrder);
-  router.post("/payment/verify", orders.verifyPosPayment);
   router.post("/exchange", orders.posExchange);
 
   // inventory tools
@@ -60,7 +58,6 @@ export function buildPosRouter(role) {
   router.get("/customers/:id/orders", parties.customerOrders);
   router.post("/credit/add", parties.addCredit);
   router.post("/credit/payment", parties.receiveCreditPayment);
-  router.post("/credit/payment/initiate", parties.initiateCreditPayment);
 
   // suppliers
   router.get("/suppliers", parties.listSuppliers);

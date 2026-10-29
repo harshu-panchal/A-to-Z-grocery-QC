@@ -139,14 +139,6 @@ function createApp() {
   app.use(cors(corsOptions));
   app.use(globalApiRateLimiter);
 
-  // PhonePe webhook needs raw body for signature verification
-  app.use(
-    "/api/payments/webhook/phonepe",
-    express.raw({
-      type: "application/json",
-      limit: process.env.PAYMENT_WEBHOOK_MAX_PAYLOAD || "1mb",
-    }),
-  );
 
   app.use(express.json({ limit: process.env.API_JSON_LIMIT || "1mb" }));
   app.use(express.urlencoded({ limit: process.env.API_URLENCODED_LIMIT || "1mb", extended: true }));

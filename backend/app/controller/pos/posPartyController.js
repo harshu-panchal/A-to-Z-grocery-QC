@@ -10,11 +10,9 @@ import {
   PosOrder,
   PosSupplier,
   PosSupplierTransaction,
-  PosPaymentIntent,
   PosPurchaseEntry,
 } from "../../models/pos.js";
 import { round2, isObjectId, httpError, ownerFilter, withTransaction } from "../../services/pos/posService.js";
-import { newPosMerchantOrderId, startPosPhonePe } from "../../services/pos/posPhonePe.js";
 
 const fail = (res, err) =>
   handleResponse(res, err.statusCode || (err.code === 11000 ? 409 : 500), err.code === 11000 ? "A record with this phone already exists" : err.message);
@@ -186,26 +184,6 @@ export const receiveCreditPayment = async (req, res) => {
     if (!isObjectId(customerId)) throw httpError(400, "Pick a customer");
     const result = await applyCredit(req.pos, customerId, { amount: -positive(amount), type: "payment", method, reference, note });
     return handleResponse(res, 201, "Payment received", result);
-  } catch (err) {
-    return fail(res, err);
-  }
-};
-
-/** Customer pays back through PhonePe; confirmed by /payment/verify. */
-export const initiateCreditPayment = async (req, res) => {
-  try {
-    const { customerId, amount } = req.body;
-    const customer = await findCustomer(req.pos, customerId);
-    const value = positive(amount);
-    const merchantOrderId = newPosMerchantOrderId("credit");
-    await PosPaymentIntent.create({ owner: req.pos.owner, kind: "credit", merchantOrderId, amount: value, customer: customer._id, createdBy: req.pos.actor });
-    try {
-      const { redirectUrl } = await startPosPhonePe({ merchantOrderId, amountRupees: value, portal: req.pos.role });
-      return handleResponse(res, 201, "Payment started", { merchantOrderId, redirectUrl });
-    } catch (gatewayErr) {
-      await PosPaymentIntent.updateOne({ merchantOrderId }, { $set: { status: "failed" } });
-      throw httpError(502, `PhonePe error: ${gatewayErr.message || "could not start payment"}`);
-    }
   } catch (err) {
     return fail(res, err);
   }

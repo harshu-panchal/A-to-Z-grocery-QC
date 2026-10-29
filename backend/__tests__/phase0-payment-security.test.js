@@ -17,9 +17,7 @@ const mockAfterPlaceOrderV2 = jest.fn();
 const mockReleaseReservedStockForOrder = jest.fn();
 const mockCompensateOrderCancellation = jest.fn().mockResolvedValue(undefined);
 
-const mockPhonePePay = jest.fn();
-const mockPhonePeGetOrderStatus = jest.fn();
-const mockPhonePeValidateCallback = jest.fn();
+const mockCreateRazorpayOrder = jest.fn();
 
 jest.unstable_mockModule("../app/models/order.js", () => ({
   default: {
@@ -61,49 +59,16 @@ jest.unstable_mockModule("../app/services/orderCompensation.js", () => ({
   compensateOrderCancellation: mockCompensateOrderCancellation,
 }));
 
-jest.unstable_mockModule("@phonepe-pg/pg-sdk-node", () => ({
-  Env: {
-    PRODUCTION: "PRODUCTION",
-    SANDBOX: "SANDBOX",
-  },
-  StandardCheckoutClient: {
-    getInstance: jest.fn(() => ({
-      pay: mockPhonePePay,
-      getOrderStatus: mockPhonePeGetOrderStatus,
-      validateCallback: mockPhonePeValidateCallback,
-    })),
-  },
-  StandardCheckoutPayRequest: {
-    builder: jest.fn(() => {
-      const request = {};
-      return {
-        merchantOrderId(value) {
-          request.merchantOrderId = value;
-          return this;
-        },
-        amount(value) {
-          request.amount = value;
-          return this;
-        },
-        redirectUrl(value) {
-          request.redirectUrl = value;
-          return this;
-        },
-        callbackUrl(value) {
-          request.callbackUrl = value;
-          return this;
-        },
-        build() {
-          return request;
-        },
-      };
-    }),
-  },
+jest.unstable_mockModule("../app/services/payment/razorpayClient.js", () => ({
+  createRazorpayOrder: mockCreateRazorpayOrder,
+  fetchRazorpayOrder: jest.fn(),
+  findRazorpayOrderByReceipt: jest.fn(),
+  getCapturedOrderPayment: jest.fn(),
+  getRazorpayKeyId: () => "rzp_test_key",
 }));
 
 const {
   createPaymentOrderForOrderRef,
-  processPhonePeWebhook,
 } = await import("../app/services/paymentService.js");
 
 describe("Phase 0 payment hardening", () => {
@@ -112,9 +77,6 @@ describe("Phase 0 payment hardening", () => {
     process.env.RAZORPAY_KEY_ID = "rzp_test_key";
     process.env.RAZORPAY_KEY_SECRET = "rzp_test_secret";
     process.env.RAZORPAY_WEBHOOK_SECRET = "rzp_wh_secret";
-    process.env.PHONEPE_CLIENT_ID = "phonepe-client";
-    process.env.PHONEPE_CLIENT_SECRET = "phonepe-secret";
-    process.env.PHONEPE_CLIENT_VERSION = "1";
     process.env.FRONTEND_URL = "https://frontend.test";
 
     mockPaymentFindOne.mockImplementation((query) => {
@@ -139,9 +101,7 @@ describe("Phase 0 payment hardening", () => {
       paymentBreakdown: { grandTotal: 499 },
     });
     mockPaymentCountDocuments.mockResolvedValue(0);
-    mockPhonePePay.mockResolvedValue({
-      redirectUrl: "https://pay.test/checkout",
-    });
+    mockCreateRazorpayOrder.mockResolvedValue({ id: "order_rzp_1", amount: 49900, currency: "INR" });
     mockPaymentCreate.mockResolvedValue({
       _id: "payment-1",
       publicOrderId: "ORD-20260325-ABC123",
@@ -163,9 +123,9 @@ describe("Phase 0 payment hardening", () => {
       correlationId: "corr-1",
     });
 
-    expect(mockPhonePePay).toHaveBeenCalledWith(
+    expect(mockCreateRazorpayOrder).toHaveBeenCalledWith(
       expect.objectContaining({
-        amount: 49900,
+        amountPaise: 49900,
       }),
     );
     expect(result.payment.amount).toBe(49900);
@@ -209,33 +169,4 @@ describe("Phase 0 payment hardening", () => {
     ).rejects.toMatchObject({ statusCode: 409 });
   });
 
-  it("treats duplicate webhook event id as idempotent", async () => {
-    mockWebhookEventCreate.mockRejectedValueOnce({ code: 11000 });
-
-    const callbackPayload = Buffer.from(
-      JSON.stringify({
-        state: "COMPLETED",
-        merchantOrderId: "gateway-order-1",
-        transactionId: "pay_1",
-      }),
-    ).toString("base64");
-
-    const payload = Buffer.from(JSON.stringify({ response: callbackPayload }));
-    mockPhonePeValidateCallback.mockResolvedValue(true);
-
-    const result = await processPhonePeWebhook({
-      rawBody: payload,
-      authorization: "phonepe-auth",
-      eventId: "event-duplicate-1",
-      correlationId: "corr-webhook",
-    });
-
-    expect(result).toEqual(
-      expect.objectContaining({
-        duplicate: true,
-        accepted: true,
-      }),
-    );
-    expect(mockOrderUpdateOne).not.toHaveBeenCalled();
-  });
 });

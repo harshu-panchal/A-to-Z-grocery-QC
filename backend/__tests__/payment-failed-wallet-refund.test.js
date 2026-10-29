@@ -21,7 +21,6 @@ const mockPaymentFindOne = jest.fn();
 const mockWebhookEventCreate = jest.fn().mockResolvedValue({});
 const mockWebhookEventUpdateOne = jest.fn().mockResolvedValue({});
 const mockCompensateOrderCancellation = jest.fn().mockResolvedValue(undefined);
-const mockPhonePeValidateCallback = jest.fn().mockResolvedValue(true);
 
 jest.unstable_mockModule("mongoose", () => ({
   default: { startSession: mockStartSession },
@@ -65,28 +64,25 @@ jest.unstable_mockModule("../app/services/orderCompensation.js", () => ({
   compensateOrderCancellation: mockCompensateOrderCancellation,
 }));
 
-jest.unstable_mockModule("@phonepe-pg/pg-sdk-node", () => ({
-  Env: { PRODUCTION: "PRODUCTION", SANDBOX: "SANDBOX" },
-  StandardCheckoutClient: {
-    getInstance: jest.fn(() => ({
-      pay: jest.fn(),
-      getOrderStatus: jest.fn(),
-      validateCallback: mockPhonePeValidateCallback,
-    })),
-  },
-  StandardCheckoutPayRequest: { builder: jest.fn() },
-}));
+// a gateway that reports the payment as FAILED when it is checked
+jest.unstable_mockModule("../app/services/payment/providerRegistry.js", () => {
+  const failingGateway = {
+    providerName: "RAZORPAY",
+    getPaymentStatus: jest.fn().mockResolvedValue({ state: "FAILED", transactionId: "pay_fail" }),
+    mapStatusToInternal: () => "FAILED",
+  };
+  return {
+    getActivePaymentProvider: () => failingGateway,
+    getPaymentProviderByName: () => failingGateway,
+  };
+});
 
-const { processPhonePeWebhook } = await import("../app/services/paymentService.js");
+const { verifyPaymentStatus } = await import("../app/services/paymentService.js");
 
-describe("payment FAILED webhook wallet refund (audit C-NEW-3)", () => {
+describe("payment FAILED wallet refund (audit C-NEW-3)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    process.env.PHONEPE_CLIENT_ID = "phonepe-client";
-    process.env.PHONEPE_CLIENT_SECRET = "phonepe-secret";
-    process.env.PHONEPE_CLIENT_VERSION = "1";
     mockStartSession.mockResolvedValue(mockSession);
-    mockPhonePeValidateCallback.mockResolvedValue(true);
     mockWebhookEventCreate.mockResolvedValue({});
   });
 
@@ -112,29 +108,16 @@ describe("payment FAILED webhook wallet refund (audit C-NEW-3)", () => {
       order: "order-mongo-id",
       checkoutGroupId: null,
       gatewayOrderId: "gateway-order-fail-1",
-      gatewayName: "PHONEPE",
+      gatewayName: "RAZORPAY",
       status: "PENDING",
       statusHistory: [],
       save: jest.fn().mockResolvedValue(true),
     };
     mockPaymentFindOne.mockResolvedValue(paymentDoc);
 
-    const callbackPayload = Buffer.from(
-      JSON.stringify({
-        state: "FAILED",
-        merchantOrderId: "gateway-order-fail-1",
-        transactionId: "pay_fail_1",
-      }),
-    ).toString("base64");
-    const payload = Buffer.from(JSON.stringify({ response: callbackPayload }));
+    const result = await verifyPaymentStatus({ merchantOrderId: "gateway-order-fail-1" });
 
-    const result = await processPhonePeWebhook({
-      rawBody: payload,
-      authorization: "phonepe-auth",
-      eventId: "event-fail-1",
-    });
-
-    expect(result.paymentStatus).toBe("FAILED");
+    expect(result.status).toBe("FAILED");
     expect(mockCompensateOrderCancellation).toHaveBeenCalledTimes(1);
     expect(mockCompensateOrderCancellation).toHaveBeenCalledWith(
       expect.objectContaining({ _id: "order-mongo-id" }),
@@ -143,7 +126,7 @@ describe("payment FAILED webhook wallet refund (audit C-NEW-3)", () => {
     );
   });
 
-  it("does not compensate an order that was already cancelled before the webhook arrived", async () => {
+  it("does not compensate an order that was already cancelled before the failure was seen", async () => {
     const orderDoc = {
       _id: "order-already-cancelled",
       orderId: "ORD-FAIL-2",
@@ -160,27 +143,14 @@ describe("payment FAILED webhook wallet refund (audit C-NEW-3)", () => {
       order: "order-already-cancelled",
       checkoutGroupId: null,
       gatewayOrderId: "gateway-order-fail-2",
-      gatewayName: "PHONEPE",
+      gatewayName: "RAZORPAY",
       status: "PENDING",
       statusHistory: [],
       save: jest.fn().mockResolvedValue(true),
     };
     mockPaymentFindOne.mockResolvedValue(paymentDoc);
 
-    const callbackPayload = Buffer.from(
-      JSON.stringify({
-        state: "FAILED",
-        merchantOrderId: "gateway-order-fail-2",
-        transactionId: "pay_fail_2",
-      }),
-    ).toString("base64");
-    const payload = Buffer.from(JSON.stringify({ response: callbackPayload }));
-
-    await processPhonePeWebhook({
-      rawBody: payload,
-      authorization: "phonepe-auth",
-      eventId: "event-fail-2",
-    });
+    await verifyPaymentStatus({ merchantOrderId: "gateway-order-fail-2" });
 
     // Order was already cancelled (status !== "pending" branch skipped),
     // so it was never added to cancelledOrderIds and must not be

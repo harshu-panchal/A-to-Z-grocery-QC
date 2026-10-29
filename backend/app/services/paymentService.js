@@ -4,7 +4,6 @@ import mongoose from "mongoose";
 import Order from "../models/order.js";
 import CheckoutGroup from "../models/checkoutGroup.js";
 import Payment from "../models/payment.js";
-import PaymentWebhookEvent from "../models/paymentWebhookEvent.js";
 import { ORDER_PAYMENT_STATUS } from "../constants/finance.js";
 import {
   PAYMENT_EVENT_SOURCE,
@@ -518,7 +517,8 @@ export async function createPaymentOrderForOrderRef({
       ...paymentScopeQuery,
       idempotencyKey,
     });
-    if (existingForKey) {
+    // a retry with the same key reuses that attempt, unless the gateway changed
+    if (existingForKey && existingForKey.gatewayName === getActivePaymentProvider().providerName) {
       return {
         payment: existingForKey,
         redirectUrl: existingForKey.rawGatewayResponse?.redirectUrl,
@@ -559,13 +559,11 @@ export async function createPaymentOrderForOrderRef({
   );
 
   const redirectUrl = `${process.env.FRONTEND_URL}/payment-status?merchantOrderId=${merchantOrderId}`;
-  const callbackUrl = `${process.env.FRONTEND_URL.replace('5173', process.env.PORT || '7000')}/api/payment/webhook/phonepe`;
 
   const initResult = await provider.initiatePayment({
     merchantOrderId,
     amountPaise,
     redirectUrl,
-    callbackUrl,
   });
 
   const paymentData = {
@@ -618,7 +616,7 @@ export async function createPaymentOrderForOrderRef({
   };
 }
 
-export async function verifyPhonePePaymentStatus({
+export async function verifyPaymentStatus({
   merchantOrderId,
   userId,
   correlationId = null,
@@ -637,7 +635,14 @@ export async function verifyPhonePePaymentStatus({
       throw err;
   }
 
-  const provider = getPaymentProviderByName(payment.gatewayName);
+  let provider;
+  try {
+    provider = getPaymentProviderByName(payment.gatewayName);
+  } catch {
+    // a payment made through a gateway that was removed (e.g. old PhonePe
+    // attempts): it can no longer be checked, so report what is stored
+    return { payment, status: payment.status };
+  }
   const statusResp = await provider.getPaymentStatus({ merchantOrderId, payment });
   const nextStatus = provider.mapStatusToInternal(statusResp.state);
 
@@ -671,88 +676,9 @@ export async function verifyPhonePePaymentStatus({
   };
 }
 
-export async function processPhonePeWebhook({
-  rawBody,
-  authorization,
-  correlationId = null,
-}) {
-  const provider = getActivePaymentProvider();
-
-  const isValid = await provider.validateWebhook({ rawBody, authorization });
-  if (!isValid) {
-    const err = new Error("Invalid webhook signature");
-    err.statusCode = 401;
-    throw err;
-  }
-
-  const decoded = await provider.decodeWebhookPayload({ rawBody });
-
-  const eventId = decoded.eventId;
-  const payloadHash = crypto
-    .createHash("sha256")
-    .update(JSON.stringify(decoded.raw))
-    .digest("hex");
-  const eventType = decoded.state || "unknown";
-
-  try {
-    await PaymentWebhookEvent.create({
-      eventId,
-      gatewayName: provider.providerName,
-      eventType,
-      payloadHash,
-    });
-  } catch (error) {
-    if (error?.code === 11000) {
-      return { duplicate: true, accepted: true };
-    }
-    throw error;
-  }
-
-  const merchantOrderId = decoded.merchantOrderId;
-  const payment = await Payment.findOne({ gatewayOrderId: merchantOrderId });
-  if (!payment) {
-    return { accepted: true, ignored: true, reason: "Payment attempt not found" };
-  }
-
-  const nextStatus = provider.mapStatusToInternal(decoded.state);
-  await transitionPaymentState(payment, {
-    nextStatus,
-    source: PAYMENT_EVENT_SOURCE.WEBHOOK,
-    reason: `${provider.providerName} webhook: ${decoded.state}`,
-    gatewayPaymentId: decoded.transactionId,
-    rawGatewayResponse: decoded.raw,
-  });
-
-  payment.correlationId = correlationId || payment.correlationId;
-  await payment.save();
-
-  await PaymentWebhookEvent.updateOne(
-    { eventId },
-    {
-      $set: {
-        payment: payment._id,
-        publicOrderId: payment.publicOrderId,
-      },
-    },
-  );
-
-  await handleOrderSideEffectsFromPaymentStatus(
-    payment,
-    nextStatus,
-    decoded.responseCode || decoded.state,
-  );
-
-  return {
-    accepted: true,
-    duplicate: false,
-    paymentStatus: nextStatus,
-    publicOrderId: payment.publicOrderId,
-  };
-}
-
-// Placeholder for Razorpay compatibility if needed by other services
+// Used by the finance verify endpoint
 export async function verifyClientPaymentCallback(data) {
-    return verifyPhonePePaymentStatus({
+    return verifyPaymentStatus({
         merchantOrderId: data.gatewayOrderId || data.merchantOrderId,
         userId: data.userId,
         correlationId: data.correlationId

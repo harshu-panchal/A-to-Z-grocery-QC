@@ -94,7 +94,7 @@ function BillsTab({ api, portal, canCancel }) {
         <Field label="To"><input type="date" className={inputCls} value={filters.to} min={filters.from} onChange={setF("to")} /></Field>
         <Field label="Payment">
           <select className={inputCls} value={filters.paymentMethod} onChange={setF("paymentMethod")}>
-            {["all", "Cash", "UPI", "Card", "Credit", "Online"].map((m) => <option key={m} value={m}>{m === "all" ? "All methods" : m === "Credit" ? "Udhaar" : m === "Online" ? "PhonePe" : m}</option>)}
+            {["all", "Cash", "UPI", "Card", "Credit", "Online"].map((m) => <option key={m} value={m}>{m === "all" ? "All methods" : m === "Credit" ? "Udhaar" : m}</option>)}
           </select>
         </Field>
         <Field label="Status">
@@ -131,7 +131,7 @@ function BillsTab({ api, portal, canCancel }) {
                 <td className="p-3">{o.customerSnapshot?.name}<div className="text-xs text-slate-400">{o.customerSnapshot?.phone}</div></td>
                 <td className="p-3 text-right">{round2(o.itemCount)}</td>
                 <td className="p-3 text-right font-bold">{rupees(o.total)}</td>
-                <td className="p-3"><span className="mr-1 text-slate-700">{o.paymentMethod === "Credit" ? "Udhaar" : o.paymentMethod === "Online" ? "PhonePe" : o.paymentMethod}</span><Badge variant={payVariant[o.paymentStatus]}>{o.paymentStatus}</Badge></td>
+                <td className="p-3"><span className="mr-1 text-slate-700">{o.paymentMethod === "Credit" ? "Udhaar" : o.paymentMethod}</span><Badge variant={payVariant[o.paymentStatus]}>{o.paymentStatus}</Badge></td>
                 <td className="p-3"><Badge variant={statusVariant[o.status]}>{o.status.replace("_", " ")}</Badge></td>
                 <td className="p-3">
                   <div className="flex justify-end gap-1">

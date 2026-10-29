@@ -77,7 +77,7 @@ export function PosCustomerDetail({ portal }) {
   const [data, setData] = useState(null);
   const [orders, setOrders] = useState({ items: [], totalPages: 1 });
   const [page, setPage] = useState(1);
-  const [dialog, setDialog] = useState(null); // pay | due | advance | phonepe | edit
+  const [dialog, setDialog] = useState(null); // pay | due | advance | edit
   const [view, setView] = useState(null);
   const load = useCallback(() => api.getCustomer(id).then(setData).catch((e) => toast.error(apiError(e))), [api, id]);
   useEffect(() => { load(); }, [load]);
@@ -116,7 +116,6 @@ export function PosCustomerDetail({ portal }) {
       </div>
       <div className="flex flex-wrap gap-2">
         <Button onClick={() => setDialog("pay")}>Receive payment</Button>
-        <Button variant="outline" onClick={() => setDialog("phonepe")}>Collect via PhonePe</Button>
         <Button variant="outline" onClick={() => setDialog("due")}>Add old due</Button>
         <Button variant="outline" onClick={() => setDialog("advance")}>Take advance</Button>
         <Link to={`/${portal}/pos`} className="ml-auto text-sm font-semibold text-primary underline">New bill</Link>
@@ -165,8 +164,6 @@ export function PosCustomerDetail({ portal }) {
         onSubmit={async (f) => { await api.addCredit({ customerId: id, amount: f.amount, kind: "due", note: f.note || f.reference }); toast.success("Due added"); load(); }} />
       <AmountModal isOpen={dialog === "advance"} onClose={() => setDialog(null)} title="Take advance" methods={PAY_METHODS}
         onSubmit={async (f) => { await api.addCredit({ customerId: id, amount: f.amount, kind: "advance", method: f.method, note: f.note || f.reference }); toast.success("Advance recorded"); load(); }} />
-      <AmountModal isOpen={dialog === "phonepe"} onClose={() => setDialog(null)} title="Collect udhaar via PhonePe" submitLabel="Go to PhonePe"
-        onSubmit={async (f) => { const r = await api.startCreditPayment({ customerId: id, amount: f.amount }); window.location.href = r.redirectUrl; }} />
       <CustomerFormModal api={api} isOpen={dialog === "edit"} initial={customer} onClose={() => setDialog(null)} onSaved={load} />
       {view && <OrderViewModal order={view} bill={settings.bill} onClose={() => setView(null)} />}
     </div>

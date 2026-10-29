@@ -8,7 +8,6 @@ import {
   PosCustomer,
   PosCreditTransaction,
   PosPurchaseEntry,
-  PosPaymentIntent,
   nextPosNumber,
 } from "../../models/pos.js";
 import {
@@ -22,7 +21,6 @@ import {
   moveStock,
   withTransaction,
 } from "../../services/pos/posService.js";
-import { newPosMerchantOrderId, startPosPhonePe, checkPosPhonePe } from "../../services/pos/posPhonePe.js";
 
 const OFFLINE_METHODS = ["Cash", "Credit", "UPI", "Card"];
 
@@ -162,117 +160,6 @@ export const createPosOrder = async (req, res) => {
   }
 };
 
-// ------------------------------------------------------ online (PhonePe)
-export const initiateOnlinePosOrder = async (req, res) => {
-  try {
-    const pos = req.pos;
-    const { customerId, items, billDiscount = 0, notes, quotationId } = req.body;
-    const customer = await loadCustomer(pos, customerId, null);
-    const lines = await resolveLines(pos, items, { knownLines: await quotationLines(pos, quotationId) });
-    const totals = computeTotals(lines, { billDiscount });
-    if (totals.total < 1) throw httpError(400, "Online payment needs a total of at least ₹1");
-
-    const merchantOrderId = newPosMerchantOrderId("sale");
-    const order = await PosOrder.create({
-      owner: pos.owner,
-      channel: pos.role,
-      invoiceNumber: await nextInvoiceNumber(pos, null),
-      createdBy: pos.actor,
-      createdByName: pos.actorName,
-      customer: customer?._id || null,
-      customerSnapshot: snapshotOf(customer),
-      items: lines,
-      ...totals,
-      paymentMethod: "Online",
-      paymentStatus: "Pending",
-      status: "pending_payment",
-      notes,
-      quotation: isObjectId(quotationId) ? quotationId : null,
-      phonepe: { merchantOrderId },
-    });
-    await PosPaymentIntent.create({
-      owner: pos.owner,
-      kind: "sale",
-      merchantOrderId,
-      amount: order.total,
-      posOrder: order._id,
-      customer: order.customer,
-      createdBy: pos.actor,
-    });
-
-    try {
-      const { redirectUrl } = await startPosPhonePe({ merchantOrderId, amountRupees: order.total, portal: pos.role });
-      return handleResponse(res, 201, "Payment started", { order, merchantOrderId, redirectUrl });
-    } catch (gatewayErr) {
-      order.status = "cancelled";
-      order.paymentStatus = "Failed";
-      order.cancelReason = "PhonePe could not start the payment";
-      await order.save();
-      await PosPaymentIntent.updateOne({ merchantOrderId }, { $set: { status: "failed" } });
-      throw httpError(502, `PhonePe error: ${gatewayErr.message || "could not start payment"}`);
-    }
-  } catch (err) {
-    return fail(res, err);
-  }
-};
-
-/**
- * Confirm a PhonePe payment (sale or credit repayment) by asking PhonePe.
- * Idempotent: a completed intent is never applied twice.
- */
-export const verifyPosPayment = async (req, res) => {
-  try {
-    const pos = req.pos;
-    const merchantOrderId = String(req.body.merchantOrderId || req.query.mo || "");
-    const intent = await PosPaymentIntent.findOne({ merchantOrderId, owner: pos.owner });
-    if (!intent) throw httpError(404, "Payment not found");
-
-    if (intent.status === "pending") {
-      const result = await checkPosPhonePe(merchantOrderId);
-      if (result.status === "completed") {
-        await withTransaction(async (session) => {
-          // Claim the intent atomically so concurrent verifies apply it once
-          const claimed = await PosPaymentIntent.findOneAndUpdate(
-            { _id: intent._id, status: "pending" },
-            { $set: { status: "completed", transactionId: result.transactionId } },
-            { new: true, session },
-          );
-          if (!claimed) return;
-          if (intent.kind === "sale") {
-            const order = await PosOrder.findById(intent.posOrder).session(session);
-            order.paymentStatus = "Paid";
-            order.status = "completed";
-            order.amountReceived = order.total;
-            order.phonepe = { merchantOrderId, transactionId: result.transactionId, state: result.state };
-            // Already paid: never block on stock here, just record it
-            await moveStock(order.items, { direction: -1, type: "POS Sale", pos, posOrder: order._id, note: `POS bill ${order.invoiceNumber} (PhonePe)`, strict: false, session });
-            order.markModified("items");
-            await order.save({ session });
-            if (order.quotation) {
-              await PosPurchaseEntry.updateOne({ _id: order.quotation }, { $set: { status: "converted", convertedOrder: order._id } }, { session });
-            }
-          } else {
-            const customer = await PosCustomer.findById(intent.customer).session(session);
-            await changeCredit({ pos, customer, amount: -intent.amount, type: "payment", method: "Online", note: `PhonePe ${result.transactionId || merchantOrderId}`, session });
-          }
-        });
-      } else if (result.status === "failed") {
-        intent.status = "failed";
-        await intent.save();
-        if (intent.kind === "sale") {
-          await PosOrder.updateOne({ _id: intent.posOrder }, { $set: { status: "cancelled", paymentStatus: "Failed", cancelReason: "PhonePe payment failed" } });
-        }
-      }
-    }
-
-    const fresh = await PosPaymentIntent.findById(intent._id).lean();
-    const order = fresh.posOrder ? await PosOrder.findById(fresh.posOrder).lean() : null;
-    return handleResponse(res, 200, `Payment ${fresh.status}`, { status: fresh.status, kind: fresh.kind, amount: fresh.amount, order });
-  } catch (err) {
-    return fail(res, err);
-  }
-};
-
 // ------------------------------------------------------------ list/report
 function buildOrderFilter(pos, q) {
   const filter = ownerFilter(pos, { channel: pos.role });
@@ -341,7 +228,7 @@ export const updatePosOrderItems = async (req, res) => {
       const doc = await PosOrder.findOne(ownerFilter(pos, { _id: req.params.id })).session(session);
       if (!doc) throw httpError(404, "Bill not found");
       if (doc.status !== "completed") throw httpError(400, "Only completed bills can be edited");
-      if (doc.paymentMethod === "Online") throw httpError(400, "PhonePe bills can't be edited; cancel and re-bill instead");
+      if (doc.paymentMethod === "Online") throw httpError(400, "Online-paid bills can't be edited; cancel and re-bill instead");
       if (doc.items.some((l) => l.returnedQty > 0)) throw httpError(400, "Items on this bill were exchanged, so it can't be edited. Use Exchange instead.");
 
       // 1. put back what the old bill took

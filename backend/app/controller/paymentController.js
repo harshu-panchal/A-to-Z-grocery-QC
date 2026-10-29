@@ -1,8 +1,7 @@
 import handleResponse from "../utils/helper.js";
 import {
   createPaymentOrderForOrderRef,
-  verifyPhonePePaymentStatus,
-  processPhonePeWebhook,
+  verifyPaymentStatus as checkPaymentWithGateway,
 } from "../services/paymentService.js";
 import {
   createPaymentOrderSchema,
@@ -74,7 +73,7 @@ export const verifyPaymentStatus = async (req, res) => {
         return handleResponse(res, 400, "merchantOrderId is required");
     }
 
-    const verification = await verifyPhonePePaymentStatus({
+    const verification = await checkPaymentWithGateway({
       merchantOrderId,
       userId: req.user?.id,
       correlationId: req.correlationId || null,
@@ -89,48 +88,12 @@ export const verifyPaymentStatus = async (req, res) => {
   }
 };
 
-export const handlePhonePeWebhook = async (req, res) => {
-  try {
-    const authorization = req.headers["x-verify"] || req.headers["authorization"];
-    const rawBody = req.body;
-
-    if (!authorization) {
-        logger.warn("PhonePe webhook missing verification header", {
-          scope: "PaymentController.handlePhonePeWebhook",
-          correlationId: req.correlationId || null,
-          ip: req.ip,
-        });
-        return res.status(401).send("Unauthorized");
-    }
-
-    const result = await processPhonePeWebhook({
-      rawBody,
-      authorization,
-      correlationId: req.correlationId || null,
-    });
-
-    if (result.accepted) {
-      return res.status(200).send("OK");
-    }
-    
-    return res.status(400).send("Bad Request");
-  } catch (error) {
-    logger.error("PhonePe webhook processing failed", {
-      scope: "PaymentController.handlePhonePeWebhook",
-      correlationId: req.correlationId || null,
-      message: error?.message,
-      error,
-    });
-    return res.status(500).send("Internal Server Error");
-  }
-};
-
 export const getPaymentStatus = async (req, res) => {
     try {
         const { id } = req.params;
         const merchantOrderId = id;
     
-        const verification = await verifyPhonePePaymentStatus({
+        const verification = await checkPaymentWithGateway({
           merchantOrderId,
           userId: req.user?.id,
           correlationId: req.correlationId || null,
