@@ -49,4 +49,6 @@ export const sellerApi = {
     approveReturn: (orderId, data) => axiosInstance.put(`/orders/returns/${orderId}/approve`, data),
     rejectReturn: (orderId, data) => axiosInstance.put(`/orders/returns/${orderId}/reject`, data),
     assignReturnDelivery: (orderId, data) => axiosInstance.put(`/orders/returns/${orderId}/assign-delivery`, data),
+    // how many of each returned item go back into stock (once it is at the shop)
+    setReturnRestock: (orderId, data) => axiosInstance.put(`/orders/returns/${orderId}/restock`, data),
 };

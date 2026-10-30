@@ -119,6 +119,19 @@ const posOrderSchema = new Schema(
     quotation: { type: ObjectId, ref: "PosPurchaseEntry", default: null },
     editCount: { type: Number, default: 0 },
     returnedValue: money, // refunded through exchanges (at the price paid)
+    // each exchange on this bill: who did it and the money that changed hands
+    // (difference > 0 collected from the customer, < 0 given back)
+    exchanges: [
+      {
+        _id: false,
+        at: { type: Date, default: Date.now },
+        by: { type: ObjectId },
+        byName: { type: String, trim: true },
+        returnedValue: money,
+        newValue: money,
+        difference: money,
+      },
+    ],
     // Offline billing: id made on the device so a re-sent bill isn't saved twice
     clientRef: { type: String, trim: true },
     billedOffline: { type: Boolean, default: false },

@@ -19,6 +19,8 @@ const stockHistorySchema = new mongoose.Schema(
                 // POS ledger
                 "POS Sale", "POS Edit Restore", "POS Edit Deduct", "POS Cancel Restore",
                 "Purchase", "Exchange In", "Exchange Out", "Stock Count",
+                // online returns: back on the shelf, or kept out (damaged)
+                "Return Restock", "Return Not Restocked",
             ],
             required: true,
         },

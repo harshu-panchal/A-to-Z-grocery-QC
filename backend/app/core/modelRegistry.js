@@ -75,6 +75,7 @@ import "../models/pos.js"; // PosOrder, PosCustomer, PosSupplier, ... (in-store 
 import "../models/staff.js"; // staff logins created by sellers / admins
 import "../models/staffType.js"; // owner-made quick buttons
 import "../models/staffActivity.js"; // what staff did
+import "../models/staffCashCollection.js"; // owner collected a staff member's counter cash
 
 // Module-scoped models
 import "../modules/notifications/preference.model.js"; // NotificationPreference
@@ -161,6 +162,7 @@ export const REQUIRED_MODELS = Object.freeze([
   "Staff",
   "StaffType",
   "StaffActivity",
+  "StaffCashCollection",
 ]);
 
 // ---- 3. Boot-time assertion ----

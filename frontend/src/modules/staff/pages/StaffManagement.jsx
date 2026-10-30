@@ -14,6 +14,7 @@ import StaffFormModal from "../components/StaffFormModal";
 import StaffTypeModal from "../components/StaffTypeModal";
 import ResetPasswordModal from "../components/ResetPasswordModal";
 import ActivityLog from "../components/ActivityLog";
+import CashShifts from "../components/CashShifts";
 
 const MAX_CHIPS = 4;
 
@@ -151,6 +152,7 @@ const StaffManagement = ({ portal }) => {
         {[
           { id: "members", label: "Staff Members", count: members.length },
           { id: "activity", label: "Activity Log" },
+          { id: "cash", label: "Cash & Shifts" },
         ].map((t) => (
           <button
             key={t.id}
@@ -249,6 +251,8 @@ const StaffManagement = ({ portal }) => {
             </table>
           </div>
         )
+      ) : tab === "cash" ? (
+        <CashShifts api={api} />
       ) : (
         <ActivityLog api={api} portal={portal} members={members} />
       )}

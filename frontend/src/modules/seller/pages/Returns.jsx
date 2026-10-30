@@ -634,28 +634,10 @@ const Returns = () => {
                                     <p className="text-xs font-bold text-slate-600 uppercase tracking-widest">
                                         Items
                                     </p>
-                                    <div className="space-y-2">
-                                        {(selectedReturn.returnItems || []).map(
-                                            (item, idx) => (
-                                                <div
-                                                    key={idx}
-                                                    className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl border border-slate-100"
-                                                >
-                                                    <div>
-                                                        <p className="text-xs font-bold text-slate-900">
-                                                            {item.name}
-                                                        </p>
-                                                        <p className="text-xs text-slate-500">
-                                                            Qty: {item.quantity}
-                                                        </p>
-                                                    </div>
-                                                    <p className="text-xs font-black text-slate-900">
-                                                        ₹{item.price * item.quantity}
-                                                    </p>
-                                                </div>
-                                            )
-                                        )}
-                                    </div>
+                                    <ReturnRestock
+                                        ret={selectedReturn}
+                                        onSaved={() => queryClient.invalidateQueries({ queryKey: returnsQueryKey })}
+                                    />
                                 </div>
 
                                 <div className="space-y-1">
@@ -805,3 +787,95 @@ const Returns = () => {
 };
 
 export default Returns;
+
+// Once the item is back at the shop: how many go back on the shelf.
+const RESTOCK_STATUSES = ["returned", "qc_passed", "qc_failed", "refund_completed"];
+
+function ReturnRestock({ ret, onSaved }) {
+    const { showToast } = useToast();
+    const items = ret.returnItems || [];
+    const decided = Boolean(ret.returnRestockDecidedAt);
+    const canDecide = !decided && RESTOCK_STATUSES.includes(ret.returnStatus);
+    // suggestion from the rider's pickup check: good -> back in stock, otherwise keep out
+    const suggestAll = ret.returnPickupCondition === "good";
+    const [qty, setQty] = useState(() => items.map((i) => (suggestAll ? i.quantity : 0)));
+    const [note, setNote] = useState("");
+    const [saving, setSaving] = useState(false);
+
+    const save = async () => {
+        setSaving(true);
+        try {
+            const res = await sellerApi.setReturnRestock(ret.orderId, {
+                items: items.map((_, index) => ({ index, restockQty: Number(qty[index]) || 0, note })),
+            });
+            showToast(res.data?.message || "Stock updated", "success");
+            onSaved?.();
+        } catch (error) {
+            showToast(error.response?.data?.message || "Could not update stock", "error");
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    return (
+        <div className="space-y-2">
+            {items.map((item, idx) => (
+                <div key={idx} className="flex flex-wrap items-center justify-between gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                    <div className="min-w-0">
+                        <p className="text-xs font-bold text-slate-900">{item.name}</p>
+                        <p className="text-xs text-slate-500">Qty: {item.quantity} · ₹{item.price * item.quantity}</p>
+                        {decided && (
+                            <p className={cn("text-[11px] font-bold", item.restockQty > 0 ? "text-emerald-600" : "text-slate-500")}>
+                                {item.restockQty > 0 ? `${item.restockQty} back in stock` : "Not restocked"}
+                                {item.quantity - (item.restockQty || 0) > 0 && item.restockQty > 0 ? ` · ${item.quantity - item.restockQty} kept out` : ""}
+                            </p>
+                        )}
+                    </div>
+                    {canDecide && (
+                        <div className="flex items-center gap-2 text-xs">
+                            <span className="font-semibold text-slate-500">Back in stock</span>
+                            <input
+                                type="number"
+                                min="0"
+                                max={item.quantity}
+                                className="w-16 rounded-lg border border-slate-200 px-2 py-1 text-center font-bold"
+                                value={qty[idx]}
+                                onChange={(e) => {
+                                    const v = Math.max(0, Math.min(item.quantity, Math.floor(Number(e.target.value) || 0)));
+                                    setQty((q) => q.map((x, i) => (i === idx ? v : x)));
+                                }}
+                                aria-label={`${item.name} quantity back in stock`}
+                            />
+                            <span className="text-slate-400">of {item.quantity}</span>
+                        </div>
+                    )}
+                </div>
+            ))}
+
+            {canDecide && (
+                <div className="space-y-2 rounded-2xl border border-amber-200 bg-amber-50/60 p-3">
+                    <p className="text-xs font-bold text-amber-800">
+                        The item is back at your shop. Put it back in stock?
+                        {ret.returnPickupCondition && ` Rider marked it "${ret.returnPickupCondition}".`}
+                    </p>
+                    <input
+                        className="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs"
+                        placeholder="Note (optional), e.g. pack torn, not sellable"
+                        value={note}
+                        onChange={(e) => setNote(e.target.value)}
+                    />
+                    <Button size="sm" onClick={save} isLoading={saving} className="w-full">
+                        Save stock decision
+                    </Button>
+                </div>
+            )}
+            {decided && (
+                <p className="text-[11px] text-slate-500">
+                    Stock updated by {ret.returnRestockDecidedByName || "seller"} on {new Date(ret.returnRestockDecidedAt).toLocaleString("en-IN")}
+                    {items.find((i) => i.restockNote)?.restockNote ? ` · ${items.find((i) => i.restockNote).restockNote}` : ""}
+                </p>
+            )}
+        </div>
+    );
+}
+

@@ -11,6 +11,7 @@ export const staffAuthApi = {
 export function makeStaffApi(portal) {
   const base = `/${portal}/staff`;
   return {
+    portal,
     catalog: () => axiosInstance.get(`${base}/catalog`),
     members: () => axiosInstance.get(`${base}/members`),
     createMember: (body) => axiosInstance.post(`${base}/members`, body),
@@ -21,6 +22,9 @@ export function makeStaffApi(portal) {
     updateType: (id, body) => axiosInstance.put(`${base}/types/${id}`, body),
     removeType: (id) => axiosInstance.delete(`${base}/types/${id}`),
     activity: (params) => axiosInstance.get(`${base}/activity`, { params }),
+    cash: (params) => axiosInstance.get(`${base}/cash`, { params }),
+    cashHistory: (params) => axiosInstance.get(`${base}/cash/history`, { params }),
+    collectCash: (id, body) => axiosInstance.post(`${base}/members/${id}/cash/collect`, body),
   };
 }
 

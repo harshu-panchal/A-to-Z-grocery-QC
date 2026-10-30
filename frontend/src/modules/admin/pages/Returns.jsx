@@ -577,6 +577,12 @@ const Returns = () => {
                         </p>
                       </div>
                     </div>
+                    {selectedReturn.returnRestockDecidedAt && (
+                      <p className="text-sm text-slate-700">
+                        Stock: {(selectedReturn.returnItems || []).map((i) => `${i.name}: ${i.restockQty || 0} of ${i.quantity} back in stock`).join(", ")}
+                        <span className="text-slate-400"> (by {selectedReturn.returnRestockDecidedByName || "seller"})</span>
+                      </p>
+                    )}
                     {selectedReturn.returnStatus === "qc_passed" && (
                       <p className="text-sm font-semibold text-slate-700">
                         Refund: {selectedReturn.returnRefundMethod === "manual"

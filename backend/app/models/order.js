@@ -492,8 +492,15 @@ const orderSchema = new mongoose.Schema(
           enum: ["requested", "approved", "rejected", "returned"],
           default: "requested",
         },
+        // Seller's decision once the item is back at the shop: how many go
+        // back on the shelf (the rest are damaged / not sellable).
+        restockQty: { type: Number, min: 0 },
+        restockNote: { type: String, trim: true },
       },
     ],
+    returnRestockDecidedAt: { type: Date },
+    returnRestockDecidedBy: { type: mongoose.Schema.Types.ObjectId },
+    returnRestockDecidedByName: { type: String, trim: true },
     returnRejectedReason: {
       type: String,
     },

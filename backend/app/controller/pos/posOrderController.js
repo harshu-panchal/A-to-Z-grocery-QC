@@ -383,6 +383,7 @@ export const posExchange = async (req, res) => {
           fromBill.length && `returned ${fromBill.map((l) => `${l.name} ×${l.quantity}`).join(", ")} (₹${fromBillValue})`,
           outs.length && `gave ${outs.map((l) => `${l.name} ×${l.quantity}`).join(", ")} (₹${newValue})`,
         ].filter(Boolean).join("; ");
+        doc.exchanges.push({ at: new Date(), by: pos.actor, byName: pos.actorName || "", returnedValue, newValue, difference });
         doc.notes = [doc.notes, `Exchange ${when}${pos.actorName ? ` by ${pos.actorName}` : ""}: ${what}`].filter(Boolean).join("\n");
         await doc.save({ session });
         // an udhaar bill settles the difference on the customer's account

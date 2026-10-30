@@ -10,6 +10,7 @@ import {
   requireStaffToken,
 } from "../controller/staffAuthController.js";
 import { makeStaffManagement } from "../controller/staffManagementController.js";
+import { makeStaffCash } from "../controller/staffCashController.js";
 
 /**
  * /staff - what staff themselves use: log in, see their profile, change their
@@ -29,10 +30,14 @@ const ownerOnly = (req, res, next) =>
 function managementRouter(ownerType, ...guards) {
   const router = express.Router();
   const h = makeStaffManagement(ownerType);
+  const cash = makeStaffCash(ownerType);
   router.use(verifyToken, allowRoles(ownerType), ownerOnly, ...guards);
 
   router.get("/catalog", h.catalog);
   router.get("/activity", h.activity);
+  router.get("/cash", cash.summary);
+  router.get("/cash/history", cash.history);
+  router.post("/members/:id/cash/collect", cash.collect);
 
   router.get("/types", h.listTypes);
   router.post("/types", h.createType);

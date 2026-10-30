@@ -16,6 +16,7 @@ import {
   approveReturnRequest,
   rejectReturnRequest,
   updateReturnQcStatus,
+  setReturnRestock,
   assignReturnDelivery,
   acceptReturnPickup,
   rejectReturnPickup,
@@ -138,6 +139,13 @@ router.put(
   allowRoles("admin", "seller"),
   requireApprovedSeller,
   rejectReturnRequest,
+);
+router.put(
+  "/returns/:orderId/restock",
+  verifyToken,
+  allowRoles("admin", "seller"),
+  requireApprovedSeller,
+  setReturnRestock,
 );
 router.put(
   "/returns/:orderId/qc",

@@ -122,6 +122,7 @@ const SELLER_RULES = [
   rule("GET", "/orders/:id/returns", "orders.returns"),
   rule("PUT", "/orders/returns/:id/approve", "orders.returns", "Approved a return"),
   rule("PUT", "/orders/returns/:id/reject", "orders.returns", "Rejected a return"),
+  rule("PUT", "/orders/returns/:id/restock", "orders.returns", "Updated stock for a return"),
   rule("PUT", "/orders/returns/:id/assign-delivery", "orders.returns", "Assigned a return pickup"),
   rule("GET", "/orders/workflow/:id/route", ["orders.tracking", "orders.orders"]),
 
@@ -221,6 +222,7 @@ const ADMIN_RULES = [
   rule("GET", "/orders/:id/returns", "orders.*"),
   rule("PUT", "/orders/returns/:id/approve", "orders.*", "Approved a return"),
   rule("PUT", "/orders/returns/:id/reject", "orders.*", "Rejected a return"),
+  rule("PUT", "/orders/returns/:id/restock", "orders.*", "Updated stock for a return"),
   rule("PUT", "/orders/returns/:id/assign-delivery", "orders.*", "Assigned a return pickup"),
   rule("PUT", "/orders/returns/:id/qc", "orders.*", "Completed a return quality check"),
 

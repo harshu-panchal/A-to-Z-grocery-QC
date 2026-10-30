@@ -3,6 +3,7 @@ import OrderOtp from "../models/orderOtp.js";
 import Product from "../models/product.js";
 import Transaction from "../models/transaction.js";
 import StockHistory from "../models/stockHistory.js";
+import { invalidateProductStockCache } from "../services/stockService.js";
 import Seller from "../models/seller.js";
 import Delivery from "../models/delivery.js";
 import User from "../models/customer.js";
@@ -779,6 +780,99 @@ export const rejectReturnRequest = async (req, res) => {
       req.body?.reason,
     );
     return handleResponse(res, 200, "Return request rejected", order);
+  } catch (error) {
+    return handleResponse(res, error.statusCode || 500, error.message);
+  }
+};
+
+/* ===============================
+   RETURN RESTOCK DECISION (Seller/Admin)
+   Once the returned item is back at the shop the seller decides, per item,
+   how many go back into stock. Only that many are added; the decision is
+   recorded in the stock history. One decision per return.
+================================ */
+const RESTOCK_STATUSES = ["returned", "qc_passed", "qc_failed", "refund_completed"];
+
+export const setReturnRestock = async (req, res) => {
+  try {
+    const orderKey = orderMatchQueryFromRouteParam(req.params.orderId);
+    if (!orderKey) return handleResponse(res, 404, "Order not found");
+    const order = await Order.findOne(orderKey);
+    if (!order) return handleResponse(res, 404, "Order not found");
+    if (req.user.role === "seller" && String(order.seller) !== String(req.user.id)) {
+      return handleResponse(res, 403, "This return is not from your shop");
+    }
+    if (!RESTOCK_STATUSES.includes(order.returnStatus)) {
+      return handleResponse(res, 400, "Decide on stock once the item is back at the shop.");
+    }
+    if (order.returnRestockDecidedAt) {
+      return handleResponse(res, 409, "Stock for this return was already updated.");
+    }
+
+    const choices = Array.isArray(req.body?.items) ? req.body.items : [];
+    const lines = (order.returnItems || []).map((ri, idx) => {
+      const pick = choices.find((c) => Number(c.index) === idx) || {};
+      const qty = Number(pick.restockQty ?? 0);
+      if (!Number.isInteger(qty) || qty < 0 || qty > ri.quantity) {
+        const err = new Error(`Restock quantity for "${ri.name}" must be between 0 and ${ri.quantity}`);
+        err.statusCode = 400;
+        throw err;
+      }
+      const orderItem = Number.isInteger(ri.itemIndex) ? order.items?.[ri.itemIndex] : null;
+      const variantSku = String(orderItem?.variantSku || ri.variantSlot || "").trim();
+      return { ri, qty, note: String(pick.note || "").trim().slice(0, 200), variantSku };
+    });
+    if (!lines.length) return handleResponse(res, 400, "This return has no items");
+
+    const actorName = req.staff?.name || (req.user.role === "admin" ? "Admin" : "Seller");
+    // claim first so a double click can't add the stock twice
+    const claimed = await Order.findOneAndUpdate(
+      { _id: order._id, returnRestockDecidedAt: { $exists: false } },
+      { $set: { returnRestockDecidedAt: new Date(), returnRestockDecidedBy: req.staff?.id || req.user.id, returnRestockDecidedByName: actorName } },
+      { new: true },
+    );
+    if (!claimed) return handleResponse(res, 409, "Stock for this return was already updated.");
+
+    const history = [];
+    for (const { ri, qty, note, variantSku } of lines) {
+      ri.restockQty = qty;
+      ri.restockNote = note;
+      const notKept = ri.quantity - qty;
+      if (qty > 0) {
+        const updated = variantSku
+          ? await Product.findOneAndUpdate({ _id: ri.product, "variants.sku": variantSku }, { $inc: { stock: qty, "variants.$.stock": qty } }, { new: true })
+          : await Product.findOneAndUpdate({ _id: ri.product }, { $inc: { stock: qty } }, { new: true });
+        history.push({
+          product: ri.product, seller: order.seller, type: "Return Restock", quantity: qty, source: "ONLINE",
+          variantSku: variantSku || undefined, order: order._id,
+          stockAfter: updated ? Number(variantSku ? updated.variants?.find((v) => v.sku === variantSku)?.stock ?? updated.stock : updated.stock) : undefined,
+          note: `Return #${order.orderId}: back in stock${note ? ` (${note})` : ""}`,
+          createdByRole: req.user.role === "admin" ? "admin" : "seller", createdBy: req.staff?.id || req.user.id,
+        });
+      }
+      if (notKept > 0) {
+        history.push({
+          product: ri.product, seller: order.seller, type: "Return Not Restocked", quantity: 0, source: "ONLINE",
+          variantSku: variantSku || undefined, order: order._id,
+          note: `Return #${order.orderId}: ${notKept} not restocked${note ? ` (${note})` : " (damaged / not sellable)"}`,
+          createdByRole: req.user.role === "admin" ? "admin" : "seller", createdBy: req.staff?.id || req.user.id,
+        });
+      }
+    }
+    await Order.updateOne(
+      { _id: order._id },
+      { $set: Object.fromEntries(lines.flatMap(({ qty, note }, i) => [[`returnItems.${i}.restockQty`, qty], [`returnItems.${i}.restockNote`, note]])) },
+    );
+    if (history.length) await StockHistory.insertMany(history);
+    await invalidateProductStockCache(lines.filter((l) => l.qty > 0).map((l) => l.ri.product));
+
+    const restocked = lines.reduce((s, l) => s + l.qty, 0);
+    return handleResponse(res, 200, restocked ? `${restocked} item(s) put back in stock` : "Recorded: nothing put back in stock", {
+      orderId: order.orderId,
+      returnRestockDecidedAt: claimed.returnRestockDecidedAt,
+      returnRestockDecidedByName: actorName,
+      items: lines.map(({ ri, qty, note }) => ({ name: ri.name, quantity: ri.quantity, restockQty: qty, restockNote: note })),
+    });
   } catch (error) {
     return handleResponse(res, error.statusCode || 500, error.message);
   }
