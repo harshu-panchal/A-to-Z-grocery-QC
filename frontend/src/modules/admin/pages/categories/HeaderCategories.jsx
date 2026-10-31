@@ -194,6 +194,8 @@ const HeaderCategories = () => {
     if (file) {
       setImageFile(file);
       setPreviewUrl(URL.createObjectURL(file));
+      // icon OR image: a new custom image replaces the chosen icon, else the icon would still show
+      setFormData((f) => ({ ...f, iconId: "" }));
     }
   };
 
@@ -506,6 +508,15 @@ const HeaderCategories = () => {
                         className="px-3 py-1.5 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors">
                         {formData.iconId ? 'Change Icon' : 'Select Icon'}
                       </button>
+                      {formData.iconId && (
+                        <button
+                          type="button"
+                          onClick={() => setFormData((f) => ({ ...f, iconId: "" }))}
+                          className="text-xs font-semibold text-slate-500 underline hover:text-red-600"
+                          title="The custom image is shown when no icon is chosen">
+                          Remove icon
+                        </button>
+                      )}
                     </div>
 
                     {/* OR Divider */}

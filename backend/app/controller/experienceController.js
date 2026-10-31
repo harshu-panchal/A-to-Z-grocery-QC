@@ -470,13 +470,28 @@ export const getPublicHeroConfig = async (req, res) => {
             headerId,
           }).lean();
         }
-        if (!resolved && (pageType === "home" || pageType === "header")) {
+        if (pageType === "home") {
           resolved = await HeroConfig.findOne({
             pageType: "home",
             headerId: null,
           }).lean();
         }
-        return resolved || null;
+        // Banners: every banner the admin set to show on this page, whichever
+        // row it was uploaded on. A header never borrows the home banners.
+        const target = pageType === "home" ? "all" : String(headerId);
+        const allHeaderIds = new Set(
+          (await Category.find({ type: "header", $or: [{ slug: /^all$/i }, { name: /^all$/i }] }).select("_id").lean()).map((h) => String(h._id)),
+        );
+        const configs = await HeroConfig.find({}).select("pageType headerId banners").lean();
+        const items = configs.flatMap((c) => {
+          const own = c.pageType === "home" || allHeaderIds.has(String(c.headerId)) ? "all" : String(c.headerId);
+          return (c.banners?.items || []).filter((b) => {
+            const where = b.showOn?.length ? b.showOn.map(String) : [own, ...(b.showOnAll ? ["all"] : [])];
+            return where.includes(target);
+          });
+        });
+        if (!resolved && !items.length) return null;
+        return { ...(resolved || { categoryIds: [] }), banners: { ...(resolved?.banners || {}), items } };
       },
       getTTL("homepage"),
     );

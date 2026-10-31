@@ -83,6 +83,7 @@ export async function normalizeBannerItems(rawItems, { min = 0 } = {}) {
       linkType,
       linkValue: linkType === "none" ? "" : linkValue,
       status: b.status === "inactive" ? "inactive" : "active",
+      showOn: [...new Set((Array.isArray(b.showOn) ? b.showOn : []).map(String).filter((t) => t === "all" || isValidId(t)))].slice(0, 50),
     });
   }
   return items;

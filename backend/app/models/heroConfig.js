@@ -16,6 +16,10 @@ const heroBannerItemSchema = new mongoose.Schema(
       enum: ["active", "inactive"],
       default: "active",
     },
+    // where this banner shows: "all" (main page) and/or header ids.
+    // Empty = only the page it was added on (older banners).
+    showOn: [{ type: String, trim: true }],
+    showOnAll: { type: Boolean, default: false }, // older flag, read as all
   },
   { _id: false }
 );

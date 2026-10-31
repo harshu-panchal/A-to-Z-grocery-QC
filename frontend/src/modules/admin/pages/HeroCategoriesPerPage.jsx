@@ -7,11 +7,12 @@ import Modal from "@shared/components/ui/Modal";
 import PageHeader from "@shared/components/ui/PageHeader";
 import DataTable from "@shared/components/ui/DataTable";
 import { useToast } from "@shared/components/ui/Toast";
-import { cn } from "@/lib/utils";
 import BannerListEditor from "../components/BannerListEditor";
 import { bannerPayload, newBanner, toEditorItems, validateBanners } from "../components/bannerEditorUtils";
 
 const HERO_CATEGORIES_QUERY_KEY = ["admin", "heroCategoriesPerPage"];
+// a header named "All" is the main page
+const isAllHeader = (row) => /^all\b/i.test(String(row?.label || "").trim());
 
 export default function HeroCategoriesPerPage() {
   const { showToast } = useToast();
@@ -38,7 +39,7 @@ export default function HeroCategoriesPerPage() {
       const tree = treeRes.data?.results || treeRes.data?.result || [];
       const headerList = Array.isArray(tree) ? tree : [];
 
-      const flatCategories = headerList.flatMap((h) => (h.children || []).map((c) => ({ ...c, headerName: h.name })));
+      const flatCategories = headerList.flatMap((h) => (h.children || []).map((c) => ({ ...c, headerId: String(h._id), headerName: h.name })));
 
       const homeRes = await adminApi.getHeroConfig({ pageType: "home" });
       const homeResult = homeRes.data?.result || homeRes.data || {};
@@ -67,7 +68,7 @@ export default function HeroCategoriesPerPage() {
           const catIds = result.categoryIds || [];
           return {
             id: h._id,
-            label: h.name || "Unnamed",
+            label: /^all$/i.test(String(h.name || "").trim()) ? `${h.name} (shows on main page)` : h.name || "Unnamed",
             pageType: "header",
             headerId: h._id,
             bannerCount: items.length,
@@ -85,6 +86,11 @@ export default function HeroCategoriesPerPage() {
   });
 
   const allCategories = queryData?.allCategories ?? [];
+  // banner targets: the main page (All) + every header the admin made
+  const bannerTargets = [
+    { id: "all", name: "All (main page)" },
+    ...(queryData?.headers ?? []).filter((h) => !isAllHeader({ label: h.name })).map((h) => ({ id: String(h._id), name: h.name })),
+  ];
   const pageData = queryData?.pageData ?? [];
 
   useEffect(() => {
@@ -104,7 +110,9 @@ export default function HeroCategoriesPerPage() {
       const items = result.banners?.items || [];
       const catIds = result.categoryIds || [];
       // Saved ids may come back populated; the form works with plain ids.
-      setFormBanners(items.length ? toEditorItems(items) : [newBanner()]);
+      // older banners (no "show on" yet) open ticked for the page they were added on
+      const ownPage = row.pageType === "header" && !isAllHeader(row) ? String(row.headerId) : "all";
+      setFormBanners(items.length ? toEditorItems(items).map((b) => (b.showOn?.length ? b : { ...b, showOn: [ownPage] })) : [newBanner()]);
       setFormCategoryIds(
         (Array.isArray(catIds) ? catIds : []).map((c) => String(c && typeof c === "object" ? c._id : c))
       );
@@ -119,15 +127,11 @@ export default function HeroCategoriesPerPage() {
     }
   };
 
-  const toggleCategory = (catId) => {
-    setFormCategoryIds((prev) =>
-      prev.includes(catId) ? prev.filter((id) => id !== catId) : [...prev, catId]
-    );
-  };
 
   const handleSave = async () => {
     if (!editingRow || saving) return;
-    const problem = validateBanners(formBanners);
+    const problem = validateBanners(formBanners)
+      || (formBanners.some((b) => b.imageUrl && !(b.showOn || []).length) ? "Each banner needs at least one place to show: tick a header (or All)." : null);
     if (problem) {
       showToast(problem, "warning");
       return;
@@ -139,7 +143,7 @@ export default function HeroCategoriesPerPage() {
         pageType: editingRow.pageType,
         headerId: editingRow.headerId || undefined,
         banners: { items },
-        categoryIds: formCategoryIds,
+        categoryIds: editingRow.pageType === "header" ? formCategoryIds.filter((id) => allCategories.some((c) => c._id === id && c.headerId === String(editingRow.headerId))) : formCategoryIds,
       });
       showToast("Hero config saved", "success");
       queryClient.setQueryData(HERO_CATEGORIES_QUERY_KEY, (prev) =>
@@ -179,17 +183,6 @@ export default function HeroCategoriesPerPage() {
       key: 'hero',
       cell: (row) => row.bannerCount > 0 ? (
         <span className="text-xs font-semibold text-slate-600">{row.bannerCount} banner(s)</span>
-      ) : (
-        <span className="text-xs italic text-slate-400">Not set</span>
-      ),
-    },
-    {
-      header: 'Categories below hero',
-      key: 'categories',
-      cell: (row) => row.categoryCount > 0 ? (
-        <span className="text-xs font-semibold text-slate-600">
-          {row.categoryCount} categor{row.categoryCount === 1 ? "y" : "ies"}
-        </span>
       ) : (
         <span className="text-xs italic text-slate-400">Not set</span>
       ),
@@ -248,36 +241,11 @@ export default function HeroCategoriesPerPage() {
       >
         {editingRow && (
           <div className="space-y-5">
-            <BannerListEditor items={formBanners} onChange={setFormBanners} />
-
-            <div>
-              <label className="mb-2 block text-[10px] font-bold uppercase tracking-widest text-slate-400">
-                Categories below hero
-              </label>
-              <div className="flex flex-wrap gap-2">
-                {allCategories.map((c) => {
-                  const isSelected = formCategoryIds.includes(c._id);
-                  return (
-                    <button
-                      key={c._id}
-                      type="button"
-                      onClick={() => toggleCategory(c._id)}
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-[11px] font-bold transition-all",
-                        isSelected
-                          ? "border-primary bg-primary text-white"
-                          : "border-slate-200 bg-slate-50 text-slate-600 hover:bg-white"
-                      )}
-                    >
-                      {c.name}
-                    </button>
-                  );
-                })}
-              </div>
-              {allCategories.length === 0 && (
-                <p className="text-xs text-slate-400">No main categories found. Add categories in Header / Main Categories first.</p>
-              )}
-            </div>
+            <BannerListEditor
+              items={formBanners}
+              onChange={setFormBanners}
+              targets={bannerTargets}
+            />
           </div>
         )}
       </Modal>

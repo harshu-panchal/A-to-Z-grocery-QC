@@ -20,7 +20,9 @@ const FIELD =
  * (like React's setState), so uploads that finish later never overwrite edits
  * made in the meantime.
  */
-const BannerListEditor = ({ items, onChange }) => {
+// targets: [{ id: "all" | headerId, name }] -> each banner picks where it shows
+// (Hero page). Nothing is pre-ticked; every chip, All included, toggles freely.
+const BannerListEditor = ({ items, onChange, targets = null }) => {
   const { showToast } = useToast();
   const fileInputs = useRef({});
 
@@ -38,6 +40,10 @@ const BannerListEditor = ({ items, onChange }) => {
 
   const remove = (key) => onChange((prev) => prev.filter((b) => b.key !== key));
   const add = () => onChange((prev) => (prev.length >= MAX_BANNERS ? prev : [...prev, newBanner()]));
+  const toggleTarget = (item, id) => {
+    const current = item.showOn || [];
+    update(item.key, { showOn: current.includes(id) ? current.filter((t) => t !== id) : [...current, id] });
+  };
 
   const upload = async (key, file) => {
     if (!file) return;
@@ -199,6 +205,28 @@ const BannerListEditor = ({ items, onChange }) => {
                   />
                   Show this banner to customers
                 </label>
+                {targets && (
+                  <div>
+                    <p className="mb-1.5 text-[11px] font-bold text-slate-600">Show this banner on</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {targets.map((t) => {
+                        const on = (item.showOn || []).includes(t.id);
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => toggleTarget(item, t.id)}
+                            className={on
+                              ? "rounded-full border border-primary bg-primary px-2.5 py-1 text-[11px] font-bold text-white"
+                              : "rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-bold text-slate-600 hover:bg-white"}
+                          >
+                            {t.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>

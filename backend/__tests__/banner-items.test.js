@@ -26,8 +26,15 @@ describe("normalizeBannerItems", () => {
       { imageUrl: "   " },
     ]);
     expect(items).toEqual([
-      { imageUrl: image, title: "Big sale", subtitle: "today", linkType: "none", linkValue: "", status: "active" },
+      { imageUrl: image, title: "Big sale", subtitle: "today", linkType: "none", linkValue: "", status: "active", showOn: [] },
     ]);
+  });
+
+  it("keeps where each banner shows: All and/or header ids, nothing else", async () => {
+    const id = "507f1f77bcf86cd799439011";
+    const [a, b] = await normalizeBannerItems([banner({ showOn: ["all", id, id, "junk"] }), banner({})]);
+    expect(a.showOn).toEqual(["all", id]);
+    expect(b.showOn).toEqual([]);
   });
 
   it("requires at least `min` banners", async () => {

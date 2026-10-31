@@ -296,7 +296,8 @@ const Home = () => {
         const formattedHeaders = dbCats.filter((cat) => cat.type === "header").map((cat) => {
           const catName = cat.name;
           const meta = CATEGORY_METADATA[catName] || CATEGORY_METADATA[catName.toUpperCase()] || { icon: Sparkles, theme: DEFAULT_CATEGORY_THEME, banner: { title: catName.toUpperCase(), subtitle: "TOP PICKS", floatingElements: "sparkles" } };
-          const IconComp = (cat.iconId && ICON_COMPONENTS[cat.iconId]) || meta.icon || Sparkles;
+          // admin picks an icon OR uploads a custom image (same order as the admin list)
+          const IconComp = (cat.iconId && ICON_COMPONENTS[cat.iconId]) || cat.image || meta.icon || Sparkles;
           return { ...cat, id: cat._id, icon: IconComp, theme: meta.theme, banner: { ...meta.banner, textColor: "text-white" } };
         });
         nextHomeData.formattedHeaders = formattedHeaders;
@@ -381,12 +382,16 @@ const Home = () => {
         if (heroConfigCache.current[cacheKey]) { setHeroConfig(heroConfigCache.current[cacheKey]); return; }
         let payload = null;
         if (isHeader) { const res = await customerApi.getHeroConfig({ pageType: "header", headerId: activeCategory._id }); if (res.data?.success && res.data?.result) payload = res.data.result; }
-        // Header without its own hero: borrow home banners only, never the home
-        // category picks (the header's own categories are shown instead)
-        if (!payload || (payload.banners?.items?.length === 0 && !payload.categoryIds?.length)) { const homeRes = await customerApi.getHeroConfig({ pageType: "home" }); if (homeRes.data?.success && homeRes.data?.result) payload = isHeader ? { ...homeRes.data.result, categoryIds: [] } : homeRes.data.result; }
+        // A header shows only its own hero banners (none if it has none); home
+        // banners are for the Home page only.
+        if (!isHeader) {
+          const homeRes = await customerApi.getHeroConfig({ pageType: "home" });
+          if (homeRes.data?.success && homeRes.data?.result) payload = homeRes.data.result;
+          // the server adds header banners marked "show on All" (and the "All" header row)
+        }
         const resolved = payload && (payload.banners?.items?.length > 0 || payload.categoryIds?.length > 0) ? { banners: payload.banners || { items: [] }, categoryIds: payload.categoryIds || [] } : { banners: { items: [] }, categoryIds: [] };
         heroConfigCache.current[cacheKey] = resolved;
-        if (cacheKey === "__home__") { const homeCacheKey = getHomePageDataCacheKey(currentLocation); const cachedHomeData = homePageDataCache.get(homeCacheKey); if (cachedHomeData) homePageDataCache.set(homeCacheKey, { ...cachedHomeData, heroConfig: resolved }); }
+        if (!isHeader) { const homeCacheKey = getHomePageDataCacheKey(currentLocation); const cachedHomeData = homePageDataCache.get(homeCacheKey); if (cachedHomeData) homePageDataCache.set(homeCacheKey, { ...cachedHomeData, heroConfig: resolved }); }
         setHeroConfig(resolved);
       } catch (e) { setHeroConfig({ banners: { items: [] }, categoryIds: [] }); }
     };
@@ -415,7 +420,10 @@ const Home = () => {
   const productsById = useMemo(() => { const map = {}; onlyInStock([...products, ...sectionProducts]).forEach((p) => { map[p._id || p.id] = p; }); return map; }, [products, sectionProducts]);
   const effectiveQuickCategories = useMemo(() => {
     const ids = heroConfig.categoryIds || [];
-    if (ids.length > 0) { const resolved = ids.map((id) => categoryMap[id]).filter(Boolean).map((c) => ({ id: c._id, name: c.name, image: c.image || "https://cdn-icons-png.flaticon.com/128/2321/2321831.png" })); if (resolved.length > 0) return resolved; }
+    const headerTabId = activeCategory && activeCategory._id !== "all" ? String(activeCategory._id) : null;
+    // a header tab only shows its own categories, even if others were saved for it
+    const belongsHere = (c) => !headerTabId || String(c.parentId?._id || c.parentId || "") === headerTabId;
+    if (ids.length > 0) { const resolved = ids.map((id) => categoryMap[String(id?._id || id)]).filter(Boolean).filter(belongsHere).map((c) => ({ id: c._id, name: c.name, image: c.image || "https://cdn-icons-png.flaticon.com/128/2321/2321831.png" })); if (resolved.length > 0) return resolved; }
     // Header tab without admin-picked categories: show that header's own categories
     if (activeCategory && activeCategory._id !== "all") {
       const headerId = String(activeCategory._id);

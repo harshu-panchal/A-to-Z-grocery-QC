@@ -13,6 +13,7 @@ export const newBanner = () => ({
   linkType: "none",
   linkValue: "",
   status: "active",
+  showOn: [],
   isUploading: false,
 });
 
@@ -31,6 +32,7 @@ export const bannerPayload = (items) =>
       linkType: b.linkType || "none",
       linkValue: b.linkType && b.linkType !== "none" ? (b.linkValue || "").trim() : "",
       status: b.status === "inactive" ? "inactive" : "active",
+      ...(Array.isArray(b.showOn) ? { showOn: b.showOn } : {}),
     }));
 
 /** First problem found in the editor rows, or null when they can be saved. */
