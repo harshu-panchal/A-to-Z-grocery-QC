@@ -181,7 +181,7 @@ const OrderDetail = () => {
                         </div>
                         <p className="mt-1 flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">
                             <Calendar className="h-3.5 w-3.5" />
-                            {new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            {new Date(order.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}{' • '}{new Date(order.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
                         </p>
                     </div>
                 </div>

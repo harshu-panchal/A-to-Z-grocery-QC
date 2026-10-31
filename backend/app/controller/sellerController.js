@@ -242,6 +242,36 @@ export const updateSellerProfile = async (req, res) => {
       seller.serviceRadius = r;
     }
 
+    // ---- store timings
+    const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (req.body.storeOpen !== undefined) seller.storeOpen = req.body.storeOpen === true || req.body.storeOpen === "true";
+    if (req.body.businessHours !== undefined) {
+      const { open, close } = req.body.businessHours || {};
+      if (!HHMM.test(String(open || "")) || !HHMM.test(String(close || ""))) {
+        return handleResponse(res, 400, "Enter opening and closing time");
+      }
+      if (open === close) return handleResponse(res, 400, "Opening and closing time can't be the same");
+      seller.businessHours = { open, close };
+    }
+    if (req.body.workingDays !== undefined) {
+      const days = [...new Set((Array.isArray(req.body.workingDays) ? req.body.workingDays : []).map(Number))].filter((d) => Number.isInteger(d) && d >= 0 && d <= 6);
+      if (!days.length) return handleResponse(res, 400, "Pick at least one working day");
+      seller.workingDays = days.sort();
+    }
+    if (req.body.vacation !== undefined) {
+      const v = req.body.vacation || {};
+      const enabled = v.enabled === true || v.enabled === "true";
+      const from = v.from ? new Date(v.from) : null;
+      const to = v.to ? new Date(v.to) : null;
+      if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) {
+        return handleResponse(res, 400, "Invalid vacation date");
+      }
+      if (enabled && (!from || !to)) return handleResponse(res, 400, "Choose the vacation start and end date");
+      if (from && to && to < from) return handleResponse(res, 400, "Vacation end date is before the start date");
+      const message = String(v.message || "").trim().slice(0, 120);
+      seller.vacation = { enabled, from, to, message };
+    }
+
     const updatedSeller = await seller.save();
 
     // Invalidate cached seller name in case shopName changed

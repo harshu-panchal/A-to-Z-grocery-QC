@@ -402,7 +402,7 @@ const Orders = () => {
                     </span>
                     <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 mt-1">
                         <HiOutlineCalendarDays className="h-3 w-3" />
-                        {order.date}
+                        {order.date}{order.time ? ` • ${order.time}` : ""}
                     </div>
                 </div>
             ),
@@ -805,7 +805,7 @@ const Orders = () => {
                                                 {selectedOrder.date && (
                                                     <p className="text-[11px] font-bold text-slate-400 mt-1.5 flex items-center gap-1.5">
                                                         <HiOutlineCalendarDays className="h-3.5 w-3.5" />
-                                                        {selectedOrder.date}
+                                                        {selectedOrder.date}{selectedOrder.time ? ` • ${selectedOrder.time}` : ""}
                                                     </p>
                                                 )}
                                             </div>

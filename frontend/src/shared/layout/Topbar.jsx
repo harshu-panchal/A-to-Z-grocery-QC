@@ -15,6 +15,7 @@ import { sellerApi } from '@/modules/seller/services/sellerApi';
 import { adminApi } from '@/modules/admin/services/adminApi';
 import { AnimatePresence, motion } from 'framer-motion';
 import NotificationPopup from './NotificationPopup';
+import StoreStatusPill from '@/modules/seller/components/StoreStatusPill';
 import ConfirmDialog from '@shared/components/ui/ConfirmDialog';
 import { toast } from 'sonner';
 
@@ -218,6 +219,7 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
             </div>
 
             <div className="flex items-center space-x-4">
+                {isSeller && !isStaff && <StoreStatusPill />}
                 {!isStaff && (
                 <div className="relative" ref={notificationRef}>
                     <button

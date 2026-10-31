@@ -134,6 +134,20 @@ const sellerSchema = new mongoose.Schema(
       type: Number,
       default: 5, // Default 5km
     },
+    // Store timings. The Open/Closed switch (and vacation dates) decide if
+    // the shop takes orders; hours and days are shown to customers.
+    storeOpen: { type: Boolean, default: true },
+    businessHours: {
+      open: { type: String, default: "09:00" }, // "HH:mm", India time
+      close: { type: String, default: "22:00" },
+    },
+    workingDays: { type: [Number], default: [0, 1, 2, 3, 4, 5, 6] }, // 0 = Sunday
+    vacation: {
+      enabled: { type: Boolean, default: false },
+      from: Date,
+      to: Date,
+      message: { type: String, trim: true },
+    },
     lastLogin: Date,
 
     // Audit fix H5: incremented on every password reset. Embedded in the

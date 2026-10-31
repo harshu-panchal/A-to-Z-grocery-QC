@@ -154,17 +154,31 @@ export default function PosTerminal({ portal }) {
       // staff always bill at the shop price (wholesale is owner-only)
       const line = lineFromRow(row, { priceType: isStaff ? "retail" : b.priceMode, quantity: qty });
       const existing = row.productId && b.items.find((l) => l.id === line.id);
+      const stock = existing ? existing.stock : line.stock;
+      if (stock != null && stock <= 0) {
+        toast.error(`${line.name} is out of stock`);
+        return b;
+      }
+      const wanted = round2((existing ? Number(existing.quantity) : 0) + qty);
+      const nextQty = stock != null ? Math.min(wanted, stock) : wanted;
+      if (stock != null && wanted > stock) toast.warning(`Only ${stock} in stock for ${line.name}`);
       if (existing) {
-        const nextQty = Number(existing.quantity) + qty;
-        if (existing.stock != null && nextQty > existing.stock) toast.warning(`Only ${existing.stock} in stock for ${existing.name}`);
+        if (nextQty === Number(existing.quantity)) return b;
         return { ...b, items: b.items.map((l) => (l.id === line.id ? { ...l, quantity: nextQty } : l)) };
       }
-      if (line.stock != null && line.stock < qty) toast.warning(`${line.name}: only ${line.stock} in stock`);
-      return { ...b, items: [line, ...b.items] };
+      return { ...b, items: [{ ...line, quantity: nextQty }, ...b.items] };
     });
   }, [active, updateActive, isStaff]);
 
   const setLine = (id, patch) => updateActive((b) => ({ ...b, items: b.items.map((l) => (l.id === id ? { ...l, ...patch } : l)) }));
+  // quantity never above the stock (lines of a saved bill being edited have no limit here: the server checks)
+  const setQty = (l, q) => {
+    if (l.stock != null && Number(q) > l.stock) {
+      toast.warning(`Only ${l.stock} in stock for ${l.name}`);
+      return setLine(l.id, { quantity: l.stock });
+    }
+    return setLine(l.id, { quantity: q });
+  };
   const removeLine = (id) => updateActive((b) => ({ ...b, items: b.items.filter((l) => l.id !== id) }));
   const setPriceMode = (mode) => updateActive((b) => ({
     ...b,
@@ -322,7 +336,9 @@ export default function PosTerminal({ portal }) {
               key={`${r.productId}-${r.variantSku}`}
               type="button"
               onClick={() => addRow(r)}
-              className={cn("flex flex-col rounded-xl border bg-white p-2 text-left transition hover:border-primary hover:shadow-md", r.stock <= 0 ? "border-red-100 opacity-70" : "border-slate-200")}
+              disabled={r.stock != null && r.stock <= 0}
+              title={r.stock != null && r.stock <= 0 ? "Out of stock" : undefined}
+              className={cn("flex flex-col rounded-xl border bg-white p-2 text-left transition", r.stock != null && r.stock <= 0 ? "cursor-not-allowed border-red-100 opacity-60" : "border-slate-200 hover:border-primary hover:shadow-md")}
             >
               <div className="mb-2 grid h-20 place-items-center overflow-hidden rounded-lg bg-slate-50">
                 {r.image ? <img src={r.image} alt="" className="h-full w-full object-contain" loading="lazy" /> : <ShoppingCart className="text-slate-300" />}
@@ -408,11 +424,11 @@ export default function PosTerminal({ portal }) {
                     className="w-12 border-x border-slate-200 bg-transparent py-1 text-center text-sm font-semibold outline-none"
                     inputMode="decimal"
                     value={l.quantity}
-                    onChange={(e) => setLine(l.id, { quantity: e.target.value.replace(/[^\d.]/g, "") })}
-                    onBlur={(e) => { const q = Number(e.target.value); if (!(q > 0)) removeLine(l.id); else setLine(l.id, { quantity: q }); }}
+                    onChange={(e) => setQty(l, e.target.value.replace(/[^\d.]/g, ""))}
+                    onBlur={(e) => { const q = Number(e.target.value); if (!(q > 0)) removeLine(l.id); else setQty(l, q); }}
                     aria-label={`${l.name} quantity`}
                   />
-                  <button type="button" aria-label="More" className="p-1.5 text-slate-600" onClick={() => setLine(l.id, { quantity: round2(Number(l.quantity) + 1) })}><Plus size={14} /></button>
+                  <button type="button" aria-label="More" className="p-1.5 text-slate-600 disabled:opacity-30" disabled={l.stock != null && Number(l.quantity) >= l.stock} onClick={() => setQty(l, round2(Number(l.quantity) + 1))}><Plus size={14} /></button>
                 </div>
                 <span className="text-xs text-slate-400">×</span>
                 {canChangePrice || !l.productId ? (

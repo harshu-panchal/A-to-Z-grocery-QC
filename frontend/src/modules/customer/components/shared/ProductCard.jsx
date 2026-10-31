@@ -204,7 +204,12 @@ const ProductCard = React.memo(
     const price = defaultVariant?.displayPrice || product.price || lowestVariantPrice;
     const formatRupees = (n) => Number(n).toLocaleString("en-IN");
     const mrp = defaultVariant?.displayOriginalPrice;
-    const outOfStock = isProductOutOfStock(product);
+    // shop switched off / on vacation: shown like sold out, can't be added
+    const shopClosed = product.store?.isOpen === false;
+    const outOfStock = isProductOutOfStock(product) || shopClosed;
+    const deliveryLine = shopClosed
+      ? `Shop closed${product.store?.message ? ` · ${product.store.message}` : ""}`
+      : outOfStock ? "Currently unavailable" : product.store?.closingSoon || product.deliveryTime || "8–15 mins";
     const badgeText =
       badge ||
       product.discount ||
@@ -212,7 +217,7 @@ const ProductCard = React.memo(
 
     // Design card (styles in components/atz/atz.css)
     return (
-      <article className={cn("atz product-card", outOfStock && "sold-out", className)} onClick={handleProductClick}>
+      <article className={cn("atz product-card", shopClosed ? "shop-closed" : outOfStock && "sold-out", className)} onClick={handleProductClick}>
         <div className="product-visual">
           {badgeText && !outOfStock && <span className="discount">{badgeText}</span>}
           <button
@@ -235,8 +240,8 @@ const ProductCard = React.memo(
             </>
           )}
         </div>
-        <span className="delivery-time">
-          <AtzIcon name="truck" size={12} /> {outOfStock ? "Currently unavailable" : (product.deliveryTime || "8–15 mins")}
+        <span className={cn("delivery-time", shopClosed && "closed")}>
+          <AtzIcon name="truck" size={12} /> {deliveryLine}
         </span>
         <h3>{product.name}</h3>
         <p className="unit">{defaultVariant?.name || product.weight || "1 unit"}</p>
@@ -256,9 +261,9 @@ const ProductCard = React.memo(
               type="button"
               className="add-button"
               disabled={outOfStock}
-              aria-label={outOfStock ? `${product.name} is out of stock` : `Add ${product.name} to cart`}
+              aria-label={shopClosed ? `${product.name}: shop closed` : outOfStock ? `${product.name} is out of stock` : `Add ${product.name} to cart`}
               onClick={outOfStock ? (e) => e.stopPropagation() : handleAddToCart}>
-              ADD <span>+</span>
+              {shopClosed ? "CLOSED" : <>ADD <span>+</span></>}
             </button>
           )}
         </div>

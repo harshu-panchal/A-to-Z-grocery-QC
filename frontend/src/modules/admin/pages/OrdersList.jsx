@@ -74,6 +74,7 @@ function formatOrdersResponse(payload, fallbackResults, requestedPage) {
         workflowVersion: o.workflowVersion,
         returnStatus: o.returnStatus,
         date: new Date(o.createdAt).toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }),
+        time: new Date(o.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }),
         payment: o.payment?.method === 'cod' ? 'COD' : 'Digital',
     }));
     return {
@@ -297,7 +298,7 @@ const OrdersList = () => {
                         <h4 className="text-sm font-bold text-slate-900">#{order.id}</h4>
                         <div className="mt-0.5 flex items-center gap-2">
                             <Badge variant="outline">{order.items} {order.items === 1 ? 'Item' : 'Items'}</Badge>
-                            <span className="text-[11px] font-medium text-slate-400">{order.date}</span>
+                            <span className="text-[11px] font-medium text-slate-400">{order.date} • {order.time}</span>
                         </div>
                     </div>
                 </div>

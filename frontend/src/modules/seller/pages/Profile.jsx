@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import Card from "@shared/components/ui/Card";
 import Button from "@shared/components/ui/Button";
 import MapPicker from "../../../shared/components/MapPicker";
+import StoreTimings from "../components/StoreTimings";
 
 const PROFILE_QUERY_KEY = ["seller", "profile"];
 
@@ -131,12 +132,12 @@ const SellerProfile = () => {
 
   const toggleStatus = async () => {
     try {
-      const newStatus = !profile.isActive;
-      await sellerApi.updateProfile({ isActive: newStatus });
-      queryClient.setQueryData(PROFILE_QUERY_KEY, (prev) => ({ ...prev, isActive: newStatus }));
-      toast.success(`Shop is now ${newStatus ? "Active" : "Inactive"}`);
+      const newStatus = profile.storeOpen === false;
+      await sellerApi.updateProfile({ storeOpen: newStatus });
+      queryClient.setQueryData(PROFILE_QUERY_KEY, (prev) => ({ ...prev, storeOpen: newStatus }));
+      toast.success(newStatus ? "Store is open. Customers can order." : "Store is closed. Customers can't order now.");
     } catch (error) {
-      toast.error("Failed to update shop status");
+      toast.error(error.response?.data?.message || "Failed to update store status");
     }
   };
 
@@ -180,16 +181,16 @@ const SellerProfile = () => {
               <button
                 onClick={toggleStatus}
                 className={`group flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-widest transition-all hover:scale-105 active:scale-95 ${
-                  profile?.isActive
+                  profile?.storeOpen !== false
                     ? "border-success/40 bg-success text-white"
                     : "border-danger/40 bg-danger text-white"
                 }`}>
                 <div
                   className={`h-2 w-2 animate-pulse rounded-full ${
-                    profile?.isActive ? "bg-white" : "bg-white"
+                    "bg-white"
                   }`}
                 />
-                {profile?.isActive ? "Active" : "Inactive"}
+                {profile?.storeOpen !== false ? "Store open" : "Store closed"}
               </button>
             </div>
             <h1 className="mb-1 break-words text-3xl font-black tracking-tight text-white drop-shadow-sm md:text-4xl lg:text-5xl">
@@ -476,7 +477,12 @@ const SellerProfile = () => {
           </Card>
         </div>
 
-        <Card className="p-5">
+        {/* full-width rows: business hours, then legal & support */}
+        <div className="md:col-span-3">
+          <StoreTimings profile={profile} />
+        </div>
+
+        <Card className="p-5 md:col-span-3">
           <h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-slate-400">
             Legal &amp; Support
           </h3>

@@ -1,4 +1,6 @@
+import mongoose from "mongoose";
 import Seller from "../models/seller.js";
+import { computeStoreStatus, STORE_FIELDS } from "./seller/storeStatus.js";
 import Category from "../models/category.js";
 import { distanceMeters } from "../utils/geoUtils.js";
 import { getCachedRoute } from "./mapsRouteService.js";
@@ -43,9 +45,9 @@ export function groupHydratedItemsBySeller(hydratedItems = []) {
 
 async function computeDistanceKmForSeller({ sellerId, addressLocation, session = null }) {
   const normalizedLocation = normalizeLocation(addressLocation);
-  if (!normalizedLocation) return { distanceKm: 0, distanceSource: "haversine" };
+  if (!normalizedLocation && !mongoose.isValidObjectId(String(sellerId))) return { distanceKm: 0, distanceSource: "haversine" };
 
-  const query = Seller.findById(sellerId).select("location serviceRadius shopName").lean();
+  const query = Seller.findById(sellerId).select(`location serviceRadius ${STORE_FIELDS}`).lean();
   if (session) query.session(session);
   const seller = await query;
   if (!seller) {
@@ -53,6 +55,14 @@ async function computeDistanceKmForSeller({ sellerId, addressLocation, session =
     err.statusCode = 404;
     throw err;
   }
+  // the shop has to be open (seller's switch / not on vacation)
+  const store = computeStoreStatus(seller);
+  if (!store.isOpen) {
+    const err = new Error(`${seller.shopName || "This shop"} is closed now${store.message ? `. ${store.message}` : ""}. Remove its items to continue.`);
+    err.statusCode = 409;
+    throw err;
+  }
+  if (!normalizedLocation) return { distanceKm: 0, distanceSource: "haversine" };
   const coords = seller?.location?.coordinates;
   if (!Array.isArray(coords) || coords.length < 2) return { distanceKm: 0, distanceSource: "haversine" };
 

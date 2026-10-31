@@ -281,11 +281,18 @@ const ProductDetailSheet = () => {
         );
     };
 
-    // Sold out = whole product out of stock, or the chosen size has 0 stock
+    // Sold out = whole product out of stock, or the chosen size has 0 stock.
+    // A closed shop (switched off / vacation) can't be ordered from either.
+    const shopClosed = selectedProduct?.store?.isOpen === false;
+    const shopClosedText = `Shop closed${selectedProduct?.store?.message ? ` · ${selectedProduct.store.message}` : ''}`;
     const selectedOutOfStock =
-        isProductOutOfStock(selectedProduct) || isVariantOutOfStock(selectedVariant);
+        shopClosed || isProductOutOfStock(selectedProduct) || isVariantOutOfStock(selectedVariant);
 
     const handleAddToCart = () => {
+        if (shopClosed) {
+            showToast(`${shopClosedText}. You can order when it opens.`, 'error');
+            return;
+        }
         if (selectedOutOfStock) {
             showToast(`${selectedVariant?.name ? `${selectedVariant.name} is` : 'This item is'} out of stock`, 'error');
             return;
@@ -567,9 +574,9 @@ const ProductDetailSheet = () => {
                                                     <button
                                                         type="button"
                                                         disabled
-                                                        className="h-12 px-8 rounded-xl font-bold text-[13px] bg-slate-100 text-slate-500 border border-slate-200 cursor-not-allowed uppercase tracking-wide"
+                                                        className={shopClosed ? "h-12 px-5 rounded-xl font-extrabold text-[13px] bg-red-50 text-red-600 border border-red-200 cursor-not-allowed" : "h-12 px-8 rounded-xl font-bold text-[13px] bg-slate-100 text-slate-500 border border-slate-200 cursor-not-allowed uppercase tracking-wide"}
                                                     >
-                                                        Out of stock
+                                                        {shopClosed ? shopClosedText : 'Out of stock'}
                                                     </button>
                                                     ) : (
                                                     <motion.button
@@ -1134,9 +1141,9 @@ const ProductDetailSheet = () => {
                                         <button
                                             type="button"
                                             disabled
-                                            className="flex-1 h-[56px] rounded-2xl font-bold text-sm bg-slate-100 text-slate-500 border-2 border-slate-200 cursor-not-allowed whitespace-nowrap px-4"
+                                            className={shopClosed ? "flex-1 h-[56px] rounded-2xl font-extrabold text-sm bg-red-50 text-red-600 border-2 border-red-200 cursor-not-allowed whitespace-nowrap px-4" : "flex-1 h-[56px] rounded-2xl font-bold text-sm bg-slate-100 text-slate-500 border-2 border-slate-200 cursor-not-allowed whitespace-nowrap px-4"}
                                         >
-                                            {selectedVariant?.name ? `${selectedVariant.name} — Out of stock` : 'Out of stock'}
+                                            {shopClosed ? shopClosedText : selectedVariant?.name ? `${selectedVariant.name} — Out of stock` : 'Out of stock'}
                                         </button>
                                     ) : (
                                         <motion.button

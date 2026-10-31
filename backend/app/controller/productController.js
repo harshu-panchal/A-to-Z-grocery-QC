@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import { validateProductBarcodes } from "../services/inventory/barcodeService.js";
 import Product from "../models/product.js";
+import { attachStoreStatus } from "../services/seller/storeStatus.js";
 import Order from "../models/order.js";
 import Cart from "../models/cart.js";
 import crypto from "crypto";
@@ -704,6 +705,8 @@ export const getProducts = async (req, res) => {
         .map(stripInternalPricingFields)
         .map(applyDateVisibilityFilter);
     }
+    // live (after the list cache): shop open/closed for each product
+    if (Array.isArray(result?.items)) result.items = await attachStoreStatus(result.items);
 
     return handleResponse(res, 200, "Products fetched successfully", result);
   } catch (error) {
@@ -1436,6 +1439,7 @@ export const getProductById = async (req, res) => {
       payload = stripInternalPricingFields(payload);
       payload = applyDateVisibilityFilter(payload);
     }
+    [payload] = await attachStoreStatus([payload]); // shop open/closed
 
     if (req.user) {
         const userId = req.user.id;
