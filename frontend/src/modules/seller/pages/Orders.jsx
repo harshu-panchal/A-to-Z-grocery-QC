@@ -25,6 +25,9 @@ import {
     HiOutlineCalendarDays
 } from 'react-icons/hi2';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useSearchParams } from 'react-router-dom';
+
+const ORDER_TABS = ['All', 'Pending', 'Confirmed', 'Packed', 'Out for Delivery', 'Delivered', 'Cancelled'];
 import { cn } from '@/lib/utils';
 
 // Orders Page
@@ -230,7 +233,7 @@ const Orders = () => {
         }
     };
 
-    const tabs = ['All', 'Pending', 'Confirmed', 'Packed', 'Out for Delivery', 'Delivered', 'Cancelled'];
+    const tabs = ORDER_TABS;
     const todayStr = localToday();
 
     const safeOrders = useMemo(
@@ -300,6 +303,25 @@ const Orders = () => {
         setSelectedOrder(order);
         setIsDetailsModalOpen(true);
     };
+
+    // opened from a notification (/seller/orders?tab=Cancelled&orderId=...):
+    // switch to that tab and open that order
+    const [searchParams, setSearchParams] = useSearchParams();
+    const linkedTab = searchParams.get('tab');
+    const linkedOrderId = searchParams.get('orderId');
+    useEffect(() => {
+        if (!linkedTab) return;
+        if (ORDER_TABS.includes(linkedTab)) setActiveTab(linkedTab);
+        if (!linkedOrderId) setSearchParams((p) => { p.delete('tab'); return p; }, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [linkedTab, linkedOrderId]);
+    useEffect(() => {
+        if (!linkedOrderId || !orders.length) return;
+        const match = orders.find((o) => String(o.id) === linkedOrderId);
+        if (match) handleViewDetails(match);
+        setSearchParams((p) => { p.delete('orderId'); p.delete('tab'); return p; }, { replace: true });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [linkedOrderId, orders]);
 
     const applyStatusUpdate = async (orderId, newStatus, reason) => {
         try {

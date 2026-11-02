@@ -1,14 +1,27 @@
 /* eslint-disable no-restricted-globals */
 
+// Open the notification's page on THIS site (live or localhost). Older
+// notifications carry a full https://<live site>/... address: only its path is
+// used, so a local app never jumps to the live site.
+const toThisSite = (raw) => {
+  try {
+    const u = new URL(String(raw || "/"), self.location.origin);
+    return `${self.location.origin}${u.pathname}${u.search}${u.hash}`;
+  } catch {
+    return `${self.location.origin}/`;
+  }
+};
+
 self.addEventListener("notificationclick", (event) => {
-  const link = event?.notification?.data?.link || "/";
+  const data = event?.notification?.data || {};
+  const link = toThisSite(data.link || data.FCM_MSG?.data?.link || "/");
   event.notification.close();
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
-      for (const client of clients) {
+      const own = clients.filter((c) => String(c.url || "").startsWith(self.location.origin));
+      for (const client of own) {
         if ("focus" in client) {
           client.focus();
-          client.postMessage({ type: "push:navigate", link });
           return client.navigate ? client.navigate(link) : undefined;
         }
       }

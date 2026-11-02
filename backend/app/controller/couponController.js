@@ -6,6 +6,12 @@ import { buildSearchRegex } from "../utils/regex.js";
 import { isServerSideCouponEngineEnabled } from "../constants/finance.js";
 import { computeOrderDiscount } from "../services/finance/couponService.js";
 import { hydrateOrderItems } from "../services/finance/pricingService.js";
+import { buildKey, invalidate } from "../services/cacheService.js";
+
+// Offer cards show the linked coupon's code/discount; drop the cached
+// public offers so an edited, disabled or deleted coupon shows up at once.
+const invalidateOffersCache = () =>
+    invalidate(buildKey("catalog", "offers", "public")).catch(() => {});
 
 export const listCoupons = (req, res) => findCoupons(req, res, req.query.status);
 
@@ -111,6 +117,7 @@ export const updateCoupon = async (req, res) => {
         if (!coupon) {
             return handleResponse(res, 404, "Coupon not found");
         }
+        invalidateOffersCache();
         return handleResponse(res, 200, "Coupon updated successfully", coupon);
     } catch (error) {
         if (error.code === 11000) {
@@ -126,6 +133,7 @@ export const deleteCoupon = async (req, res) => {
         if (!isObjectIdLike(id)) return handleResponse(res, 404, "Coupon not found");
         const deleted = await Coupon.findByIdAndDelete(id);
         if (!deleted) return handleResponse(res, 404, "Coupon not found");
+        invalidateOffersCache();
         return handleResponse(res, 200, "Coupon deleted successfully");
     } catch (error) {
         return handleResponse(res, 500, error.message);

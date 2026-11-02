@@ -3,6 +3,7 @@ import Product from "../models/product.js";
 import handleResponse from "../utils/helper.js";
 import { getApprovedOrLegacyFilter } from "../services/productModerationService.js";
 import logger from "../services/logger.js";
+import { getCampaignPriceIndex, applyCampaignToProduct } from "../services/campaign/campaignPricing.js";
 
 // purchaseRate is seller/admin-only cost data and must never reach a
 // customer's cart — select variant subfields explicitly rather than the
@@ -18,6 +19,19 @@ const CUSTOMER_VISIBLE_PRODUCT_MATCH = {
 function sanitizeCartItems(cart) {
   if (!cart || !Array.isArray(cart.items)) return cart;
   cart.items = cart.items.filter((item) => Boolean(item?.productId));
+  return cart;
+}
+
+// Show campaign sale prices in the cart (checkout charges the same).
+async function withCampaignPrices(cart) {
+  if (!cart || !Array.isArray(cart.items) || !cart.items.length) return cart;
+  const index = await getCampaignPriceIndex();
+  if (!index.size) return cart;
+  cart.items = cart.items.map((item) =>
+    item?.productId && typeof item.productId === "object"
+      ? { ...item, productId: applyCampaignToProduct(item.productId, index) }
+      : item,
+  );
   return cart;
 }
 
@@ -40,7 +54,7 @@ async function fetchPopulatedCart(cartId) {
     })
     .lean();
 
-  return sanitizeCartItems(cart);
+  return withCampaignPrices(sanitizeCartItems(cart));
 }
 
 /* ===============================
@@ -62,7 +76,7 @@ export const getCart = async (req, res) => {
       return handleResponse(res, 200, "Cart fetched successfully", newCart);
     }
 
-    return handleResponse(res, 200, "Cart fetched successfully", sanitizeCartItems(cart));
+    return handleResponse(res, 200, "Cart fetched successfully", await withCampaignPrices(sanitizeCartItems(cart)));
   } catch (error) {
     return handleResponse(res, 500, error.message);
   }

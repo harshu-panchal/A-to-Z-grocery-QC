@@ -76,6 +76,7 @@ export function buildPosRouter(role) {
   router.put("/purchase-entries/:id", purchases.updateEntry);
   router.delete("/purchase-entries/:id", purchases.deleteEntry);
   router.post("/purchase-entries/:id/complete", purchases.completePurchase);
+  router.put("/purchase-entries/:id/revise", purchases.revisePurchase);
 
   // purchase GST register
   router.get("/gst-register", purchases.listGstRegister);

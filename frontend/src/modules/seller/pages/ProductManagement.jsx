@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { sellerApi } from "../services/sellerApi";
+import { useAuth } from "@core/context/AuthContext";
 import VariantBarcodeField, { variantBarcodeError } from "../../pos/VariantBarcodeField";
 import { toast } from "sonner";
 import Pagination from "@shared/components/ui/Pagination";
@@ -54,6 +55,9 @@ const ApprovalBadge = ({ approvalStatus }) => {
 
 const ProductManagement = () => {
   const navigate = useNavigate();
+  // Staff edit only name / code / rack / barcode; prices and stock come from purchase entries
+  const { user } = useAuth();
+  const staffMode = Boolean(user?.isStaff);
   const queryClient = useQueryClient();
   const [searchParams, setSearchParams] = useSearchParams();
   const qFromUrl = searchParams.get("q") || "";
@@ -362,8 +366,8 @@ const ProductManagement = () => {
       }
       if (
         !formData.name ||
-        !(Number(formData.sellingPrice) > 0 || Number(formData.mrp) > 0) ||
-        formData.stock === "" || formData.stock === undefined ||
+        (!staffMode && !(Number(formData.sellingPrice) > 0 || Number(formData.mrp) > 0)) ||
+        (!staffMode && (formData.stock === "" || formData.stock === undefined)) ||
         !formData.header ||
         !formData.category ||
         !formData.subcategory
@@ -957,6 +961,11 @@ const ProductManagement = () => {
                   ))}
 
                   <div className="pt-8 px-4">
+                    {staffMode ? (
+                    <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-[11px] font-semibold text-amber-700">
+                      Price and stock are set by the owner in POS purchase entry.
+                    </div>
+                    ) : (
                     <div className="p-4 bg-primary/5 rounded-2xl border border-primary/10">
                       <p className="text-[9px] font-bold text-primary uppercase tracking-widest mb-1">
                         Status
@@ -969,6 +978,7 @@ const ProductManagement = () => {
                         <option value="inactive">DRAFT</option>
                       </select>
                     </div>
+                    )}
                   </div>
                 </div>
 
@@ -1249,7 +1259,7 @@ const ProductManagement = () => {
                       <div className="space-y-3">
                         {formData.variants.map((v, i) => (
                           <div key={v.id} className="grid grid-cols-1 items-end gap-3 rounded-xl border border-slate-100 bg-slate-50 p-3.5 md:grid-cols-7">
-                            <div className="md:col-span-2 space-y-1">
+                            <div className={cn("space-y-1", staffMode ? "md:col-span-4" : "md:col-span-2")}>
                               <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">Variant Name</label>
                               <input value={v.name} onChange={e => {
                                 const news = [...formData.variants];
@@ -1257,6 +1267,7 @@ const ProductManagement = () => {
                                 setFormData({ ...formData, variants: news });
                               }} placeholder="e.g. 1kg, 1 pack, 1 liter..." className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary/20" />
                             </div>
+                            {!staffMode && (<>
                             <div className="space-y-1">
                               <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">MRP <span className="normal-case tracking-normal font-medium">(optional)</span></label>
                               <input type="number" min="0" value={v.mrp} onChange={e => {
@@ -1299,7 +1310,8 @@ const ProductManagement = () => {
                                 setFormData({ ...formData, variants: news });
                               }} placeholder="Stock" className="w-full rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-primary focus:ring-1 focus:ring-primary/20" />
                             </div>
-                            <div className="flex items-center gap-2">
+                            </>)}
+                            <div className={cn("flex items-center gap-2", staffMode && "md:col-span-3")}>
                               <div className="flex-1 space-y-1">
                                 <label className="ml-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">SKU</label>
                                 <input value={v.sku} onChange={e => {
@@ -1334,7 +1346,7 @@ const ProductManagement = () => {
                                 onChange={(code) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((x, idx) => (idx === i ? { ...x, barcode: code } : x)) }))}
                                 rack={v.rackCode}
                                 wholesale={v.wholesalePrice}
-                                onWholesaleChange={(val) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((x, idx) => (idx === i ? { ...x, wholesalePrice: val } : x)) }))}
+                                onWholesaleChange={staffMode ? undefined : (val) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((x, idx) => (idx === i ? { ...x, wholesalePrice: val } : x)) }))}
                                 onRackChange={(rack) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((x, idx) => (idx === i ? { ...x, rackCode: rack } : x)) }))}
                                 productId={editingItem?._id || editingItem?.id}
                                 otherCodes={formData.variants.filter((_, idx) => idx !== i).map((x) => x.barcode)}

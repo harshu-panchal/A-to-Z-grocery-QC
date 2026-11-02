@@ -27,43 +27,6 @@ function truncateText(text, maxLen = 140) {
   return `${value.slice(0, Math.max(0, maxLen - 3))}...`;
 }
 
-function getFrontendBaseUrl() {
-  const explicit =
-    process.env.FRONTEND_URL ||
-    process.env.WEB_APP_URL ||
-    "http://localhost:5173";
-  return String(explicit).trim().replace(/\/+$/, "");
-}
-
-function buildOrderLink(orderId) {
-  const id = String(orderId || "").trim();
-  const baseUrl = getFrontendBaseUrl();
-  if (!id) return `${baseUrl}/orders`;
-  return `${baseUrl}/orders/${encodeURIComponent(id)}`;
-}
-
-function buildCustomerSupportLink(ticketId) {
-  const baseUrl = getFrontendBaseUrl();
-  const id = String(ticketId || "").trim();
-  return id ? `${baseUrl}/chat?ticketId=${encodeURIComponent(id)}` : `${baseUrl}/chat`;
-}
-
-function buildAdminSupportLink(ticketId) {
-  const baseUrl = getFrontendBaseUrl();
-  const id = String(ticketId || "").trim();
-  return id
-    ? `${baseUrl}/admin/support-tickets?ticketId=${encodeURIComponent(id)}`
-    : `${baseUrl}/admin/support-tickets`;
-}
-
-function buildSellerInventoryLink(productId) {
-  const baseUrl = getFrontendBaseUrl();
-  const id = String(productId || "").trim();
-  return id
-    ? `${baseUrl}/seller/inventory?productId=${encodeURIComponent(id)}`
-    : `${baseUrl}/seller/inventory`;
-}
-
 function eventDefinition(eventType) {
   switch (eventType) {
     case NOTIFICATION_EVENTS.ORDER_PLACED:
@@ -351,6 +314,18 @@ function eventDefinition(eventType) {
         body: (payload) =>
           `Seller requested ${payload.action === 'update' ? 'an update to' : 'to create'} product: ${truncateText(payload.productName)}. Pending admin approval.`,
       };
+    case NOTIFICATION_EVENTS.CAMPAIGN_INVITE:
+    case NOTIFICATION_EVENTS.CAMPAIGN_REMINDER:
+      return {
+        role: NOTIFICATION_ROLES.SELLER,
+        recipientIds: (payload) => normalizeIdList(payload.sellerIds),
+        title: (payload) =>
+          eventType === NOTIFICATION_EVENTS.CAMPAIGN_REMINDER
+            ? `Reminder: join "${truncateText(payload.campaignName)}"`
+            : `You're invited: ${truncateText(payload.campaignName)}`,
+        body: (payload) =>
+          `${payload.discountLabel || "Sale"} on your products. Join by ${payload.joinDeadlineText || "the deadline"} to be part of the sale.`,
+      };
     case NOTIFICATION_EVENTS.LOW_STOCK_ALERT:
       return {
         role: NOTIFICATION_ROLES.SELLER,
@@ -371,6 +346,56 @@ function eventDefinition(eventType) {
   }
 }
 
+// order / return event -> [seller tab, admin list or tab]
+const ORDER_TAB = {
+  NEW_ORDER: ["Pending", "pending"], ORDER_PLACED: ["Pending", "pending"], PAYMENT_SUCCESS: ["Pending", "pending"],
+  ORDER_CONFIRMED: ["Confirmed", "processed"], ORDER_PACKED: ["Packed", "processed"], ORDER_READY: ["Packed", "processed"],
+  DELIVERY_ASSIGNED: ["Out for Delivery", "out-for-delivery"], OUT_FOR_DELIVERY: ["Out for Delivery", "out-for-delivery"],
+  ORDER_DELIVERED: ["Delivered", "delivered"], ORDER_CANCELLED: ["Cancelled", "cancelled"],
+};
+const RETURN_TAB = {
+  RETURN_REQUESTED: ["Requested", "Requested"], RETURN_APPROVED: ["Approved", "Approved"], RETURN_REJECTED: ["Rejected", "Rejected"],
+  RETURN_PICKUP_ASSIGNED: ["Pickup Assigned", "Pickup Assigned"], RETURN_PICKUP_OTP: ["In Transit", "In Transit"],
+  RETURN_DROP_OTP: ["At Store (OTP)", "In Transit"], RETURN_COMPLETED: ["Received", "Quality Check"],
+  RETURN_QC_PASSED: ["QC Passed", "Completed"], RETURN_QC_FAILED: ["QC Failed", "Completed"],
+  REFUND_INITIATED: ["QC Passed", "Completed"], REFUND_COMPLETED: ["QC Passed", "Completed"],
+};
+const withQuery = (path, params) => {
+  const q = Object.entries(params).filter(([, v]) => v).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join("&");
+  return q ? `${path}?${q}` : path;
+};
+
+/**
+ * In-app path (no domain) for the person who gets the notification: always
+ * their own panel, on the matching tab, e.g. a seller's cancelled order ->
+ * /seller/orders?tab=Cancelled&orderId=... The app opens it on whatever site
+ * it runs on (live or localhost). Same rules as the app's notificationLink.js.
+ */
+export function roleLinkFor(eventType, role, { orderId, ticketId, productId } = {}) {
+  const ret = RETURN_TAB[eventType] || (eventType === NOTIFICATION_EVENTS.NEW_RETURN_BROADCAST ? ["Pickup Assigned", "Pickup Assigned"] : null);
+  const ord = ORDER_TAB[eventType];
+  if (role === NOTIFICATION_ROLES.SELLER) {
+    if (eventType === NOTIFICATION_EVENTS.SUPPORT_TICKET_MESSAGE) return "/seller/support";
+    if (eventType === NOTIFICATION_EVENTS.LOW_STOCK_ALERT) return withQuery("/seller/inventory", { productId });
+    if (eventType === NOTIFICATION_EVENTS.PRODUCT_MODERATION_REQUEST) return "/seller/products";
+    if (eventType === NOTIFICATION_EVENTS.CAMPAIGN_INVITE || eventType === NOTIFICATION_EVENTS.CAMPAIGN_REMINDER) return "/seller/campaigns";
+    if (ret) return withQuery("/seller/returns", { tab: ret[0], orderId });
+    return withQuery("/seller/orders", { tab: ord?.[0], orderId });
+  }
+  if (role === NOTIFICATION_ROLES.ADMIN) {
+    if (eventType === NOTIFICATION_EVENTS.SUPPORT_TICKET_MESSAGE) return withQuery("/admin/support-tickets", { ticketId });
+    if (eventType === NOTIFICATION_EVENTS.PRODUCT_MODERATION_REQUEST) return "/admin/moderation";
+    if (ret) return withQuery("/admin/returns", { tab: ret[1], orderId });
+    return `/admin/orders/${ord?.[1] || "all"}`;
+  }
+  if (role === NOTIFICATION_ROLES.DELIVERY) {
+    if (eventType === NOTIFICATION_EVENTS.NEW_DELIVERY_BROADCAST || eventType === NOTIFICATION_EVENTS.NEW_RETURN_BROADCAST) return "/delivery";
+    return orderId ? `/delivery/order-details/${encodeURIComponent(orderId)}` : "/delivery";
+  }
+  if (eventType === NOTIFICATION_EVENTS.SUPPORT_TICKET_MESSAGE) return withQuery("/chat", { ticketId });
+  return orderId ? `/orders/${encodeURIComponent(orderId)}` : "/orders";
+}
+
 function eventData(eventType, payload = {}, role) {
   if (eventType === NOTIFICATION_EVENTS.LOW_STOCK_ALERT) {
     const productId = String(payload.productId || "").trim() || undefined;
@@ -382,17 +407,14 @@ function eventData(eventType, payload = {}, role) {
       variantSku: String(payload.variantSku || "").trim() || undefined,
       variantName: String(payload.variantName || "").trim() || undefined,
       imageUrl: String(payload.imageUrl || "").trim() || undefined,
-      link: buildSellerInventoryLink(productId),
+      link: roleLinkFor(eventType, role, { productId }),
       ...(payload.data || {}),
     };
   }
 
   if (eventType === NOTIFICATION_EVENTS.SUPPORT_TICKET_MESSAGE) {
     const ticketId = String(payload.ticketId || "").trim() || undefined;
-    const link =
-      role === NOTIFICATION_ROLES.ADMIN
-        ? buildAdminSupportLink(ticketId)
-        : buildCustomerSupportLink(ticketId);
+    const link = roleLinkFor(eventType, role, { ticketId });
 
     return {
       eventType,
@@ -408,7 +430,7 @@ function eventData(eventType, payload = {}, role) {
     eventType,
     orderId,
     checkoutGroupId,
-    link: buildOrderLink(orderId),
+    link: roleLinkFor(eventType, role, { orderId }),
     ...(payload.data || {}),
   };
 }

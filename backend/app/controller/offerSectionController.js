@@ -6,6 +6,7 @@ import {
 } from "../services/customerVisibilityService.js";
 import { buildKey, getOrSet, getTTL, invalidate } from "../services/cacheService.js";
 import { getApprovedOrLegacyFilter } from "../services/productModerationService.js";
+import { getCampaignPriceIndex, applyCampaignToProduct } from "../services/campaign/campaignPricing.js";
 
 // Offer Sections and Shop by Store share this collection; `kind` says which
 // page an entry belongs to. Entries saved before `kind` existed have none and
@@ -82,12 +83,16 @@ export const getPublicOfferSections = async (req, res) => {
     );
 
     const { kind } = req.query;
-    return handleResponse(
-      res,
-      200,
-      "Offer sections fetched",
-      filteredSections.filter((section) => matchesKind(section, kind)),
-    );
+    // campaign prices go on after the cache so they switch on/off on time
+    const campaignIndex = await getCampaignPriceIndex();
+    const sections = filteredSections
+      .filter((section) => matchesKind(section, kind))
+      .map((section) =>
+        campaignIndex.size && Array.isArray(section.productIds)
+          ? { ...section, productIds: section.productIds.map((p) => applyCampaignToProduct(p, campaignIndex)) }
+          : section,
+      );
+    return handleResponse(res, 200, "Offer sections fetched", sections);
   } catch (error) {
     return handleResponse(res, 500, error.message);
   }

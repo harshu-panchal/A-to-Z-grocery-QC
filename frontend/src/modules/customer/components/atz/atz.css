@@ -39,6 +39,9 @@
 .atz .benefits-strip { margin: 14px 20px 23px; display: flex; align-items: center; justify-content: space-between; font-size: 9px; color: #3f6042; gap: 5px; }
 .atz .benefits-strip span { display: flex; align-items: center; gap: 4px; }
 .atz .benefits-strip i { width: 2px; height: 2px; border-radius: 50%; background: #9aa791; }
+.atz .offers-entry { margin: -10px 20px 23px; width: calc(100% - 40px); display: flex; align-items: center; gap: 10px; padding: 12px 14px; min-height: 48px; border-radius: 14px; background: linear-gradient(90deg, #dc2626, #f43f5e); color: #fff; text-align: left; font-size: 11px; box-shadow: 0 6px 16px rgba(220, 38, 38, .25); }
+.atz .offers-entry span { flex: 1; color: rgba(255, 255, 255, .88); }
+.atz .offers-entry strong { display: block; font-size: 13px; font-weight: 800; color: #fff; }
 .atz .quick-categories { padding: 0 20px 27px; }
 .atz .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 18px; }
 .atz h2 { font-family: 'Manrope', sans-serif; font-size: 19px; font-weight: 800; letter-spacing: -.65px; margin: 0; line-height: 1.3; }

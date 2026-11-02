@@ -16,6 +16,12 @@ export const sellerApi = {
     updateProduct: (id, data) => axiosInstance.put(`/products/${id}`, data),
     deleteProduct: (id) => axiosInstance.delete(`/products/${id}`),
 
+    // Discount campaigns (admin invites, seller joins)
+    getCampaigns: () => axiosInstance.get('/seller/campaigns'),
+    getCampaign: (id) => axiosInstance.get(`/seller/campaigns/${id}`),
+    joinCampaign: (id, productIds) => axiosInstance.post(`/seller/campaigns/${id}/join`, { productIds }),
+    declineCampaign: (id) => axiosInstance.post(`/seller/campaigns/${id}/decline`),
+
     // Categories (Public)
     getCategories: () => axiosInstance.get('/admin/categories'),
     getCategoryTree: () => axiosInstance.get('/admin/categories?tree=true'),

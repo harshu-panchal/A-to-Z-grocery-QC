@@ -7,9 +7,11 @@ import { useLocation as useAppLocation } from "../../context/LocationContext";
 import { useSettings } from '@core/context/SettingsContext';
 import LocationDrawer from '../shared/LocationDrawer';
 import ProfileAvatar from '../shared/ProfileAvatar';
+import { useLiveCampaigns } from '../../hooks/useLiveCampaigns';
 
 const Header = () => {
     const { settings } = useSettings();
+    const { hasLiveOffers } = useLiveCampaigns(); // hide "Offers & Sales" when nothing is on sale
     const { count: wishlistCount } = useWishlist();
     const { cartCount } = useCart();
     const location = useLocation();
@@ -138,7 +140,15 @@ const Header = () => {
                         <Link to="/" className="text-sm font-medium transition-colors hover:text-[var(--primary)]">Home</Link>
 
                         <Link to="/categories" className="text-sm font-medium transition-colors hover:text-[var(--primary)]">Categories</Link>
-                        <Link to="/offers" className="text-sm font-medium transition-colors hover:text-[var(--primary)]">Offers</Link>
+                        {hasLiveOffers && (
+                        <Link to="/offers" className="relative inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3.5 py-1.5 text-sm font-bold text-white shadow-md shadow-red-600/30 transition hover:bg-red-700">
+                            <span className="relative flex h-2 w-2" aria-hidden="true">
+                                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75" />
+                                <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+                            </span>
+                            Offers &amp; Sales
+                        </Link>
+                        )}
                     </nav>
 
                     {/* Search Bar - Hidden on checkout page */}

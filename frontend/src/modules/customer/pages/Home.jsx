@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, lazy, Suspense } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInViewAnimation } from "@/core/hooks/useInViewAnimation";
-import { Sparkles } from "lucide-react";
+import { Sparkles, ChevronRight } from "lucide-react";
 
 // MUI Icons (shared with admin & icon selector)
 import HomeIcon from "@mui/icons-material/Home";
@@ -40,6 +40,7 @@ import CategoryProductRows from "../components/home/CategoryProductRows";
 import { onlyInStock } from "../utils/stock";
 import OfferSections from "../components/home/OfferSections";
 import AtzHome from "../components/atz/AtzHome";
+import { useLiveCampaigns } from "../hooks/useLiveCampaigns";
 
 const PHONE_QUERY = "(max-width: 767px)";
 
@@ -178,6 +179,7 @@ const Home = () => {
   const { currentLocation, isFetchingLocation } = useLocation();
   const { settings } = useSettings();
   const navigate = useNavigate();
+  const { hasLiveOffers } = useLiveCampaigns();
   const quickCatsRef = useRef(null);
   const cachedHomePageData = getCachedHomePageData(currentLocation);
 
@@ -617,6 +619,27 @@ const Home = () => {
           )}
 
           <PromoMarquee />
+          {/* Desktop way into /offers (phones get the strip in AtzHome); hidden when nothing is on sale */}
+          {!isHeaderTab && hasLiveOffers && (
+            <div className="mx-auto hidden w-full max-w-[1440px] px-8 pt-4 md:block lg:px-12">
+              <button
+                type="button"
+                onClick={() => navigate("/offers")}
+                className="flex w-full items-center gap-4 rounded-2xl bg-gradient-to-r from-red-600 to-rose-500 px-6 py-4 text-left text-white shadow-lg shadow-red-600/20 transition hover:brightness-110"
+              >
+                <span className="rounded-xl bg-white/20 p-2.5">
+                  <Sparkles className="h-6 w-6 shrink-0 text-white" aria-hidden="true" />
+                </span>
+                <span className="flex-1">
+                  <strong className="block text-lg font-black">Offers &amp; Sales</strong>
+                  <span className="text-sm font-medium text-white/85">Grab today&apos;s deals before they end</span>
+                </span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-white px-4 py-2 text-sm font-black text-red-600">
+                  Shop now <ChevronRight className="h-4 w-4" aria-hidden="true" />
+                </span>
+              </button>
+            </div>
+          )}
           {/* Header tabs use the in-page category browser below instead */}
           {!isHeaderTab && <QuickCategorySlider categories={effectiveQuickCategories} onCategoryClick={(id) => navigate(`/category/${id}`)} />}
           {headerTabEmpty}

@@ -5,6 +5,8 @@
 // jsPDF is imported lazily so it only loads when an invoice is downloaded.
 // Its built-in fonts have no "₹" glyph, so amounts use "Rs.".
 
+import { printReceiptRows } from "../../../shared/utils/printHtml.js";
+
 export const RECEIPT_WIDTH = 48;
 const STORE_TAGLINE = "* OFFLINE & ONLINE STORE *";
 
@@ -287,8 +289,20 @@ export async function downloadOrderInvoicePdf(order, settings) {
   doc.save(fileName);
 }
 
-/** Open the same PDF in a new tab, where the browser's own print works reliably. */
+/**
+ * Print the invoice on paper exactly as long as the bill (80mm wide).
+ * Kept async with the same name so existing "Print" buttons keep working.
+ */
 export async function openOrderInvoicePdf(order, settings) {
+  printReceiptRows(buildReceiptLines(order, settings), {
+    widthMm: PAGE_W,
+    columns: RECEIPT_WIDTH,
+    title: `Invoice-${getInvoiceNumber(order) || "order"}`,
+  });
+}
+
+/** The PDF in a new tab (kept for anyone who wants the file to print). */
+export async function openOrderInvoicePdfTab(order, settings) {
   // Open the tab synchronously (inside the click) so popup blockers allow it.
   const tab = window.open("", "_blank");
   const { doc, fileName } = buildInvoicePdf(order, settings, await loadPdfLibs());
@@ -299,3 +313,9 @@ export async function openOrderInvoicePdf(order, settings) {
     doc.save(fileName);
   }
 }
+
+/** The receipt building blocks, shared with the POS bill so both look the same. */
+export const receiptFormat = {
+  WIDTH: RECEIPT_WIDTH, COL, DOUBLE, SINGLE, TAGLINE: STORE_TAGLINE,
+  round2, fmt2, fmtNum, padR, padL, center, amountRow, leftRight, wrapWords, itemRows, formatDateTime,
+};

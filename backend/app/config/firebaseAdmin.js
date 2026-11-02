@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import admin from "firebase-admin";
+
 import path from "path";
 import { fileURLToPath } from "url";
 
@@ -8,7 +9,6 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 
 let firebaseAdminApp = null;
-
 /**
  * Returns a firebase-admin app when FIREBASE_SERVICE_ACCOUNT (JSON string)
  * is set. FIREBASE_DATABASE_URL is optional (required only for Realtime DB).

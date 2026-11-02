@@ -233,6 +233,8 @@ const posPurchaseEntrySchema = new Schema(
     completedAt: Date,
     convertedOrder: { type: ObjectId, ref: "PosOrder", default: null },
     createdBy: { type: ObjectId },
+    editCount: { type: Number, default: 0 }, // completed purchase edited afterwards
+    editedAt: Date,
   },
   { timestamps: true, minimize: false },
 );

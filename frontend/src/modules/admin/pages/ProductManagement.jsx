@@ -1,3 +1,4 @@
+import BrandSelect from '@shared/components/BrandSelect';
 import { useState, useMemo, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import Badge from '@shared/components/ui/Badge';
@@ -881,11 +882,10 @@ const ProductManagement = () => {
                                             <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                                                 <div className="flex flex-col space-y-1.5">
                                                     <label className="ml-1 text-[9px] font-bold uppercase tracking-widest text-slate-400">Brand Name</label>
-                                                    <input
+                                                    <BrandSelect
                                                         value={formData.brand}
-                                                        onChange={(e) => setFormData({ ...formData, brand: e.target.value })}
-                                                        className="h-10 w-full rounded-md border border-slate-200 bg-white px-3.5 text-sm font-semibold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
-                                                        placeholder="e.g. Amul"
+                                                        onChange={(brand) => setFormData({ ...formData, brand })}
+                                                        buttonClassName="h-10 border border-slate-200 bg-white"
                                                     />
                                                 </div>
                                                 <div className="flex flex-col space-y-1.5">

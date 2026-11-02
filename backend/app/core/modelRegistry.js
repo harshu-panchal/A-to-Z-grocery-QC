@@ -60,6 +60,8 @@ import "../models/experienceSection.js";
 import "../models/faq.js";
 import "../models/heroConfig.js";
 import "../models/offer.js";
+import "../models/discountCampaign.js";
+import "../models/campaignParticipation.js";
 import "../models/offerSection.js";
 import "../models/setting.js";
 
@@ -76,6 +78,7 @@ import "../models/staff.js"; // staff logins created by sellers / admins
 import "../models/staffType.js"; // owner-made quick buttons
 import "../models/staffActivity.js"; // what staff did
 import "../models/staffCashCollection.js"; // owner collected a staff member's counter cash
+import "../models/brand.js"; // brand list for products
 
 // Module-scoped models
 import "../modules/notifications/preference.model.js"; // NotificationPreference
@@ -163,6 +166,7 @@ export const REQUIRED_MODELS = Object.freeze([
   "StaffType",
   "StaffActivity",
   "StaffCashCollection",
+  "Brand",
 ]);
 
 // ---- 3. Boot-time assertion ----

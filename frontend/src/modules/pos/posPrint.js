@@ -7,106 +7,153 @@ import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import JsBarcode from "jsbarcode";
 import QRCode from "qrcode";
-import { round2, rupees, settingText, fmtDateTime, DEFAULT_BARCODE_SETTINGS } from "./posUtils";
+import { round2, settingText, DEFAULT_BARCODE_SETTINGS } from "./posUtils";
+import { receiptFormat } from "../customer/utils/orderInvoicePdf";
+import { printHtml, printReceiptRows, escHtml as esc } from "../../shared/utils/printHtml.js";
 
-const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-
-/** Print an HTML document in a hidden iframe. */
-export function printHtml(bodyHtml, { css = "", title = "Print" } = {}) {
-  const frame = document.createElement("iframe");
-  frame.setAttribute("aria-hidden", "true");
-  frame.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden";
-  document.body.appendChild(frame);
-  const doc = frame.contentWindow.document;
-  doc.open();
-  doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc(title)}</title><style>${css}</style></head><body>${bodyHtml}</body></html>`);
-  doc.close();
-  const go = () => {
-    frame.contentWindow.focus();
-    frame.contentWindow.print();
-    setTimeout(() => frame.remove(), 1500);
-  };
-  // wait for images (logo/QR) before printing
-  const imgs = [...doc.images];
-  if (!imgs.length) setTimeout(go, 50);
-  else Promise.all(imgs.map((i) => (i.complete ? 0 : new Promise((r) => { i.onload = i.onerror = r; })))).then(go);
-}
+export { printHtml };
 
 // ------------------------------------------------------------- receipt
-const RECEIPT_CSS = (width) => `
-  @page { size: ${width}mm auto; margin: 2mm; }
-  * { box-sizing: border-box; }
-  body { margin: 0; font: 11px/1.35 "Courier New", monospace; color: #000; width: ${width - 4}mm; }
-  .c { text-align: center; } .r { text-align: right; } .b { font-weight: 700; }
-  .shop { font-size: 15px; font-weight: 700; }
-  .line { border-top: 1px dashed #000; margin: 5px 0; }
-  table { width: 100%; border-collapse: collapse; }
-  td, th { padding: 1px 0; vertical-align: top; font-size: 11px; }
-  th { text-align: left; border-bottom: 1px dashed #000; }
-  .tot td { font-size: 12px; }
-  .grand td { font-size: 14px; font-weight: 700; border-top: 1px dashed #000; padding-top: 3px; }
-  .muted { font-size: 10px; }
-  img.qr { width: 32mm; height: 32mm; }
-`;
+// Same look as the customer's online invoice (Courier, 48 columns,
+// "====" / "----" dividers), built with the same helpers.
+const F = receiptFormat;
+
+const PAY_LABEL = { Cash: "CASH", UPI: "UPI", Card: "CARD", Credit: "CREDIT (UDHAAR)", Online: "ONLINE (PHONEPE)" };
+
+/** The POS bill as `{ text, bold }` rows, each at most 48 characters. */
+export function buildPosReceiptLines(order, bill = {}) {
+  const out = [];
+  const add = (text, bold = false) => out.push({ text, bold });
+  const items = (order.items || []).map((it) => {
+    const qty = Number(it.quantity) || 0;
+    const rate = Number(it.unitPrice ?? it.price) || 0;
+    return {
+      name: `${it.name || "Item"}${it.variantName ? ` ${it.variantName}` : ""}`,
+      rack: it.rackCode || "",
+      qty,
+      mrp: Math.max(rate, Number(it.mrp) || 0),
+      rate,
+      amount: Number(it.total ?? rate * qty),
+      gstRate: Number(it.gstRate) || 0,
+    };
+  });
+  const { date, time } = F.formatDateTime(order.createdAt || Date.now());
+
+  // header
+  add(F.DOUBLE);
+  add(F.center(String(settingText(bill, "shopName") || "INVOICE").toUpperCase()), true);
+  add(F.center(F.TAGLINE));
+  for (const [k, label] of [["address", ""], ["phone", "Ph: "], ["gstin", "GSTIN: "], ["fssai", "FSSAI: "]]) {
+    const t = settingText(bill, k);
+    if (t) F.wrapWords(label + t, F.WIDTH).forEach((row) => add(F.center(row)));
+  }
+  add(F.DOUBLE);
+  add(F.center(order.paymentMethod === "Credit" ? "CREDIT BILL" : order._preview ? "ESTIMATE" : "TAX INVOICE"), true);
+  add(F.SINGLE);
+  add(F.leftRight(`Bill No: #${order.invoiceNumber || "-"}`, `Date: ${date}`));
+  add(F.leftRight(`Time: ${time}`, order.createdByName ? `Billed by: ${order.createdByName}`.slice(0, 26) : ""));
+  const cust = order.customerSnapshot || {};
+  add(`Customer: ${cust.name || "Walk-in Customer"}`.slice(0, F.WIDTH));
+  if (cust.phone) add(`Cust Ph: ${cust.phone}`);
+  add(F.DOUBLE);
+
+  // items
+  add(F.padR("ITEM NAME [RACK]", F.COL.name) + F.padL("QTY", F.COL.qty) + F.padL("MRP", F.COL.mrp) + F.padL("SALE RATE", F.COL.rate) + F.padL("AMT", F.COL.amt));
+  add(F.SINGLE);
+  items.forEach((l) => F.itemRows(l).forEach((row) => add(row)));
+  add(F.SINGLE);
+  const totalQty = F.round2(items.reduce((s, l) => s + l.qty, 0));
+  add(F.leftRight(`TOTAL ITEMS: ${items.length}`, `TOTAL QTY: ${F.fmtNum(totalQty)}   `));
+  add(F.SINGLE);
+
+  // amounts
+  const totalMrp = items.reduce((s, l) => s + l.mrp * l.qty, 0);
+  const subtotal = Number(order.subtotal ?? items.reduce((s, l) => s + l.amount, 0));
+  const itemDiscount = Math.max(0, totalMrp - subtotal);
+  const billDiscount = Number(order.billDiscount) || 0;
+  add(F.amountRow("TOTAL MRP AMOUNT", totalMrp));
+  add(F.amountRow("LESS: ITEM DISCOUNT", itemDiscount));
+  add(F.SINGLE);
+  add(F.amountRow("SUBTOTAL", subtotal));
+  if (billDiscount) add(F.amountRow("LESS: BILL DISCOUNT", billDiscount));
+  if (Number(order.roundOff)) add(F.amountRow("ROUND OFF", order.roundOff));
+
+  // GST is inside the prices: back it out per rate, after the bill discount
+  const share = subtotal > 0 ? Math.min(billDiscount, subtotal) / subtotal : 0;
+  const byRate = new Map();
+  let taxable = 0;
+  for (const l of items) {
+    const net = l.amount * (1 - share);
+    const tax = l.gstRate > 0 ? net - net / (1 + l.gstRate / 100) : 0;
+    taxable += net - tax;
+    if (tax) byRate.set(l.gstRate, (byRate.get(l.gstRate) || 0) + tax);
+  }
+  if (byRate.size) {
+    add(F.SINGLE);
+    add(F.amountRow("TAXABLE VALUE", taxable));
+    let gstTotal = 0;
+    for (const [rate, tax] of [...byRate.entries()].sort((x, y) => x[0] - y[0])) {
+      gstTotal += tax;
+      add(F.amountRow(`CGST @ ${rate / 2}%`, tax / 2));
+      add(F.amountRow(`SGST @ ${rate / 2}%`, tax / 2));
+    }
+    add(F.SINGLE);
+    add(F.amountRow("TOTAL GST INCLUDED", gstTotal));
+  }
+  add(F.SINGLE);
+  add(F.amountRow("NET AMOUNT TO PAY", order.total ?? subtotal - billDiscount), true);
+  add(F.DOUBLE);
+
+  // savings
+  const saved = itemDiscount + billDiscount;
+  if (saved > 0) {
+    add(F.center(`*** TOTAL SAVED: Rs. ${F.fmt2(saved)} ***`), true);
+    add(F.center(`(MRP Savings: ${F.fmtNum(itemDiscount)} + Discount: ${F.fmtNum(billDiscount)})`));
+    add(F.DOUBLE);
+  }
+
+  // payment
+  if (order.paymentMethod && order.paymentMethod !== "-") {
+    add(`PAYMENT MODE : ${PAY_LABEL[order.paymentMethod] || String(order.paymentMethod).toUpperCase()}`);
+    if (order.paymentStatus) add(`PAYMENT STATUS: ${String(order.paymentStatus).toUpperCase()}`);
+    if (order.paymentMethod === "Cash" && Number(order.amountReceived)) {
+      add(`CASH RECEIVED: Rs. ${F.fmt2(order.amountReceived)}`);
+      add(`CHANGE GIVEN : Rs. ${F.fmt2(order.changeReturned)}`);
+    }
+    add(F.DOUBLE);
+  }
+  return out;
+}
+
+/** Notes, terms and the thank-you line at the bottom of the bill. */
+function receiptTail(bill) {
+  const notes = ["notes", "terms"]
+    .map((k) => settingText(bill, k))
+    .filter(Boolean)
+    .flatMap((t) => F.wrapWords(t, F.WIDTH).map((row) => ({ text: F.center(row) })));
+  return [...notes, { text: F.center(settingText(bill, "footer") || "Thank You! Visit Again!") }, { text: F.DOUBLE }];
+}
 
 /** Thermal receipt for a saved bill (or a preview built from the cart). */
 export async function printReceipt(order, bill = {}, opts = {}) {
   const width = Number(opts.width) || Number(bill?.paperWidth) || 80;
+
   const shop = settingText(bill, "shopName");
-  const header = ["address", "phone", "gstin", "fssai"]
-    .map((k) => {
-      const t = settingText(bill, k);
-      if (!t) return "";
-      const label = { phone: "Ph: ", gstin: "GSTIN: ", fssai: "FSSAI: " }[k] || "";
-      return `<div class="c muted">${esc(label + t)}</div>`;
-    })
-    .join("");
-  const rows = (order.items || [])
-    .map((it) => {
-      const qty = Number(it.quantity);
-      const price = Number(it.unitPrice ?? it.price);
-      const total = Number(it.total ?? price * qty);
-      return `<tr><td colspan="3">${esc(it.name)}${it.variantName ? ` (${esc(it.variantName)})` : ""}</td></tr>
-        <tr><td class="muted">${qty} x ${round2(price)}</td><td class="r muted">${it.mrp && it.mrp > price ? `MRP ${round2(it.mrp)}` : ""}</td><td class="r">${round2(total)}</td></tr>`;
-    })
-    .join("");
-  const mrpTotal = (order.items || []).reduce((s, it) => s + Number(it.mrp || it.unitPrice || it.price) * Number(it.quantity), 0);
-  const savings = round2(mrpTotal - Number(order.total));
   const upi = settingText(bill, "upiId");
-  // UPI QR for unpaid (credit/estimate) bills, generated locally
   let qr = "";
   if (upi && order.paymentStatus !== "Paid") {
     const data = `upi://pay?pa=${encodeURIComponent(upi)}&pn=${encodeURIComponent(shop || "Shop")}&am=${round2(order.total)}&cu=INR`;
     const src = await QRCode.toDataURL(data, { margin: 1, width: 240 }).catch(() => "");
-    if (src) qr = `<div class="c"><img class="qr" src="${src}"/><div class="muted">Scan to pay ${rupees(order.total)}</div></div>`;
+    if (src) qr = `<div class="c"><img class="qr" src="${src}"/><div>Scan to pay Rs. ${round2(order.total).toFixed(2)}</div></div>`;
   }
-  const html = `
-    ${shop ? `<div class="c shop">${esc(shop)}</div>` : ""}
-    ${header}
-    <div class="line"></div>
-    <div class="c b">${order.paymentMethod === "Credit" ? "CREDIT BILL" : order._preview ? "ESTIMATE" : "TAX INVOICE"}</div>
-    <table><tr><td>Bill: ${esc(order.invoiceNumber || "-")}</td><td class="r">${esc(fmtDateTime(order.createdAt || Date.now()))}</td></tr>
-    <tr><td colspan="2">Customer: ${esc(order.customerSnapshot?.name || "Walk-in Customer")}${order.customerSnapshot?.phone ? ` (${esc(order.customerSnapshot.phone)})` : ""}</td></tr></table>
-    <div class="line"></div>
-    <table><tr><th colspan="2">Item</th><th class="r">Amt</th></tr>${rows}</table>
-    <div class="line"></div>
-    <table class="tot">
-      <tr><td>Items</td><td class="r">${round2(order.itemCount ?? (order.items || []).reduce((s, i) => s + Number(i.quantity), 0))}</td></tr>
-      <tr><td>Subtotal</td><td class="r">${round2(order.subtotal)}</td></tr>
-      ${order.billDiscount ? `<tr><td>Discount</td><td class="r">-${round2(order.billDiscount)}</td></tr>` : ""}
-      ${order.roundOff ? `<tr><td>Round off</td><td class="r">${round2(order.roundOff)}</td></tr>` : ""}
-      ${order.gstTotal ? `<tr><td class="muted">Incl. GST</td><td class="r muted">${round2(order.gstTotal)}</td></tr>` : ""}
-      <tr class="grand"><td>TOTAL</td><td class="r">${rupees(order.total)}</td></tr>
-      <tr><td>Paid by</td><td class="r">${esc(order.paymentMethod || "-")}</td></tr>
-      ${order.paymentMethod === "Cash" && order.amountReceived ? `<tr><td>Received</td><td class="r">${round2(order.amountReceived)}</td></tr><tr><td>Change</td><td class="r">${round2(order.changeReturned)}</td></tr>` : ""}
-    </table>
-    ${savings > 0 ? `<div class="line"></div><div class="c b">You saved ${rupees(savings)}!</div>` : ""}
-    ${qr}
-    ${settingText(bill, "notes") ? `<div class="line"></div><div class="c muted">${esc(settingText(bill, "notes"))}</div>` : ""}
-    ${settingText(bill, "terms") ? `<div class="c muted">${esc(settingText(bill, "terms"))}</div>` : ""}
-    <div class="line"></div>
-    <div class="c muted">${esc(settingText(bill, "footer") || "Thank you! Visit again")}</div>`;
-  printHtml(html, { css: RECEIPT_CSS(width), title: order.invoiceNumber || "Receipt" });
+  const tail = receiptTail(bill).map((r) => esc(r.text)).join("\n");
+  // printed on paper exactly as long as the bill
+  printReceiptRows(buildPosReceiptLines(order, bill), {
+    widthMm: width,
+    columns: F.WIDTH,
+    title: order.invoiceNumber || "Receipt",
+    afterHtml: `${qr}<pre>${tail}</pre>`,
+  });
 }
 
 // ---------------------------------------------------------- barcode labels
@@ -144,62 +191,18 @@ export function printBarcodeLabels(items, settings = {}) {
   return true;
 }
 
-// -------------------------------------------------------------- A4 invoice
-/** Download an A4 GST tax invoice PDF for a saved bill. */
+// ------------------------------------------------------------- PDF invoice
+// The bill as a PDF the size of the bill (80mm wide, as tall as its lines),
+// same layout as the printed receipt and the customer's online invoice.
 export function downloadInvoicePdf(order, bill = {}) {
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  const W = doc.internal.pageSize.getWidth();
-  let y = 14;
-  doc.setFont("helvetica", "bold").setFontSize(16).text(settingText(bill, "shopName") || "Tax Invoice", W / 2, y, { align: "center" });
-  doc.setFont("helvetica", "normal").setFontSize(9);
-  for (const [k, label] of [["address", ""], ["phone", "Phone: "], ["gstin", "GSTIN: "], ["fssai", "FSSAI: "]]) {
-    const t = settingText(bill, k);
-    if (t) { y += 5; doc.text(label + t, W / 2, y, { align: "center" }); }
-  }
-  y += 8;
-  doc.setFont("helvetica", "bold").setFontSize(12).text(order.paymentMethod === "Credit" ? "CREDIT INVOICE" : "TAX INVOICE", W / 2, y, { align: "center" });
-  y += 7;
-  doc.setFont("helvetica", "normal").setFontSize(9);
-  doc.text(`Invoice No: ${order.invoiceNumber || "-"}`, 14, y);
-  doc.text(`Date: ${fmtDateTime(order.createdAt)}`, W - 14, y, { align: "right" });
-  y += 5;
-  doc.text(`Bill to: ${order.customerSnapshot?.name || "Walk-in Customer"}${order.customerSnapshot?.phone ? `, ${order.customerSnapshot.phone}` : ""}`, 14, y);
-  if (order.customerSnapshot?.gstin) { y += 5; doc.text(`Customer GSTIN: ${order.customerSnapshot.gstin}`, 14, y); }
-
-  const body = (order.items || []).map((it, i) => {
-    const total = Number(it.total);
-    const gst = Number(it.gstAmount) || 0;
-    return [i + 1, `${it.name}${it.variantName ? ` (${it.variantName})` : ""}`, it.hsnCode || "-", it.quantity, round2(it.unitPrice).toFixed(2), `${it.gstRate || 0}%`, round2(total - gst).toFixed(2), round2(gst).toFixed(2), round2(total).toFixed(2)];
+  const rows = [...buildPosReceiptLines(order, bill), ...receiptTail(bill)];
+  const PAGE_W = 80; const FONT_PT = 7; const LINE_H = 3.6; const MARGIN = 4.4;
+  const doc = new jsPDF({ unit: "mm", format: [PAGE_W, MARGIN * 2 + 4 + rows.length * LINE_H] });
+  doc.setFontSize(FONT_PT).setTextColor(20);
+  rows.forEach((row, i) => {
+    doc.setFont("courier", row.bold ? "bold" : "normal");
+    doc.text(row.text, MARGIN, MARGIN + 4 + i * LINE_H);
   });
-  autoTable(doc, {
-    startY: y + 5,
-    head: [["#", "Item", "HSN", "Qty", "Rate", "GST", "Taxable", "GST Amt", "Amount"]],
-    body,
-    styles: { fontSize: 8, cellPadding: 1.6 },
-    headStyles: { fillColor: [4, 117, 49] },
-    columnStyles: { 0: { cellWidth: 8 }, 3: { halign: "right" }, 4: { halign: "right" }, 6: { halign: "right" }, 7: { halign: "right" }, 8: { halign: "right" } },
-  });
-  let ty = doc.lastAutoTable.finalY + 6;
-  const line = (label, value, bold) => {
-    doc.setFont("helvetica", bold ? "bold" : "normal").setFontSize(bold ? 11 : 9);
-    doc.text(label, W - 60, ty);
-    doc.text(value, W - 14, ty, { align: "right" });
-    ty += bold ? 7 : 5;
-  };
-  line("Subtotal", round2(order.subtotal).toFixed(2));
-  if (order.billDiscount) line("Discount", `-${round2(order.billDiscount).toFixed(2)}`);
-  if (order.roundOff) line("Round off", round2(order.roundOff).toFixed(2));
-  const gst = round2(order.gstTotal);
-  if (gst) { line("CGST", round2(gst / 2).toFixed(2)); line("SGST", round2(gst / 2).toFixed(2)); }
-  line("Total (Rs.)", round2(order.total).toFixed(2), true);
-  line("Payment", `${order.paymentMethod} (${order.paymentStatus})`);
-  ty += 4;
-  doc.setFont("helvetica", "normal").setFontSize(8);
-  for (const k of ["notes", "terms"]) {
-    const t = settingText(bill, k);
-    if (t) { doc.text(doc.splitTextToSize(t, W - 28), 14, ty); ty += 10; }
-  }
-  doc.text("This is a computer generated invoice.", W / 2, 287, { align: "center" });
   doc.save(`${order.invoiceNumber || "invoice"}.pdf`);
 }
 

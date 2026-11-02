@@ -26,6 +26,7 @@ import { cn } from '@/lib/utils';
 import { sellerApi } from '../services/sellerApi';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { downloadStockListPdf } from '../utils/stockListPdf';
 
 async function fetchAllInventoryPages(stockStatus) {
     // Preserved exactly as before: this page needs the seller's *entire*
@@ -128,11 +129,31 @@ const StockManagement = () => {
         return inventory.filter(item => {
             const matchesSearch =
                 item.name.toLowerCase().includes(term) ||
-                (item.sku || '').toString().toLowerCase().includes(term);
+                (item.sku || '').toString().toLowerCase().includes(term) ||
+                (item.brand || '').toLowerCase().includes(term);
             const matchesStatus = filterStatus === 'All' || item.status === filterStatus;
             return matchesSearch && matchesStatus;
         });
     }, [inventory, searchTerm, filterStatus]);
+
+    // PDF of exactly what the search/filter shows (all pages), for re-ordering
+    const [exporting, setExporting] = useState(false);
+    const exportPdf = async () => {
+        setExporting(true);
+        try {
+            const count = await downloadStockListPdf(filteredInventory, {
+                shopName: inventory[0]?.sellerId?.shopName || '',
+                search: searchTerm,
+                filter: filterStatus,
+            });
+            toast.success(`Stock list PDF downloaded (${count} row(s))`);
+        } catch (err) {
+            console.error(err);
+            toast.error('Could not create the PDF');
+        } finally {
+            setExporting(false);
+        }
+    };
 
     // Variant being adjusted (products with variants are adjusted per variant)
     const selectedVariants = Array.isArray(selectedItem?.variants) ? selectedItem.variants : [];
@@ -306,17 +327,22 @@ const StockManagement = () => {
                     <FilterBar
                         left={
                             <Input
-                                placeholder="Search by product name or SKU..."
+                                placeholder="Search by product, brand or SKU..."
                                 className="w-full sm:w-72"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
                             />
                         }
                         right={
-                            <Button onClick={() => navigate('/seller/products/add')}>
-                                <HiOutlinePlus className="h-4 w-4" />
-                                Add New Product
-                            </Button>
+                            <div className="flex flex-wrap gap-2">
+                                <Button variant="outline" onClick={exportPdf} isLoading={exporting} disabled={!filteredInventory.length}>
+                                    Export PDF ({filteredInventory.length})
+                                </Button>
+                                <Button onClick={() => navigate('/seller/products/add')}>
+                                    <HiOutlinePlus className="h-4 w-4" />
+                                    Add New Product
+                                </Button>
+                            </div>
                         }
                         pills={['All', 'In Stock', 'Out of Stock'].map((status) => ({
                             label: status,

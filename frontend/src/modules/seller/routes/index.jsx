@@ -18,6 +18,7 @@ import {
   HiOutlineQuestionMarkCircle,
   HiOutlineCalculator,
   HiOutlineUsers,
+  HiOutlineMegaphone,
 } from "react-icons/hi2";
 
 const Dashboard = React.lazy(() => import("../pages/Dashboard"));
@@ -30,6 +31,7 @@ const StockManagement = React.lazy(() => import("../pages/StockManagement"));
 const AddProduct = React.lazy(() => import("../pages/AddProduct"));
 // Note: Orders is imported eagerly above to avoid dynamic import issues
 const Returns = React.lazy(() => import("../pages/Returns"));
+const Campaigns = React.lazy(() => import("../pages/Campaigns"));
 const Earnings = React.lazy(() => import("../pages/Earnings"));
 const Analytics = React.lazy(() => import("../pages/Analytics"));
 const Transactions = React.lazy(() => import("../pages/Transactions"));
@@ -45,6 +47,7 @@ const navItems = [
   { label: "Dashboard", path: "/seller", icon: HiOutlineSquares2X2, group: "Overview", end: true },
   { label: "Products", path: "/seller/products", icon: HiOutlineCube, group: "Catalog" },
   { label: "Stock", path: "/seller/inventory", icon: HiOutlineArchiveBox, group: "Catalog" },
+  { label: "Sale Campaigns", path: "/seller/campaigns", icon: HiOutlineMegaphone, group: "Catalog" },
   posNavItem("seller", HiOutlineCalculator),
   { label: "Orders", path: "/seller/orders", icon: HiOutlineTruck, group: "Orders" },
   { label: "Returns", path: "/seller/returns", icon: HiOutlineArchiveBox, group: "Orders" },
@@ -111,6 +114,7 @@ const SellerRoutes = () => {
         <Route path="/products" element={<ProductManagement />} />
         <Route path="/products/add" element={<AddProduct />} />
         <Route path="/inventory" element={<StockManagement />} />
+        <Route path="/campaigns" element={<Campaigns />} />
         <Route path="/pos/*" element={<PosRoutes portal="seller" />} />
         <Route path="/orders" element={<Orders />} />
         <Route path="/returns" element={<Returns />} />

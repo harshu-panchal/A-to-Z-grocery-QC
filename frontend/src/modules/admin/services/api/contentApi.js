@@ -54,6 +54,19 @@ export const adminContentApi = {
     reorderOfferSections: (items) =>
         axiosInstance.put('/admin-offer-sections/reorder', { items }),
 
+    // Discount campaigns (seller-funded sales)
+    getCampaigns: () => axiosInstance.get('/admin/campaigns'),
+    getCampaign: (id) => axiosInstance.get(`/admin/campaigns/${id}`),
+    createCampaign: (data) => axiosInstance.post('/admin/campaigns', data),
+    updateCampaign: (id, data) => axiosInstance.put(`/admin/campaigns/${id}`, data),
+    deleteCampaign: (id) => axiosInstance.delete(`/admin/campaigns/${id}`),
+    publishCampaign: (id) => axiosInstance.post(`/admin/campaigns/${id}/publish`),
+    campaignAction: (id, action) => axiosInstance.post(`/admin/campaigns/${id}/action`, { action }),
+    remindCampaignSellers: (id) => axiosInstance.post(`/admin/campaigns/${id}/remind`),
+    getCampaignReport: (id) => axiosInstance.get(`/admin/campaigns/${id}/report`),
+    removeCampaignProduct: (id, sellerId, productId) =>
+        axiosInstance.delete(`/admin/campaigns/${id}/sellers/${sellerId}/products/${productId}`),
+
     // Coupons & Promos
     getCoupons: (params) => axiosInstance.get('/admin/coupons', { params }),
     createCoupon: (data) => axiosInstance.post('/admin/coupons', data),

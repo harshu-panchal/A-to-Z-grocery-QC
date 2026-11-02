@@ -45,6 +45,7 @@ const SELLER_MODULES = [
   mod("catalog", "Products & Stock", [
     sub("catalog.products", "Products (list, add, edit)", ["/seller/products"]),
     sub("catalog.stock", "Stock", ["/seller/inventory"]),
+    sub("catalog.campaigns", "Sale Campaigns (join / decline)", ["/seller/campaigns"]),
   ]),
   mod("orders", "Orders", [
     sub("orders.orders", "Orders", ["/seller/orders"]),
@@ -80,7 +81,7 @@ const ADMIN_MODULES = [
     { sharedPaths: ["/admin/orders/view"] },
   ),
   mod("catalog", "Products & Categories", [
-    sub("catalog.products", "Products", ["/admin/products"]),
+    sub("catalog.products", "Products & brands", ["/admin/products", "/admin/brands"]),
     sub("catalog.categories", "Categories (all levels)", ["/admin/categories"]),
   ]),
   mod("marketing", "Marketing Tools", [
@@ -88,7 +89,7 @@ const ADMIN_MODULES = [
     sub("marketing.hero", "Hero & categories per page", ["/admin/hero-categories"]),
     sub("marketing.notifications", "Send Notifications", ["/admin/notifications"]),
     sub("marketing.coupons", "Coupons & Promos", ["/admin/coupons"]),
-    sub("marketing.offers", "Offers Page", ["/admin/offers"]),
+    sub("marketing.offers", "Offers Page (discount campaigns)", ["/admin/offers"]),
     sub("marketing.offersections", "Offer Sections", ["/admin/offer-sections"]),
     sub("marketing.stores", "Shop by Store", ["/admin/shop-by-store"]),
   ]),

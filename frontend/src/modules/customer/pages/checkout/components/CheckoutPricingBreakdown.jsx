@@ -28,11 +28,16 @@ const CheckoutPricingBreakdown = React.memo(function CheckoutPricingBreakdown({
   cartTotal,
   selectedCoupon,
   discountAmount,
+  previewError = "",
 }) {
   const deliveryFee = pricingPreview?.deliveryFeeCharged || 0;
   const handlingFee = pricingPreview?.handlingFeeCharged || 0;
   const tipAmount = pricingPreview?.tipTotal || selectedTip || 0;
   const taxAmount = pricingPreview?.taxTotal || 0;
+  // charges are only known once the server priced the order; never show a fake ₹0
+  const ready = Boolean(pricingPreview) && !isPreviewLoading;
+  const charge = (value, { freeLabel = true } = {}) =>
+    isPreviewLoading ? "…" : !pricingPreview ? "—" : Number(value) === 0 && freeLabel ? "FREE" : `₹${value}`;
 
   return (
     <>
@@ -70,6 +75,12 @@ const CheckoutPricingBreakdown = React.memo(function CheckoutPricingBreakdown({
           </h3>
         </div>
 
+        {previewError && !isPreviewLoading && (
+          <div className="mb-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+            {previewError}
+          </div>
+        )}
+
         <div className="space-y-4">
           <div className="flex justify-between items-center px-2">
             <span className="text-slate-500 font-bold text-[13px] uppercase tracking-wider">
@@ -83,7 +94,7 @@ const CheckoutPricingBreakdown = React.memo(function CheckoutPricingBreakdown({
             <span className="text-slate-500 font-bold text-[13px] uppercase tracking-wider">
               Delivery Fee
             </span>
-            <span className="font-black text-slate-800">₹{deliveryFee}</span>
+            <span className={`font-black ${ready && deliveryFee === 0 ? "text-primary" : "text-slate-800"}`}>{charge(deliveryFee)}</span>
           </div>
           {pricingPreview &&
             typeof pricingPreview.distanceKmActual === "number" &&
@@ -106,13 +117,13 @@ const CheckoutPricingBreakdown = React.memo(function CheckoutPricingBreakdown({
             <span className="text-slate-500 font-bold text-[13px] uppercase tracking-wider">
               Handling Fee
             </span>
-            <span className="font-black text-slate-800">₹{handlingFee}</span>
+            <span className={`font-black ${ready && handlingFee === 0 ? "text-primary" : "text-slate-800"}`}>{charge(handlingFee)}</span>
           </div>
           <div className="flex justify-between items-center px-2">
             <span className="text-slate-500 font-bold text-[13px] uppercase tracking-wider">
               Tax
             </span>
-            <span className="font-black text-slate-800">₹{taxAmount}</span>
+            <span className="font-black text-slate-800">{charge(taxAmount, { freeLabel: false })}</span>
           </div>
 
           {selectedCoupon && (
@@ -155,14 +166,14 @@ const CheckoutPricingBreakdown = React.memo(function CheckoutPricingBreakdown({
             <div className="flex justify-between items-center">
               <div className="flex flex-col">
                 <span className="font-[1000] text-slate-800 text-lg uppercase tracking-tight">
-                  {finalAmountToPay === 0 ? "Fully Covered" : "Total Payable"}
+                  {ready && finalAmountToPay === 0 ? "Fully Covered" : "Total Payable"}
                 </span>
                 <span className="text-[10px] text-slate-400 font-bold uppercase tracking-[0.2em]">
-                  {finalAmountToPay === 0 ? "Paid via Wallet" : "Safe & Secure Payment"}
+                  {ready && finalAmountToPay === 0 && walletAmountToUse > 0 ? "Paid via Wallet" : "Safe & Secure Payment"}
                 </span>
               </div>
               <span className="font-[1000] text-primary text-3xl tracking-tighter italic">
-                {isPreviewLoading ? "Calculating..." : `₹${Number(finalAmountToPay).toFixed(0)}`}
+                {isPreviewLoading ? "Calculating..." : !pricingPreview ? "—" : `₹${Number(finalAmountToPay).toFixed(0)}`}
               </span>
             </div>
           </div>

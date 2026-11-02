@@ -12,6 +12,7 @@ import { useSettings } from "@core/context/SettingsContext";
 import { applyCloudinaryTransform } from "@/core/utils/imageUtils";
 import { onlyInStock } from "../../utils/stock";
 import ExperienceBannerCarousel from "../experience/ExperienceBannerCarousel";
+import { useLiveCampaigns } from "../../hooks/useLiveCampaigns";
 
 const savingPct = (p) => {
   const mrp = Number(p.originalPrice ?? p.mrp) || 0;
@@ -31,6 +32,7 @@ const TabIcon =({ icon }) => {
 /** Mobile home, built 1:1 from the "Enhance Mobile Design" handoff. */
 const AtzHome = ({ categories, activeCategory, onCategorySelect, banners, products, quickCategories, categoryMap, offerSections, children }) => {
   const navigate = useNavigate();
+  const { hasLiveOffers } = useLiveCampaigns();
   const { currentLocation, isFetchingLocation } = useLocation();
   const { settings } = useSettings();
   const { cartCount } = useCart();
@@ -112,6 +114,15 @@ const AtzHome = ({ categories, activeCategory, onCategorySelect, banners, produc
         <i />
         <span>Everyday savings</span>
       </div>
+
+      {/* Phones have no header nav, so this is the way into /offers; hidden when nothing is on sale */}
+      {!isHeaderTab && hasLiveOffers && (
+        <button type="button" className="offers-entry" onClick={() => navigate("/offers")}>
+          <AtzIcon name="spark" size={18} />
+          <span><strong>Offers &amp; sales</strong> Grab today&apos;s deals</span>
+          <AtzIcon name="arrow" size={14} />
+        </button>
+      )}
 
       {!isHeaderTab && quickCategories.length > 0 && (
         <section className="quick-categories">

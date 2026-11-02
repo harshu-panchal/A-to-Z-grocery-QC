@@ -41,6 +41,7 @@ const Level2Categories = React.lazy(
 const SubCategories = React.lazy(
   () => import("../pages/categories/SubCategories"),
 );
+const BrandManagement = React.lazy(() => import("../pages/BrandManagement"));
 const CategoryHierarchy = React.lazy(
   () => import("../pages/categories/CategoryHierarchy"),
 );
@@ -94,9 +95,7 @@ const HeroCategoriesPerPage = React.lazy(() => import("../pages/HeroCategoriesPe
 const NotificationComposer = React.lazy(
   () => import("../pages/NotificationComposer"),
 );
-const OffersManagement = React.lazy(
-  () => import("../pages/OffersManagement"),
-);
+const DiscountCampaigns = React.lazy(() => import("../pages/DiscountCampaigns"));
 const OfferSectionsManagement = React.lazy(
   () => import("../pages/OfferSectionsManagement"),
 );
@@ -129,6 +128,7 @@ const navItems = [
     ],
   },
   { label: "Products", path: "/admin/products", icon: Box, color: "amber", group: "Catalog & Growth" },
+  { label: "Brands", path: "/admin/brands", icon: Tag, color: "amber", group: "Catalog & Growth" },
   posNavItem("admin", Calculator, { color: "emerald" }),
   {
     label: "Marketing Tools",
@@ -353,6 +353,7 @@ const AdminRoutes = () => {
         <Route path="/categories/level2" element={<Level2Categories />} />
         <Route path="/categories/sub" element={<SubCategories />} />
         <Route path="/categories/hierarchy" element={<CategoryHierarchy />} />
+        <Route path="/brands" element={<BrandManagement />} />
         <Route path="/products" element={<ProductManagement />} />
         <Route path="/pos/*" element={<PosRoutes portal="admin" />} />
         <Route path="/sellers/active" element={<ActiveSellers />} />
@@ -362,7 +363,7 @@ const AdminRoutes = () => {
         <Route path="/experience-studio" element={<ContentManager />} />
         <Route path="/hero-categories" element={<HeroCategoriesPerPage />} />
         <Route path="/notifications" element={<NotificationComposer />} />
-        <Route path="/offers" element={<OffersManagement />} />
+        <Route path="/offers" element={<DiscountCampaigns />} />
         <Route path="/offer-sections" element={<OfferSectionsManagement />} />
         <Route path="/shop-by-store" element={<ShopByStoreManagement />} />
         <Route path="/coupons" element={<CouponManagement />} />

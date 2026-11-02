@@ -44,6 +44,8 @@ export const LocationProvider = ({ children }) => {
 
   // Address list for drawer UI – will be hydrated from profile API.
   const [savedAddresses, setSavedAddresses] = useState([]);
+  // true once we know the saved addresses (or that there are none / logged out)
+  const [addressesLoaded, setAddressesLoaded] = useState(false);
 
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [locationError, setLocationError] = useState(null);
@@ -73,6 +75,7 @@ export const LocationProvider = ({ children }) => {
     newLoc,
     { persist = true, updateSavedHome = false } = {},
   ) => {
+    if (newLoc && !newLoc.time) newLoc = { ...newLoc, time: getDeliveryEta() };
     setCurrentLocation(newLoc);
 
     if (updateSavedHome) {
@@ -287,7 +290,10 @@ export const LocationProvider = ({ children }) => {
 
   const refreshAddresses = useCallback(async () => {
     // Skip if user is not logged in – getProfile would 401 and trigger axios reload loop
-    if (!hasValidStoredAuthToken("auth_customer")) return;
+    if (!hasValidStoredAuthToken("auth_customer")) {
+      setAddressesLoaded(true);
+      return;
+    }
     try {
       const { data } = await customerApi.getProfile();
       const profile = data?.result ?? data?.data ?? data;
@@ -319,6 +325,8 @@ export const LocationProvider = ({ children }) => {
       );
     } catch {
       // If API fails, keep existing in-memory addresses.
+    } finally {
+      setAddressesLoaded(true);
     }
   }, []);
 
@@ -379,6 +387,7 @@ export const LocationProvider = ({ children }) => {
       isLocationHydrated,
       hasLocation,
       needsLocationSetup,
+      addressesLoaded,
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -390,6 +399,7 @@ export const LocationProvider = ({ children }) => {
       isLocationHydrated,
       hasLocation,
       needsLocationSetup,
+      addressesLoaded,
     ],
   );
 

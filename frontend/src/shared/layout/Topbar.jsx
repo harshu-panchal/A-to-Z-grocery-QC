@@ -15,6 +15,7 @@ import { sellerApi } from '@/modules/seller/services/sellerApi';
 import { adminApi } from '@/modules/admin/services/adminApi';
 import { AnimatePresence, motion } from 'framer-motion';
 import NotificationPopup from './NotificationPopup';
+import { notificationPath, isExternalLink } from '@shared/utils/notificationLink';
 import StoreStatusPill from '@/modules/seller/components/StoreStatusPill';
 import ConfirmDialog from '@shared/components/ui/ConfirmDialog';
 import { toast } from 'sonner';
@@ -145,6 +146,21 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
+    // click: mark read and go to what it is about (order, return, ticket...)
+    const openNotification = (notif) => {
+        const id = notif?._id || notif?.id;
+        if (id && !notif.isRead) handleMarkAsRead(id);
+        const role = isSeller ? 'seller' : 'admin';
+        const path = notificationPath(notif, role);
+        if (path) {
+            setShowNotifications(false);
+            navigate(path); // same site, same panel
+        } else if (isExternalLink(notif, role)) {
+            window.open(notif.data.link || notif.data.deepLink, '_blank', 'noopener,noreferrer');
+            setShowNotifications(false);
+        }
+    };
+
     const handleMarkAsRead = async (id) => {
         try {
             if (!id) return;
@@ -244,6 +260,7 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
                                 onMarkAsRead={handleMarkAsRead}
                                 onMarkAllAsRead={handleMarkAllAsRead}
                                 onClose={() => setShowNotifications(false)}
+                                onOpen={openNotification}
                             />
                         )}
                     </AnimatePresence>

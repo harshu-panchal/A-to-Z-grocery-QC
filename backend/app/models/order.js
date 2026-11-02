@@ -42,6 +42,15 @@ const orderSchema = new mongoose.Schema(
         },
         variantSlot: String,
         image: String,
+        // Discount campaign that priced this line (seller-funded): the
+        // regular unit price, the campaign, and ₹ off per unit.
+        originalPrice: Number,
+        campaignId: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "DiscountCampaign",
+          default: undefined,
+        },
+        campaignDiscount: Number,
       },
     ],
     address: {

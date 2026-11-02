@@ -20,6 +20,8 @@ import {
  */
 function printHtmlElement(element, title = 'Tax Invoice') {
     if (!element) return;
+    // paper as tall as the invoice (A4 width), not a full A4 sheet
+    const pageHeightMm = Math.ceil((element.scrollHeight * 190) / Math.max(1, element.scrollWidth)) + 16;
     const iframe = document.createElement('iframe');
     iframe.style.position = 'fixed';
     iframe.style.right = '0';
@@ -47,7 +49,7 @@ function printHtmlElement(element, title = 'Tax Invoice') {
             ${styles}
             <style>
                 @page {
-                    size: A4 portrait;
+                    size: 210mm ${pageHeightMm}mm;
                     margin: 8mm 10mm;
                 }
                 @media print {
@@ -234,9 +236,10 @@ const AdminInvoiceModal = ({ isOpen, onClose, order }) => {
             });
 
             const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const pdfWidth = pdf.internal.pageSize.getWidth();
+            // page as tall as the invoice itself (A4 width), not a fixed A4 sheet
+            const pdfWidth = 210;
             const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+            const pdf = new jsPDF({ unit: 'mm', format: [pdfWidth, pdfHeight], orientation: pdfHeight >= pdfWidth ? 'p' : 'l' });
 
             pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
             pdf.save(`Invoice_${invoiceId}.pdf`);

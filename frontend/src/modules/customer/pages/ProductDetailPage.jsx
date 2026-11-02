@@ -1,3 +1,4 @@
+import { timeLeft } from '@shared/utils/campaignUi';
 import { useState, useEffect } from 'react';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -303,6 +304,11 @@ const ProductDetailPage = () => {
                                 </span>
                             )}
                         </div>
+                        {product.campaign && timeLeft(product.campaign.endAt) && (
+                            <p className="-mt-3 mb-5 text-sm font-bold text-red-500">
+                                {product.campaign.name}: sale ends in {timeLeft(product.campaign.endAt)}
+                            </p>
+                        )}
 
                         <p className="text-slate-600 text-lg leading-relaxed mb-6 font-medium max-w-2xl">
                             {product.description || "Fresh and premium quality product sourced directly from local vendors."}

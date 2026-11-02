@@ -1,69 +1,69 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useLocation } from "../../context/LocationContext";
 import LocationDrawer from "./LocationDrawer";
 
-/** Per-tab only — survives refresh, cleared when the tab/window is closed. */
-const SESSION_CONFIRMED_KEY = "customer_location_prompt_confirmed";
-
-const readSessionConfirmed = () => {
+/** Has the visitor already allowed location for this site? (no prompt needed) */
+async function locationAlreadyAllowed() {
   try {
-    return sessionStorage.getItem(SESSION_CONFIRMED_KEY) === "1";
+    if (!navigator.permissions?.query) return false;
+    const status = await navigator.permissions.query({ name: "geolocation" });
+    return status.state === "granted";
   } catch {
     return false;
   }
-};
-
-const writeSessionConfirmed = () => {
-  try {
-    sessionStorage.setItem(SESSION_CONFIRMED_KEY, "1");
-  } catch {
-    // ignore quota / private-mode errors
-  }
-};
+}
 
 /**
- * Ask for delivery location once per browser tab:
- * - New tab → prompt
- * - Refresh in the same tab → do not prompt (session still active)
- * Always prompt if no usable location is stored yet.
+ * Ask for the delivery location only when we really don't have one:
+ * 1. a location is already saved (kept 30 days) -> use it, no popup
+ * 2. logged in with saved addresses -> use the first (default) address
+ * 3. location already allowed in the browser -> use the current location quietly
+ * 4. otherwise -> show the "choose location" popup
+ * The customer can always change it from the location pill in the header.
  */
 const LocationSetupGate = () => {
-  const { isLocationHydrated, needsLocationSetup } = useLocation();
-  const [confirmedThisSession, setConfirmedThisSession] = useState(
-    readSessionConfirmed,
-  );
+  const { isLocationHydrated, needsLocationSetup, savedAddresses, addressesLoaded, updateLocation, refreshLocation } = useLocation();
   const [isOpen, setIsOpen] = useState(false);
+  const tried = useRef(false);
 
   useEffect(() => {
-    if (!isLocationHydrated) return;
-    if (needsLocationSetup || !confirmedThisSession) {
-      setIsOpen(true);
-    }
-  }, [isLocationHydrated, needsLocationSetup, confirmedThisSession]);
+    if (!isLocationHydrated || !needsLocationSetup || !addressesLoaded || tried.current) return;
+    tried.current = true;
+    (async () => {
+      const saved = (savedAddresses || []).find((a) => a.location && Number.isFinite(a.location.lat) && Number.isFinite(a.location.lng));
+      if (saved) {
+        updateLocation({
+          name: saved.address || saved.label,
 
-  const mustChoose = needsLocationSetup || !confirmedThisSession;
+          latitude: saved.location.lat,
+          longitude: saved.location.lng,
+        });
+        return;
+      }
+      if (await locationAlreadyAllowed()) {
+        const res = await refreshLocation();
+        if (res?.ok) return;
+      }
+      setIsOpen(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLocationHydrated, needsLocationSetup, addressesLoaded, savedAddresses]);
+
+  // a location got set (picked, saved address, or GPS): close the popup
+  useEffect(() => {
+    if (!needsLocationSetup) setIsOpen(false);
+  }, [needsLocationSetup]);
 
   const handleClose = (result) => {
-    if (result?.confirmed) {
-      writeSessionConfirmed();
-      setConfirmedThisSession(true);
+    if (result?.confirmed || !needsLocationSetup) {
       setIsOpen(false);
       return;
     }
-    if (mustChoose) {
-      setIsOpen(true);
-    }
+    setIsOpen(true); // still no location: keep asking
   };
 
-  if (!isOpen && !mustChoose) return null;
-
-  return (
-    <LocationDrawer
-      isOpen={isOpen}
-      onClose={handleClose}
-      required={mustChoose}
-    />
-  );
+  if (!isOpen) return null;
+  return <LocationDrawer isOpen={isOpen} onClose={handleClose} required={needsLocationSetup} />;
 };
 
 export default LocationSetupGate;

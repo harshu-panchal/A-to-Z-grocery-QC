@@ -28,6 +28,8 @@ import metricsRoute from "./metricsRoutes.js";
 import authOtpRoute from "../modules/otp/otp.routes.js";
 import { adminPosRouter, sellerPosRouter } from "./posRoutes.js";
 import { adminStaffRouter, sellerStaffRouter, staffAuthRouter } from "./staffRoutes.js";
+import { brandRouter, adminBrandRouter } from "./brandRoutes.js";
+import { adminCampaignRouter, sellerCampaignRouter, publicCampaignRouter } from "./campaignRoutes.js";
 
 import express from "express";
 
@@ -52,6 +54,13 @@ const setupRoutes = (app) => {
     router.use("/admin/staff", adminStaffRouter);
     router.use("/seller/staff", sellerStaffRouter);
     router.use("/staff", staffAuthRouter); // staff login + their own profile
+    // Brand list for the product form, and the admin's brand management
+    router.use("/admin/brands", adminBrandRouter);
+    router.use("/brands", brandRouter);
+    // Discount campaigns (seller-funded sales), ahead of /admin and /seller too.
+    router.use("/admin/campaigns", adminCampaignRouter);
+    router.use("/seller/campaigns", sellerCampaignRouter);
+    router.use("/campaigns", publicCampaignRouter);
     router.use("/admin", adminRoute);
     router.use("/seller", sellerRoute);
     router.use("/settings", settingsRoute);

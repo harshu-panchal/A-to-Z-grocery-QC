@@ -23,6 +23,11 @@ jest.unstable_mockModule("../app/models/category.js", () => ({
   },
 }));
 
+// no discount campaign running
+jest.unstable_mockModule("../app/services/campaign/campaignPricing.js", () => ({
+  getCampaignPriceIndex: jest.fn().mockResolvedValue(new Map()),
+  campaignLinePrice: jest.fn(() => null),
+}));
 jest.unstable_mockModule("../app/services/finance/financeSettingsService.js", () => ({
   getOrCreateFinanceSettings: mockGetOrCreateFinanceSettings,
 }));

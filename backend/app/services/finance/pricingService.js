@@ -20,6 +20,7 @@ import {
   roundCurrency,
 } from "../../utils/money.js";
 import { getOrCreateFinanceSettings } from "./financeSettingsService.js";
+import { getCampaignPriceIndex, campaignLinePrice } from "../campaign/campaignPricing.js";
 
 function toObjectIdString(value) {
   if (!value) return "";
@@ -327,6 +328,8 @@ export async function hydrateOrderItems(
   const products = await productQuery;
 
   const productMap = new Map(products.map((product) => [String(product._id), product]));
+  // Seller-funded campaign prices, read fresh: this is where money is decided.
+  const campaignIndex = enforceServerPricing ? await getCampaignPriceIndex({ fresh: true }) : null;
 
   return orderItems.map((item) => {
     const productId = String(item.product || item.productId || item._id || item.id);
@@ -362,8 +365,11 @@ export async function hydrateOrderItems(
         ? resolvedVariant.sellingPrice || resolvedVariant.mrp || product.sellingPrice || product.mrp
         : product.sellingPrice || product.mrp,
     );
+    const campaignLine = enforceServerPricing
+      ? campaignLinePrice(campaignIndex, productId, resolvedVariant, serverUnitPrice)
+      : null;
     const inferredUnitPrice = enforceServerPricing
-      ? serverUnitPrice
+      ? campaignLine?.price ?? serverUnitPrice
       : normalizeLinePrice(item.price) || serverUnitPrice;
 
     return {
@@ -376,6 +382,13 @@ export async function hydrateOrderItems(
       sellerId: String(product.sellerId),
       variantSku: rawVariantSku || "",
       variantName: resolvedVariant ? String(resolvedVariant?.name || "").trim() : "",
+      ...(campaignLine
+        ? {
+            originalPrice: serverUnitPrice,
+            campaignId: campaignLine.campaignId,
+            campaignDiscount: campaignLine.campaignDiscount,
+          }
+        : {}),
     };
   });
 }

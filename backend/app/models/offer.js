@@ -15,6 +15,13 @@ const offerSchema = new mongoose.Schema(
       type: String,
       trim: true,
     },
+    // Linked coupon: the real discount. When set, `code` mirrors the
+    // coupon's code and the card hides while the coupon can't be used.
+    couponId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Coupon",
+      default: null,
+    },
     style: {
       type: String,
       enum: ["blue", "green", "orange"],

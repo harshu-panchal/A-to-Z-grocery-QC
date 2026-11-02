@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
-import { Plus, Trash2, Barcode, FileText, ArrowRightCircle, ScanLine } from "lucide-react";
+import { Plus, Trash2, Barcode, FileText, ArrowRightCircle, ScanLine, Pencil } from "lucide-react";
 import PageHeader from "@shared/components/ui/PageHeader";
 import Button from "@shared/components/ui/Button";
 import Badge from "@shared/components/ui/Badge";
@@ -65,7 +65,10 @@ export function PosEntries({ portal, type }) {
                 {isPurchase && <td className="p-3">{e.billNo || "-"}</td>}
                 <td className="p-3 text-right font-bold">{rupees(e.total)}</td>
                 <td className="p-3"><Badge variant={e.status === "draft" ? "warning" : "success"}>{e.status}</Badge></td>
-                <td className="p-3 text-right">{(e.status === "draft" || (!isPurchase && e.status !== "converted")) && <IconBtn danger title="Delete" onClick={(ev) => remove(ev, e)}><Trash2 size={15} /></IconBtn>}</td>
+                <td className="p-3 text-right">
+                  {isPurchase && e.status === "completed" && <IconBtn title="Edit purchase" onClick={(ev) => { ev.stopPropagation(); navigate(`/${portal}/pos/purchases/${e._id}?edit=1`); }}><Pencil size={15} /></IconBtn>}
+                  {(e.status === "draft" || (!isPurchase && e.status !== "converted")) && <IconBtn danger title="Delete" onClick={(ev) => remove(ev, e)}><Trash2 size={15} /></IconBtn>}
+                </td>
               </tr>
             ))}
             {!data.items.length && <tr><td colSpan={7} className="p-10 text-center text-slate-500">Nothing here yet.</td></tr>}
@@ -86,7 +89,9 @@ const emptyLine = (row, type) => ({
   name: row ? `${row.name}` : "",
   quantity: 1,
   ...(type === "purchase"
-    ? { purchasePrice: row?.purchaseRate || 0, gstRate: row?.gstRate || 0, gstMode: "exclusive", mrp: row?.mrp || 0, sellingPrice: row?.price || 0, wholesalePrice: row?.wholesalePrice || 0, barcode: row?.barcode || "", hsnCode: row?.hsnCode || "", batch: "", expiry: "", updatePrices: false, currentStock: row?.stock }
+    ? { purchasePrice: row?.purchaseRate || 0, gstRate: row?.gstRate || 0, gstMode: "exclusive", mrp: row?.mrp || 0, sellingPrice: row?.price || 0, wholesalePrice: row?.wholesalePrice || 0, barcode: row?.barcode || "", hsnCode: row?.hsnCode || "", batch: "", expiry: "", currentStock: row?.stock,
+        // no price yet (e.g. a product staff added): this purchase sets its prices
+        ...(row?.productId && !(Number(row?.price) > 0) && !(Number(row?.mrp) > 0) ? { updatePrices: true, newPrices: true } : { updatePrices: false }) }
     : { price: row?.price || 0, mrp: row?.mrp || 0, gstRate: row?.gstRate || 0, hsnCode: row?.hsnCode || "" }),
 });
 
@@ -118,7 +123,10 @@ export function PosEntryEditor({ portal }) {
   const [lines, setLines] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [busy, setBusy] = useState(false);
-  const locked = entry && entry.status !== "draft";
+  // a completed purchase opens read-only; "Edit purchase" unlocks it
+  const [editing, setEditing] = useState(() => params.get("edit") === "1");
+  const [reloadKey, setReloadKey] = useState(0);
+  const locked = entry && entry.status !== "draft" && !editing;
 
   const loadSuppliers = useCallback(() => api.suppliers({ limit: 200 }).then((d) => setSuppliers(d.items || [])).catch(() => {}), [api]);
   useEffect(() => { loadSuppliers(); }, [loadSuppliers]);
@@ -147,7 +155,7 @@ export function PosEntryEditor({ portal }) {
       });
       setLines((d.lines || []).map((l) => ({ ...l, key: `${Math.random()}` })));
     }).catch((err) => toast.error(apiError(err)));
-  }, [api, id, isNew]);
+  }, [api, id, isNew, reloadKey]);
 
   // supplier picked -> fill party name/GSTIN
   useEffect(() => {
@@ -174,7 +182,7 @@ export function PosEntryEditor({ portal }) {
   const [rows, setRows] = useState([]);
   useEffect(() => {
     if (!q.trim()) return undefined;
-    const t = setTimeout(() => api.searchProducts({ search: q, limit: 10 }).then(setRows).catch(() => setRows([])), 250);
+    const t = setTimeout(() => api.searchProducts({ search: q, limit: 10, includeUnpriced: 1 }).then(setRows).catch(() => setRows([])), 250);
     return () => clearTimeout(t);
   }, [q, api]);
   const addRow = useCallback((row) => {
@@ -193,7 +201,7 @@ export function PosEntryEditor({ portal }) {
     const id = String(product?._id || "");
     if (!id) return;
     try {
-      const found = await api.searchProducts({ search: product.name, limit: 50 });
+      const found = await api.searchProducts({ search: product.name, limit: 50, includeUnpriced: 1 });
       const mine = (found || []).filter((r) => String(r.productId) === id);
       if (!mine.length) {
         toast.info("Product saved. Search for it to add it to this purchase.");
@@ -211,7 +219,7 @@ export function PosEntryEditor({ portal }) {
   const onCode = async (code) => {
     if (locked) return;
     try {
-      const found = await api.searchProducts({ barcode: code });
+      const found = await api.searchProducts({ barcode: code, includeUnpriced: 1 });
       if (found?.length === 1) {
         addRow(found[0]);
         toast.success(`${found[0].name} +1`, { id: "entry-scan" });
@@ -261,6 +269,8 @@ export function PosEntryEditor({ portal }) {
   };
 
   const complete = async () => {
+    const noPrice = lines.find((l) => l.newPrices && !(Number(l.sellingPrice) > 0) && !(Number(l.mrp) > 0));
+    if (noPrice) { toast.error(`Enter the MRP / selling price for "${noPrice.name}${noPrice.variantName ? ` (${noPrice.variantName})` : ""}": it has no price yet`); return; }
     const linked = lines.filter((l) => l.productId).length;
     if (!window.confirm(`Complete this purchase? Stock will be added for ${linked} linked item(s)${form.supplierId ? " and the supplier's balance updated" : ""}. This can't be undone.`)) return;
     const saved = await save({ silent: true });
@@ -272,6 +282,26 @@ export function PosEntryEditor({ portal }) {
       setLines((ls) => ls.map((l) => (l.productId && l.currentStock != null ? { ...l, currentStock: Number(l.currentStock) + (Number(l.quantity) || 0), stockAdded: true } : l)));
       loadHistory();
       toast.success("Purchase completed, stock added");
+    } catch (err) {
+      toast.error(apiError(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // save changes to a completed purchase: only the difference moves stock / supplier balance / GST
+  const saveRevision = async () => {
+    if (!lines.length) { toast.error("Add at least one item"); return; }
+    if (lines.some((l) => !l.name || !(Number(l.quantity) > 0))) { toast.error("Every line needs a name and quantity"); return; }
+    if (!window.confirm("Save changes to this completed purchase? Stock, the supplier's balance and the GST register will be adjusted by the difference.")) return;
+    setBusy(true);
+    try {
+      const saved = await api.revisePurchase(entry._id, body());
+      setEntry(saved);
+      setEditing(false);
+      setReloadKey((k) => k + 1);
+      loadHistory();
+      toast.success("Purchase updated: stock and supplier balance adjusted");
     } catch (err) {
       toast.error(apiError(err));
     } finally {
@@ -307,12 +337,18 @@ export function PosEntryEditor({ portal }) {
         actions={<>
           {isPurchase && <Button variant="outline" onClick={labels}><Barcode size={15} className="mr-1" /> Labels</Button>}
           {!isPurchase && <Button variant="outline" onClick={quotationPdf}><FileText size={15} className="mr-1" /> PDF</Button>}
-          {!locked && <Button variant="outline" onClick={() => save()} isLoading={busy}>Save draft</Button>}
-          {isPurchase && !locked && <Button onClick={complete} isLoading={busy}>Complete purchase</Button>}
+          {(isNew || entry?.status === "draft") && <Button variant="outline" onClick={() => save()} isLoading={busy}>Save draft</Button>}
+          {isPurchase && entry?.status === "draft" && <Button onClick={complete} isLoading={busy}>Complete purchase</Button>}
+          {isPurchase && entry?.status === "completed" && !editing && <Button variant="outline" onClick={() => setEditing(true)}><Pencil size={15} className="mr-1" /> Edit purchase</Button>}
+          {isPurchase && entry?.status === "completed" && editing && <>
+            <Button variant="outline" onClick={() => { setEditing(false); setReloadKey((k) => k + 1); }} disabled={busy}>Cancel</Button>
+            <Button onClick={saveRevision} isLoading={busy}>Save changes</Button>
+          </>}
           {!isPurchase && entry?.status !== "converted" && <Button onClick={convert}><ArrowRightCircle size={15} className="mr-1" /> Convert to bill</Button>}
         </>}
       />
-      {locked && <p className="rounded-xl bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">{isPurchase ? "This purchase is completed; stock and supplier balance were updated." : "This quotation was converted to a bill."}</p>}
+      {locked && <p className="rounded-xl bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700">{isPurchase ? `This purchase is completed; stock and supplier balance were updated.${entry?.editCount ? ` Edited ${entry.editCount} time(s).` : ""}` : "This quotation was converted to a bill."}</p>}
+      {editing && entry?.status === "completed" && <p className="rounded-xl bg-amber-50 px-4 py-2 text-sm font-medium text-amber-800">Editing a completed purchase. Only the changes are applied: stock goes up or down by the difference, the supplier's balance and the GST register follow the new bill.</p>}
 
       <div className="grid gap-3 rounded-2xl border border-slate-100 bg-white p-4 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
         {isPurchase ? (
@@ -377,7 +413,10 @@ export function PosEntryEditor({ portal }) {
                 <tr key={l.key} className="border-t border-slate-100 align-top">
                   <td className="p-2">
                     {l.productId ? <p className="font-medium text-slate-800">{l.name}{l.variantName ? ` (${l.variantName})` : ""}</p> : <input className={cn(inputCls, "h-8 px-2")} disabled={locked} placeholder="Item name" value={l.name} onChange={(e) => setLine(l.key, { name: e.target.value })} />}
-                    {isPurchase && l.productId && !locked && (
+                    {isPurchase && l.newPrices && !locked && (
+                      <p className="mt-1 rounded bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700">New product: prices will be saved</p>
+                    )}
+                    {isPurchase && l.productId && !locked && !l.newPrices && (
                       <label className="mt-1 flex items-center gap-1 text-[11px] text-slate-500"><input type="checkbox" checked={Boolean(l.updatePrices)} onChange={(e) => setLine(l.key, { updatePrices: e.target.checked })} /> update product prices</label>
                     )}
                     {isPurchase && l.productId && l.currentStock != null && (

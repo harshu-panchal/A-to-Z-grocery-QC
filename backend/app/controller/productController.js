@@ -2,6 +2,9 @@ import mongoose from "mongoose";
 import { validateProductBarcodes } from "../services/inventory/barcodeService.js";
 import Product from "../models/product.js";
 import { attachStoreStatus } from "../services/seller/storeStatus.js";
+import { applyCampaignPrices } from "../services/campaign/campaignPricing.js";
+import { resolveProductBrand } from "../services/brandService.js";
+import { isSellerStaff, lockStaffPriceAndStock } from "../services/staff/staffProductLock.js";
 import Order from "../models/order.js";
 import Cart from "../models/cart.js";
 import crypto from "crypto";
@@ -701,7 +704,8 @@ export const getProducts = async (req, res) => {
       : await fetchFn();
 
     if (!isInternalPricingVisible(req) && Array.isArray(result?.items)) {
-      result.items = result.items
+      const priced = await applyCampaignPrices(result.items);
+      result.items = priced
         .map(stripInternalPricingFields)
         .map(applyDateVisibilityFilter);
     }
@@ -883,6 +887,10 @@ export const createProduct = async (req, res) => {
   try {
     const role = String(req.user?.role || "").toLowerCase();
     const productData = { ...req.body };
+    if (productData.brand !== undefined) {
+      // the brand list's exact spelling (a new name is added for the admin to confirm)
+      productData.brand = await resolveProductBrand(productData.brand, { role: req.user?.role === "admin" ? "admin" : "seller", userId: req.user?.id, userName: req.staff?.name });
+    }
     stripRestrictedModerationFields(productData);
 
     if (role === "admin") {
@@ -999,11 +1007,14 @@ export const createProduct = async (req, res) => {
       }));
     }
 
+    // Staff: prices and stock come from purchase entries, not this form
+    const staffLocked = isSellerStaff(req);
+    if (staffLocked) lockStaffPriceAndStock(productData, null);
     normalizeWholesalePrices(productData);
-    fillMissingMrp(productData);
+    if (!staffLocked) fillMissingMrp(productData);
     const identityError = validateVariantIdentity(productData);
     if (identityError) return handleResponse(res, 400, identityError);
-    const priceError = validateProductPrices(productData);
+    const priceError = staffLocked ? null : validateProductPrices(productData);
     if (priceError) return handleResponse(res, 400, priceError);
 
     const barcodeError = await validateProductBarcodes(productData, productData.sellerId);
@@ -1096,6 +1107,10 @@ export const updateProduct = async (req, res) => {
     const sellerId = req.user.id;
     const role = String(req.user.role || "").toLowerCase();
     const productData = { ...req.body };
+    if (productData.brand !== undefined) {
+      // the brand list's exact spelling (a new name is added for the admin to confirm)
+      productData.brand = await resolveProductBrand(productData.brand, { role: req.user?.role === "admin" ? "admin" : "seller", userId: req.user?.id, userName: req.staff?.name });
+    }
     stripRestrictedModerationFields(productData);
     if (Object.prototype.hasOwnProperty.call(productData, "sellerId")) {
       delete productData.sellerId;
@@ -1234,11 +1249,18 @@ export const updateProduct = async (req, res) => {
       }));
     }
 
+    // Staff: prices and stock stay as stored (purchase entries change them)
+    const staffLocked = isSellerStaff(req);
+    if (staffLocked) {
+      delete productData.status;
+      const lockError = lockStaffPriceAndStock(productData, product.toObject());
+      if (lockError) return handleResponse(res, 400, lockError);
+    }
     normalizeWholesalePrices(productData);
-    fillMissingMrp(productData);
+    if (!staffLocked) fillMissingMrp(productData);
     const identityError = validateVariantIdentity(productData);
     if (identityError) return handleResponse(res, 400, identityError);
-    const priceError = validateProductPrices(productData, product);
+    const priceError = staffLocked ? null : validateProductPrices(productData, product);
     if (priceError) return handleResponse(res, 400, priceError);
 
     const barcodeError = await validateProductBarcodes(productData, product.sellerId, product._id);
@@ -1436,6 +1458,7 @@ export const getProductById = async (req, res) => {
 
     let payload = normalizeProductDocumentModeration(product, "detail");
     if (!isInternalPricingVisible(req)) {
+      [payload] = await applyCampaignPrices([payload]);
       payload = stripInternalPricingFields(payload);
       payload = applyDateVisibilityFilter(payload);
     }

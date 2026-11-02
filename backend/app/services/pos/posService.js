@@ -118,9 +118,13 @@ export function toPosRows(product) {
  * POS catalogue search. Seller POS: own products only (it's their stock).
  * Admin POS: every seller's products, optionally filtered by seller.
  * Exact barcode/SKU matches are returned as `exact` rows.
+ * includeUnpriced (purchase entry): also finds hidden products that have no
+ * price yet (added by staff), so the purchase can give them price and stock.
  */
-export async function searchPosProducts(pos, { search = "", sellerId, categoryId, limit = 40, barcode } = {}) {
-  const query = { status: "active" };
+export async function searchPosProducts(pos, { search = "", sellerId, categoryId, limit = 40, barcode, includeUnpriced } = {}) {
+  const query = String(includeUnpriced) === "1"
+    ? { $and: [{ $or: [{ status: "active" }, { status: "inactive", sellingPrice: { $not: { $gt: 0 } }, mrp: { $not: { $gt: 0 } } }] }] }
+    : { status: "active" };
   if (!pos.isAdmin) query.sellerId = pos.owner;
   else if (sellerId && isObjectId(sellerId)) query.sellerId = sellerId;
   if (categoryId && isObjectId(categoryId)) query.categoryId = categoryId;

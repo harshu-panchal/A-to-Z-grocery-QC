@@ -64,6 +64,7 @@ export function makePosApi(portal) {
     updateEntry: (id, body) => put(`/purchase-entries/${id}`, body),
     deleteEntry: (id) => del(`/purchase-entries/${id}`),
     completePurchase: (id) => post(`/purchase-entries/${id}/complete`),
+    revisePurchase: (id, body) => put(`/purchase-entries/${id}/revise`, body),
     // GST register
     gstRegister: (params) => get("/gst-register", params),
     createGst: (body) => post("/gst-register", body),

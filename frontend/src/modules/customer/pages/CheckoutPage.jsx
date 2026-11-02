@@ -143,6 +143,8 @@ const CheckoutPage = () => {
   const [orderId, setOrderId] = useState(null);
   const [pricingPreview, setPricingPreview] = useState(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  // why the server couldn't price this order (shop closed, out of area...)
+  const [previewError, setPreviewError] = useState("");
   const postOrderNavigateRef = useRef(null);
   const previewDebounceRef = useRef(null);
   const [currentAddress, setCurrentAddress] = useState({
@@ -727,9 +729,16 @@ const CheckoutPage = () => {
         const res = await customerApi.checkoutPreview(buildPreviewPayload());
         if (res.data?.success) {
           setPricingPreview(res.data.result?.breakdown ?? null);
+          setPreviewError("");
+        } else {
+          setPricingPreview(null);
+          setPreviewError(res.data?.message || "We couldn't work out the charges for this order.");
         }
       } catch (error) {
         console.error("Checkout preview failed", error);
+        // don't leave old figures (or a fake ₹0 bill) on screen
+        setPricingPreview(null);
+        setPreviewError(error.response?.data?.message || "We couldn't work out the charges right now. Please try again.");
       } finally {
         setIsPreviewLoading(false);
       }
@@ -1121,6 +1130,7 @@ const CheckoutPage = () => {
               cartTotal={cartTotal}
               selectedCoupon={selectedCoupon}
               discountAmount={displayDiscountAmount}
+              previewError={previewError}
             />
 
             {/* Payment Selector */}
@@ -1140,7 +1150,7 @@ const CheckoutPage = () => {
                 amount={finalAmountToPay}
                 onSuccess={handlePlaceOrder}
                 isLoading={isPlacingOrder || isPreviewLoading || !pricingPreview}
-                text={finalAmountToPay === 0 ? "Place Free Order" : "Order Now"}
+                text={pricingPreview && finalAmountToPay === 0 ? "Place Free Order" : "Order Now"}
               />
               <p className="text-center text-xs text-slate-500 mt-3">
                 🔒 Secure checkout
@@ -1159,11 +1169,14 @@ const CheckoutPage = () => {
               {isPreviewLoading || !pricingPreview ? "…" : `₹${Number(finalAmountToPay || 0).toLocaleString("en-IN")}`}
             </span>
           </div>
+          {previewError && !isPreviewLoading && (
+            <p className="mb-2 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700">{previewError}</p>
+          )}
           <SlideToPay
             amount={finalAmountToPay}
             onSuccess={handlePlaceOrder}
             isLoading={isPlacingOrder || isPreviewLoading || !pricingPreview}
-            text={finalAmountToPay === 0 ? "Place Free Order" : "Slide to Pay"}
+            text={pricingPreview && finalAmountToPay === 0 ? "Place Free Order" : "Slide to Pay"}
           />
         </div>
       </div>

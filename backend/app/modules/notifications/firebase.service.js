@@ -66,6 +66,9 @@ export async function sendFCM(tokens = [], payload = {}) {
   const messaging = getMessagingClient();
   const data = toStringMap(payload.data || {});
   const link = data.link || payload?.data?.link || "";
+  // In-app paths ("/seller/orders?...") are opened by the app's service worker
+  // on the site the user is on (live or localhost). Only a full external web
+  // address is handed to Firebase to open directly.
   const resolvedLink = isWebLink(link) ? link : "";
   const title = payload.title || "";
   const body = payload.body || payload.message || "";

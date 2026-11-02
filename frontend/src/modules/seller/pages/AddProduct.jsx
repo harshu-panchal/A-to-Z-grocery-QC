@@ -1,3 +1,5 @@
+import BrandSelect from "@shared/components/BrandSelect";
+import { useAuth } from "@core/context/AuthContext";
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import Button from "@shared/components/ui/Button";
@@ -31,6 +33,9 @@ import VariantBarcodeField, { variantBarcodeError } from "../../pos/VariantBarco
  */
 const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel } = {}) => {
   const navigate = useNavigate();
+  // Staff fill only name / code / rack / barcode; prices and stock come from purchase entries
+  const { user } = useAuth();
+  const staffMode = Boolean(user?.isStaff);
   const goBack = () => (embedded ? onCancel?.() : navigate(-1));
   const [modalTab, setModalTab] = useState("general");
   const [isSaving, setIsSaving] = useState(false);
@@ -133,6 +138,10 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
 
   const handleSave = async () => {
     // Validate required fields
+    if (!String(formData.brand || "").trim()) {
+      toast.error("Choose a brand, or type a new one for the admin to approve");
+      return;
+    }
     if (!formData.name) {
       toast.error("Please fill in the Product Title");
       return;
@@ -151,12 +160,12 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
     const noPriceIndex = (formData.variants || []).findIndex(
       (v) => !(Number(v.sellingPrice) > 0 || Number(v.mrp) > 0),
     );
-    if (noPriceIndex !== -1) {
+    if (!staffMode && noPriceIndex !== -1) {
       setModalTab("variants");
       toast.error(`Enter a selling price${formData.variants.length > 1 ? ` (variant ${noPriceIndex + 1})` : ""}`);
       return;
     }
-    if (isBlank(firstVariant.stock)) {
+    if (!staffMode && isBlank(firstVariant.stock)) {
       toast.error("Main variant must have stock (0 is allowed)");
       return;
     }
@@ -355,6 +364,11 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
           ))}
 
           <div className="pt-8 px-4">
+            {staffMode ? (
+            <div className="p-4 bg-amber-50 rounded-md border border-amber-200 text-[11px] font-semibold text-amber-700">
+              Price and stock are added by the owner in POS purchase entry. The product goes live after that.
+            </div>
+            ) : (
             <div className="p-4 bg-primary/5 rounded-md border border-primary/20">
               <p className="text-[9px] font-bold text-primary uppercase tracking-widest mb-1">
                 Status
@@ -369,6 +383,7 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                 <option value="inactive">DRAFT</option>
               </select>
             </div>
+            )}
           </div>
         </div>
 
@@ -426,13 +441,10 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                   <label className="text-[10px] sm:text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
                     Brand Name
                   </label>
-                  <input
+                  <BrandSelect
                     value={formData.brand}
-                    onChange={(e) =>
-                      setFormData({ ...formData, brand: e.target.value })
-                    }
-                    className="w-full px-4 py-2.5 bg-slate-100 border-none rounded-md text-sm font-semibold outline-none ring-primary/5 focus:ring-2 transition-all"
-                    placeholder="e.g. Amul"
+                    onChange={(brand) => setFormData({ ...formData, brand })}
+                    allowUnbranded={false}
                   />
                 </div>
                 <div className="space-y-1.5 flex flex-col">
@@ -581,7 +593,7 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                   <div
                     key={variant.id}
                     className="p-4 bg-slate-50 rounded-2xl border border-slate-100 grid grid-cols-1 md:grid-cols-12 gap-4 items-end group relative">
-                    <div className="col-span-12 md:col-span-2 space-y-1">
+                    <div className={cn("col-span-12 space-y-1", staffMode ? "md:col-span-6" : "md:col-span-2")}>
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
                         Variant Name
                       </label>
@@ -604,6 +616,7 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                         className="w-full px-3 py-2 bg-white ring-1 ring-slate-200 border-none rounded-xl text-xs font-semibold outline-none focus:ring-2 focus:ring-primary/10"
                       />
                     </div>
+                    {!staffMode && (<>
                     <div className="col-span-6 md:col-span-2 space-y-1">
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
                         MRP <span className="normal-case tracking-normal font-medium text-slate-400">(optional)</span>
@@ -715,7 +728,8 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                       />
                     </div>
                     )}
-                    <div className="col-span-5 md:col-span-1 space-y-1">
+                    </>)}
+                    <div className={cn("col-span-5 space-y-1", staffMode ? "md:col-span-5" : "md:col-span-1")}>
                       <label className="text-xs font-bold text-slate-600 uppercase tracking-widest ml-1">
                         Product Code
                       </label>
@@ -737,7 +751,7 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                         onChange={(code) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((v, idx) => (idx === index ? { ...v, barcode: code } : v)) }))}
                         rack={variant.rackCode}
                         wholesale={variant.wholesalePrice}
-                        onWholesaleChange={(val) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((v, idx) => (idx === index ? { ...v, wholesalePrice: val } : v)) }))}
+                        onWholesaleChange={staffMode ? undefined : (val) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((v, idx) => (idx === index ? { ...v, wholesalePrice: val } : v)) }))}
                         onRackChange={(rack) => setFormData((prev) => ({ ...prev, variants: prev.variants.map((v, idx) => (idx === index ? { ...v, rackCode: rack } : v)) }))}
                         otherCodes={formData.variants.filter((_, idx) => idx !== index).map((v) => v.barcode)}
                         printName={`${formData.name || ""}${variant.name ? ` ${variant.name}` : ""}`}

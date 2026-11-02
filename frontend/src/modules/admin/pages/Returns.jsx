@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import Badge from "@shared/components/ui/Badge";
 import Button from "@shared/components/ui/Button";
@@ -151,6 +152,20 @@ const Returns = () => {
     setSelectedReturn(ret);
     setIsDetailsOpen(true);
   };
+
+  // opened from a notification (?tab=Requested&orderId=...): that tab, that return
+  const [searchParams, setSearchParams] = useSearchParams();
+  const linkedTab = searchParams.get("tab");
+  const linkedOrderId = searchParams.get("orderId");
+  useEffect(() => {
+    if (!linkedTab && !linkedOrderId) return;
+    if (linkedTab && tabs.includes(linkedTab)) setActiveTab(linkedTab);
+    if (linkedOrderId && !returns.length) return; // wait for the list
+    const match = linkedOrderId && returns.find((r) => String(r.orderId) === linkedOrderId);
+    if (match) openDetails(match);
+    setSearchParams((p) => { p.delete("tab"); p.delete("orderId"); return p; }, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [linkedTab, linkedOrderId, returns]);
 
   const handleApprove = async (orderId) => {
     try {

@@ -1,3 +1,4 @@
+import { notificationPath } from "@shared/utils/notificationLink";
 import { useEffect } from "react";
 import {
   Bell,
@@ -140,7 +141,11 @@ const Notifications = () => {
                   key={notification._id}
                   variants={itemVariants}
                   layout
-                  onClick={() => !notification.isRead && handleMarkAsRead(notification._id)}>
+                  onClick={() => {
+                    if (!notification.isRead) handleMarkAsRead(notification._id);
+                    const path = notificationPath(notification, "delivery");
+                    if (path) navigate(path);
+                  }}>
                   <Card
                     className={`p-4 border-none shadow-sm relative overflow-hidden transition-all duration-300 cursor-pointer ${!notification.isRead
                       ? "bg-brand-50/50 border-l-4 border-l-brand-500 shadow-brand-500/5 scale-[1.02]"

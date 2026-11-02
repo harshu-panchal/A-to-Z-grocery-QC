@@ -2,6 +2,7 @@ import Wishlist from "../models/wishlist.js";
 import Product from "../models/product.js";
 import handleResponse from "../utils/helper.js";
 import { getApprovedOrLegacyFilter } from "../services/productModerationService.js";
+import { applyCampaignPrices } from "../services/campaign/campaignPricing.js";
 
 const CUSTOMER_VISIBLE_PRODUCT_MATCH = {
   status: "active",
@@ -35,7 +36,9 @@ async function fetchPopulatedWishlist(wishlistId) {
     })
     .lean();
 
-  return sanitizeWishlist(wishlist);
+  const clean = sanitizeWishlist(wishlist);
+  if (clean && Array.isArray(clean.products)) clean.products = await applyCampaignPrices(clean.products);
+  return clean;
 }
 
 /* ===============================

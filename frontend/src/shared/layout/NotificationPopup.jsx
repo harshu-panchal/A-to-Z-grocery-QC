@@ -2,7 +2,7 @@ import { motion } from 'framer-motion';
 import { HiOutlineBell, HiOutlineCheckCircle, HiOutlineExclamationCircle, HiOutlineClock } from 'react-icons/hi2';
 import { cn } from '@/lib/utils';
 
-const NotificationPopup = ({ notifications, onMarkAsRead, onMarkAllAsRead, onClose }) => {
+const NotificationPopup = ({ notifications, onMarkAsRead, onMarkAllAsRead, onClose, onOpen }) => {
     return (
         <motion.div
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -48,7 +48,7 @@ const NotificationPopup = ({ notifications, onMarkAsRead, onMarkAllAsRead, onClo
                                         "p-4 hover:bg-slate-50 transition-all cursor-pointer group relative",
                                         !notif.isRead && "bg-primary/[0.02]"
                                     )}
-                                    onClick={() => !notif.isRead && onMarkAsRead(notificationId)}
+                                    onClick={() => (onOpen ? onOpen(notif) : !notif.isRead && onMarkAsRead(notificationId))}
                                 >
                                     {!notif.isRead && (
                                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary rounded-r-full" />

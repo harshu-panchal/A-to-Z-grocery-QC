@@ -1,3 +1,4 @@
+import { notificationPath, isExternalLink } from "@shared/utils/notificationLink";
 import { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
@@ -94,11 +95,11 @@ const NotificationsPage = () => {
             <div className="px-4 space-y-3 max-w-2xl mx-auto">
                 {notifications.length > 0 ? (
                     notifications.map((notification) => {
-                        const link = String(notification.data?.link || notification.data?.deepLink || "").trim();
-                        const open = link.startsWith("/")
-                            ? () => navigate(link)
-                            : /^https?:\/\//i.test(link)
-                                ? () => window.open(link, "_blank", "noopener,noreferrer")
+                        const path = notificationPath(notification, "customer");
+                        const open = path
+                            ? () => navigate(path)
+                            : isExternalLink(notification, "customer")
+                                ? () => window.open(notification.data.link || notification.data.deepLink, "_blank", "noopener,noreferrer")
                                 : undefined;
                         return (
                         <div

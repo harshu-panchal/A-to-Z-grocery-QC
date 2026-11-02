@@ -132,6 +132,8 @@ export const customerApi = {
 
   // Public offers
   getOffers: () => getWithDedupe("/offers"),
+  // no client cache: a sale must appear the moment it starts
+  getCampaigns: (params) => getWithDedupe("/campaigns", params, { ttl: 0 }),
   // Offer sections (category → products, banner + side image)
   getOfferSections: (params) => getWithDedupe("/offer-sections", params),
 
