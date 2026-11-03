@@ -20,6 +20,14 @@ const DEFAULT_DELIVERY_ETA = "12-15 mins";
 // address indefinitely.
 const LOCATION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
+const stripCountryCode = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  if (raw.startsWith("+91")) return raw.replace(/^\+91[\s-]*/, "");
+  if (raw.startsWith("91") && raw.length >= 12) return raw.replace(/^91[\s-]*/, "");
+  return raw;
+};
+
 /** Legacy seed address — treat as unset so users are prompted again. */
 const LEGACY_HARDCODED_ADDRESS =
   "214, Rajshri Palace Colony, Pipliyahana, Indore, Madhya Pradesh 452018, India";
@@ -319,7 +327,7 @@ export const LocationProvider = ({ children }) => {
               ? { lat: addr.location.lat, lng: addr.location.lng }
               : null,
           placeId: typeof addr?.placeId === "string" ? addr.placeId : null,
-          phone: profile?.phone ?? "",
+          phone: stripCountryCode(profile?.phone),
           isCurrent: idx === 0,
         })),
       );
