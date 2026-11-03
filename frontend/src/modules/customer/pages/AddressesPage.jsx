@@ -54,6 +54,14 @@ const extractAddressDetails = (result) => {
     return { locality, city, state, pincode };
 };
 
+const stripCountryCode = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (raw.startsWith('+91')) return raw.replace(/^\+91[\s-]*/, '');
+    if (raw.startsWith('91') && raw.length >= 12) return raw.replace(/^91[\s-]*/, '');
+    return raw;
+};
+
 const PlacesAutocompleteInput = ({ isLoaded, value, onChange, onPlaceSelected, id, placeholder, maxLength }) => {
     const inputRef = useRef(null);
     const autocompleteInstance = useRef(null);
@@ -130,10 +138,10 @@ const AddressesPage = () => {
                     city: addr.city,
                     state: addr.state,
                     pincode: addr.pincode,
-                    phone: profile?.phone ?? '',
+                    phone: stripCountryCode(profile?.phone),
                     isDefault: idx === 0
                 }));
-                return { addresses: formatted, rawAddresses: raw, profileName: profile?.name ?? '', profilePhone: profile?.phone ?? '' };
+                return { addresses: formatted, rawAddresses: raw, profileName: profile?.name ?? '', profilePhone: stripCountryCode(profile?.phone) };
             } catch {
                 return { addresses: [], rawAddresses: [], profileName: '', profilePhone: '' };
             }
@@ -463,7 +471,7 @@ const AddressesPage = () => {
         setEditForm({
             type: (addr.type || 'Home').toLowerCase(),
             name: addr.name ?? '',
-            phone: addr.phone ?? '',
+            phone: stripCountryCode(addr.phone),
             address: addr.address ?? '',
             landmark: addr.landmark ?? '',
             city: addr.city ?? '',
