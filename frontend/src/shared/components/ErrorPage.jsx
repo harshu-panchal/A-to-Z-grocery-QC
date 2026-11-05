@@ -6,6 +6,8 @@ const ErrorPage = () => {
     const error = useRouteError();
     const navigate = useNavigate();
     const isDev = import.meta.env.DEV;
+    const path = window.location.pathname;
+    const homePath = path.startsWith('/admin') ? '/admin' : path.startsWith('/seller') ? '/seller' : '/';
 
     return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6 font-sans">
@@ -43,7 +45,7 @@ const ErrorPage = () => {
                         >
                             <ChevronLeft size={20} /> Go Back
                         </Button>
-                        <Link to="/" className="w-full">
+                        <Link to={homePath} className="w-full">
                             <Button 
                                 variant="outline"
                                 className="w-full h-14 rounded-2xl border-slate-200 text-slate-600 font-bold gap-2"

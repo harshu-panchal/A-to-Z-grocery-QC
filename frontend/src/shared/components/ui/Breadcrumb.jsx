@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ChevronRight, Home } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@core/context/AuthContext';
 
 /**
  * Segment -> readable label overrides, covering admin + seller route
@@ -82,6 +83,8 @@ function formatSegment(segment) {
  */
 const Breadcrumb = ({ items, className }) => {
     const location = useLocation();
+    const { role } = useAuth();
+    const homePath = role === 'admin' ? '/admin' : (role === 'seller' ? '/seller' : '/');
 
     const trail =
         items ||
@@ -101,7 +104,7 @@ const Breadcrumb = ({ items, className }) => {
             aria-label="Breadcrumb"
             className={cn('flex items-center gap-1.5 text-xs font-medium text-slate-500', className)}
         >
-            <Link to="/" className="flex items-center hover:text-slate-700 transition-colors">
+            <Link to={homePath} className="flex items-center hover:text-slate-700 transition-colors">
                 <Home className="h-3.5 w-3.5" />
             </Link>
             {trail.map((crumb, idx) => {
