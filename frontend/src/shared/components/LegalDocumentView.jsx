@@ -58,7 +58,8 @@ const LegalDocumentView = ({
     if (window.history.state && window.history.state.idx > 0) {
       navigate(-1);
     } else {
-      navigate("/");
+      const path = window.location.pathname;
+      navigate(path.startsWith('/admin') ? '/admin' : path.startsWith('/seller') ? '/seller' : '/');
     }
   };
 

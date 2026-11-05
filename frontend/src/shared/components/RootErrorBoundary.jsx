@@ -49,7 +49,10 @@ const RootErrorBoundary = () => {
                     </button>
 
                     <button
-                        onClick={() => navigate('/')}
+                        onClick={() => {
+                            const p = window.location.pathname;
+                            navigate(p.startsWith('/admin') ? '/admin' : p.startsWith('/seller') ? '/seller' : '/');
+                        }}
                         className="w-full bg-white border-2 border-gray-100 hover:border-gray-200 text-gray-700 font-semibold py-3 px-6 rounded-xl transition-all flex items-center justify-center gap-2"
                     >
                         <Home className="w-5 h-5" />

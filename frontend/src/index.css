@@ -53,8 +53,10 @@
 
 /* Nothing may make the page scroll sideways (wide header, banners, large
    phone font in the app's WebView). `clip` where supported: unlike `hidden`
-   it does not turn html/body into scroll containers, so sticky bars keep working. */
-html,
+   it does not turn html/body into scroll containers, so sticky bars keep working.
+   Fallback `overflow-x: hidden` is on body ONLY — applying it to both html
+   and body turns body into a scroll container on browsers without `clip`,
+   which can break vertical touch-scrolling on mobile. */
 body {
   max-width: 100%;
   overflow-x: hidden;
@@ -62,6 +64,7 @@ body {
 @supports (overflow-x: clip) {
   html,
   body {
+    max-width: 100%;
     overflow-x: clip;
   }
 }
