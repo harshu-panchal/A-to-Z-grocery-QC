@@ -278,17 +278,17 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
       const reader = new FileReader();
       reader.onloadend = () => {
         if (type === "main") {
-          setFormData({
-            ...formData,
+          setFormData((prev) => ({
+            ...prev,
             mainImage: reader.result,
             mainImageFile: file
-          });
+          }));
         } else {
-          setFormData({
-            ...formData,
-            galleryImages: [...formData.galleryImages, reader.result],
-            galleryFiles: [...(formData.galleryFiles || []), file]
-          });
+          setFormData((prev) => ({
+            ...prev,
+            galleryImages: [...prev.galleryImages, reader.result],
+            galleryFiles: [...(prev.galleryFiles || []), file]
+          }));
         }
       };
       reader.readAsDataURL(file);

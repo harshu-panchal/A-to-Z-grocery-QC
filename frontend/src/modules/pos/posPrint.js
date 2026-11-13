@@ -184,6 +184,7 @@ export function printBarcodeLabels(items, settings = {}) {
     @page { size: ${s.width}mm ${s.height}mm; margin: 0; }
     body { margin: 0; font-family: Arial, sans-serif; }
     .lbl { width: ${s.width}mm; height: ${s.height}mm; padding: 1mm 1.5mm; overflow: hidden; page-break-after: always; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .lbl:last-child { page-break-after: auto; }
     .lbl svg { max-width: 100%; height: auto; }
     .nm { font-size: ${s.fontSize}px; font-weight: 700; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .pr { font-size: ${s.fontSize}px; display: flex; gap: 6px; }`;
