@@ -448,13 +448,13 @@ const ProductManagement = () => {
       const reader = new FileReader();
       reader.onloadend = () => {
         if (type === "main") {
-          setFormData({ ...formData, mainImage: reader.result, mainImageFile: file });
+          setFormData((prev) => ({ ...prev, mainImage: reader.result, mainImageFile: file }));
         } else {
-          setFormData({
-            ...formData,
-            galleryImages: [...formData.galleryImages, reader.result],
-            galleryFiles: [...(formData.galleryFiles || []), file]
-          });
+          setFormData((prev) => ({
+            ...prev,
+            galleryImages: [...prev.galleryImages, reader.result],
+            galleryFiles: [...(prev.galleryFiles || []), file],
+          }));
         }
       };
       reader.readAsDataURL(file);
@@ -477,6 +477,30 @@ const ProductManagement = () => {
         galleryFiles: isNew ? (prev.galleryFiles || []).filter((_, i) => i !== fileIndex) : prev.galleryFiles,
       };
     });
+
+  const replaceGalleryImage = (e, index) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData((prev) => {
+          const images = [...(prev.galleryImages || [])];
+          const files = [...(prev.galleryFiles || [])];
+          const oldIsNew = String(images[index]).startsWith("data:");
+          const fileIndex = images.slice(0, index).filter((img) => String(img).startsWith("data:")).length;
+          images[index] = reader.result;
+          if (oldIsNew) {
+            files[fileIndex] = file;
+          } else {
+            files.push(file);
+          }
+          return { ...prev, galleryImages: images, galleryFiles: files };
+        });
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = "";
+  };
 
   const exportProducts = () => {
     console.log("Exporting products...");
@@ -1186,21 +1210,21 @@ const ProductManagement = () => {
                         <label className="text-xs font-medium text-slate-700">Main Cover Photo</label>
                         <div className="flex flex-col md:flex-row items-start gap-6">
                           <div className="w-40 aspect-square rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center group hover:border-primary hover:bg-primary/5 transition-all cursor-pointer overflow-hidden relative">
-                            <input type="file" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={(e) => handleImageUpload(e, "main")} />
                             {formData.mainImage ? (
                               <>
                               <img src={formData.mainImage} alt="Main Preview" className="w-full h-full object-cover" />
-                              {formData.mainImageFile && (
-                                <button type="button" onClick={removeNewMainImage} aria-label="Remove selected cover photo" className="absolute top-1.5 right-1.5 z-20 grid h-7 w-7 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500">
-                                  <HiOutlineXMark className="h-4 w-4" />
-                                </button>
-                              )}
+                              <button type="button" onClick={removeNewMainImage} aria-label="Remove selected cover photo" className="absolute top-1.5 right-1.5 z-20 grid h-7 w-7 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500">
+                                <HiOutlineXMark className="h-4 w-4" />
+                              </button>
                               </>
                             ) : (
+                              <>
+                              <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={(e) => handleImageUpload(e, "main")} />
                               <div className="flex flex-col items-center">
                                 <HiOutlinePhoto className="h-8 w-8 text-slate-300" />
                                 <p className="text-[10px] text-slate-400 font-bold mt-2">UPLOAD</p>
                               </div>
+                              </>
                             )}
                           </div>
                         </div>
@@ -1212,16 +1236,18 @@ const ProductManagement = () => {
                           {(formData.galleryImages || []).slice(0, 4).map((img, idx) => (
                             <div key={`${img}-${idx}`} className="aspect-square rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 overflow-hidden relative">
                               <img src={img} alt={`Gallery ${idx + 1}`} className="w-full h-full object-cover" />
-                              {String(img).startsWith("data:") && (
-                                <button type="button" onClick={() => removeGalleryImageAt(idx)} aria-label={`Remove gallery photo ${idx + 1}`} className="absolute top-1 right-1 z-20 grid h-6 w-6 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500">
-                                  <HiOutlineXMark className="h-3.5 w-3.5" />
-                                </button>
-                              )}
+                              <button type="button" onClick={() => removeGalleryImageAt(idx)} aria-label={`Remove gallery photo ${idx + 1}`} className="absolute top-1 right-1 z-20 grid h-6 w-6 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500">
+                                <HiOutlineXMark className="h-3.5 w-3.5" />
+                              </button>
+                              <label className="absolute bottom-1 inset-x-1 z-20 grid place-items-center rounded-md bg-black/50 py-1 cursor-pointer hover:bg-black/70 transition-colors">
+                                <span className="text-[8px] font-bold text-white uppercase tracking-wider">Change</span>
+                                <input type="file" accept="image/*" className="sr-only" onChange={(e) => replaceGalleryImage(e, idx)} />
+                              </label>
                             </div>
                           ))}
                           {Array.from({ length: Math.max(0, 4 - (formData.galleryImages || []).length) }).map((_, idx) => (
                             <div key={`upload-${idx}`} className="aspect-square rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center group hover:border-primary hover:bg-primary/5 transition-all cursor-pointer overflow-hidden relative">
-                              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={(e) => handleImageUpload(e, "gallery")} />
+                              <input type="file" accept="image/*" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={(e) => handleImageUpload(e, "gallery")} />
                               <div className="flex flex-col items-center">
                                 <HiOutlinePhoto className="h-7 w-7 text-slate-300" />
                                 <p className="text-[10px] text-slate-400 font-bold mt-2">UPLOAD</p>
