@@ -307,6 +307,22 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
       galleryFiles: (prev.galleryFiles || []).filter((_, i) => i !== index),
     }));
 
+  const replaceGalleryImage = (e, index) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData((prev) => ({
+          ...prev,
+          galleryImages: prev.galleryImages.map((img, i) => (i === index ? reader.result : img)),
+          galleryFiles: (prev.galleryFiles || []).map((f, i) => (i === index ? file : f)),
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = "";
+  };
+
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-12">
       {/* Header */}
@@ -870,11 +886,6 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                 </label>
                 <div className="flex flex-col md:flex-row items-start gap-6">
                   <div className="w-48 aspect-square rounded-lg border-2 border-dashed border-slate-200 bg-slate-50 flex flex-col items-center justify-center group hover:border-primary hover:bg-primary/5 transition-all cursor-pointer overflow-hidden relative">
-                    <input
-                      type="file"
-                      className="absolute inset-0 opacity-0 cursor-pointer z-10"
-                      onChange={(e) => handleImageUpload(e, "main")}
-                    />
                     {formData.mainImage ? (
                       <>
                         <img
@@ -891,6 +902,12 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                       </>
                     ) : (
                       <>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                          onChange={(e) => handleImageUpload(e, "main")}
+                        />
                         <HiOutlinePhoto className="h-10 w-10 text-slate-200 group-hover:text-primary transition-colors" />
                         <p className="text-[9px] font-bold text-slate-600 mt-2 uppercase tracking-widest group-hover:text-primary">
                           Upload Cover
@@ -906,9 +923,15 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                       We show this image on the search page and the main
                       store listing. Make sure it is clear and bright.
                     </p>
-                    <button className="text-[10px] font-black text-primary uppercase tracking-wider hover:underline">
-                      Pick from Library
-                    </button>
+                    {formData.mainImage ? (
+                      <button type="button" onClick={removeMainImage} className="text-[10px] font-black text-red-500 uppercase tracking-wider hover:underline">
+                        Remove Cover Photo
+                      </button>
+                    ) : (
+                      <button className="text-[10px] font-black text-primary uppercase tracking-wider hover:underline">
+                        Pick from Library
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -936,11 +959,21 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                             className="absolute top-1 right-1 z-20 grid h-6 w-6 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500">
                             <HiOutlineXMark className="h-3.5 w-3.5" />
                           </button>
+                          <label className="absolute bottom-1 inset-x-1 z-20 grid place-items-center rounded-md bg-black/50 py-1 cursor-pointer hover:bg-black/70 transition-colors">
+                            <span className="text-[8px] font-bold text-white uppercase tracking-wider">Change</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="sr-only"
+                              onChange={(e) => replaceGalleryImage(e, i - 1)}
+                            />
+                          </label>
                         </>
                       ) : (
                         <>
                           <input
                             type="file"
+                            accept="image/*"
                             className="absolute inset-0 opacity-0 cursor-pointer z-10"
                             onChange={(e) => handleImageUpload(e, "gallery")}
                           />
