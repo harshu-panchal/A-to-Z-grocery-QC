@@ -9,7 +9,7 @@ import Seller from "../../models/seller.js";
  * Times are India time.
  */
 
-export const STORE_FIELDS = "shopName storeOpen businessHours workingDays vacation";
+export const STORE_FIELDS = "shopName storeOpen businessHours workingDays autoStoreSchedule vacation";
 const DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const CLOSING_SOON_MIN = 60;
 
@@ -71,6 +71,21 @@ function minutesToClose(seller, now) {
   return days.includes(day) ? 24 * 60 - minutes + closeMin : null;
 }
 
+/** Is the current IST time within the auto-schedule open window on a working day? */
+function autoScheduleOpen(seller, now) {
+  const sched = seller.autoStoreSchedule;
+  if (!sched?.enabled) return null;
+  const openMin = toMinutes(sched.openTime);
+  const closeMin = toMinutes(sched.closeTime);
+  if (openMin == null || closeMin == null) return null;
+  const days = Array.isArray(seller.workingDays) && seller.workingDays.length ? seller.workingDays : [0, 1, 2, 3, 4, 5, 6];
+  const { day, minutes } = istParts(now);
+  if (!days.includes(day)) return false;
+  if (openMin < closeMin) return minutes >= openMin && minutes < closeMin;
+  // overnight: e.g. 18:00–02:00
+  return minutes >= openMin || minutes < closeMin;
+}
+
 export function computeStoreStatus(seller, now = new Date()) {
   if (!seller) return { isOpen: true };
   if (vacationActive(seller, now)) {
@@ -79,6 +94,22 @@ export function computeStoreStatus(seller, now = new Date()) {
       isOpen: false,
       reason: "vacation",
       message: String(v.message || "").trim() || (v.to ? `Closed until ${istDateLabel(v.to)}` : "Closed for now"),
+    };
+  }
+  const auto = autoScheduleOpen(seller, now);
+  if (auto !== null) {
+    if (!auto) {
+      const sched = seller.autoStoreSchedule;
+      const hint = nextOpening({ ...seller, businessHours: { open: sched.openTime, close: sched.closeTime } }, now);
+      return { isOpen: false, reason: "auto-closed", message: hint || "Closed now" };
+    }
+    const sched = seller.autoStoreSchedule;
+    const left = minutesToClose({ ...seller, businessHours: { open: sched.openTime, close: sched.closeTime } }, now);
+    return {
+      isOpen: true,
+      closingSoon: left != null && left > 0 && left <= CLOSING_SOON_MIN
+        ? `Accepting orders until ${formatTime(sched.closeTime)}`
+        : "",
     };
   }
   if (seller.storeOpen === false) {

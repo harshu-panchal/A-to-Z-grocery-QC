@@ -258,6 +258,17 @@ export const updateSellerProfile = async (req, res) => {
       if (!days.length) return handleResponse(res, 400, "Pick at least one working day");
       seller.workingDays = days.sort();
     }
+    if (req.body.autoStoreSchedule !== undefined) {
+      const a = req.body.autoStoreSchedule || {};
+      const enabled = a.enabled === true || a.enabled === "true";
+      const openTime = String(a.openTime || "09:00");
+      const closeTime = String(a.closeTime || "22:00");
+      if (enabled && (!HHMM.test(openTime) || !HHMM.test(closeTime))) {
+        return handleResponse(res, 400, "Enter valid auto open and close time");
+      }
+      if (enabled && openTime === closeTime) return handleResponse(res, 400, "Auto open and close time can't be the same");
+      seller.autoStoreSchedule = { enabled, openTime, closeTime };
+    }
     if (req.body.vacation !== undefined) {
       const v = req.body.vacation || {};
       const enabled = v.enabled === true || v.enabled === "true";

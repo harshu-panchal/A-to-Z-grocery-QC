@@ -27,6 +27,9 @@ export default function StoreTimings({ profile }) {
       open: profile.businessHours?.open || "09:00",
       close: profile.businessHours?.close || "22:00",
       days: Array.isArray(profile.workingDays) && profile.workingDays.length ? profile.workingDays : [0, 1, 2, 3, 4, 5, 6],
+      autoEnabled: Boolean(profile.autoStoreSchedule?.enabled),
+      autoOpen: profile.autoStoreSchedule?.openTime || profile.businessHours?.open || "09:00",
+      autoClose: profile.autoStoreSchedule?.closeTime || profile.businessHours?.close || "22:00",
       vacation: Boolean(profile.vacation?.enabled),
       from: dateInput(profile.vacation?.from),
       to: dateInput(profile.vacation?.to),
@@ -46,6 +49,7 @@ export default function StoreTimings({ profile }) {
       const body = {
         businessHours: { open: form.open, close: form.close },
         workingDays: form.days,
+        autoStoreSchedule: { enabled: form.autoEnabled, openTime: form.autoOpen, closeTime: form.autoClose },
         vacation: { enabled: form.vacation, from: form.from || null, to: form.to || null, message: form.message },
       };
       await sellerApi.updateProfile(body);
@@ -92,6 +96,33 @@ export default function StoreTimings({ profile }) {
             </button>
           ))}
         </div>
+      </div>
+
+      <div className="space-y-3 border-t border-slate-100 pt-4">
+        <h3 className="text-sm font-black uppercase tracking-wide text-slate-900">Auto open &amp; close</h3>
+        <p className="text-xs text-slate-500">When enabled, the store automatically opens and closes at the set times on working days. The manual Open/Closed switch is ignored.</p>
+        <label className="flex items-center gap-3 cursor-pointer group select-none">
+          <span className="relative flex items-center">
+            <input type="checkbox" checked={form.autoEnabled} onChange={(e) => set({ autoEnabled: e.target.checked })} className="sr-only peer" />
+            <span className="w-9 h-5 bg-slate-200 peer-checked:bg-blue-500 rounded-full transition-colors" />
+            <span className="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4" />
+          </span>
+          <span className="text-sm font-semibold text-slate-700 group-hover:text-slate-900 transition-colors">
+            {form.autoEnabled ? "Auto mode is ON" : "Auto mode is OFF (manual control)"}
+          </span>
+        </label>
+        {form.autoEnabled && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="space-y-1 text-xs font-bold text-slate-600">
+              Auto open at
+              <input type="time" className={inputCls} value={form.autoOpen} onChange={(e) => set({ autoOpen: e.target.value })} />
+            </label>
+            <label className="space-y-1 text-xs font-bold text-slate-600">
+              Auto close at
+              <input type="time" className={inputCls} value={form.autoClose} onChange={(e) => set({ autoClose: e.target.value })} />
+            </label>
+          </div>
+        )}
       </div>
 
       <div className="space-y-3 border-t border-slate-100 pt-4">

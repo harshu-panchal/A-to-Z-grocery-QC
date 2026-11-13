@@ -142,6 +142,11 @@ const sellerSchema = new mongoose.Schema(
       close: { type: String, default: "22:00" },
     },
     workingDays: { type: [Number], default: [0, 1, 2, 3, 4, 5, 6] }, // 0 = Sunday
+    autoStoreSchedule: {
+      enabled: { type: Boolean, default: false },
+      openTime: { type: String, default: "09:00" },
+      closeTime: { type: String, default: "22:00" },
+    },
     vacation: {
       enabled: { type: Boolean, default: false },
       from: Date,
