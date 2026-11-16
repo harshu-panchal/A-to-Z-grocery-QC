@@ -260,6 +260,10 @@ const ProductManagement = () => {
                 formData.galleryFiles.forEach((file) => data.append('galleryImages', file));
             }
 
+            const existingGalleryUrls = (formData.galleryImages || [])
+              .filter((img) => typeof img === "string" && !String(img).startsWith("data:"));
+            data.append("keepGalleryImages", JSON.stringify(existingGalleryUrls));
+
             await adminApi.updateProduct(editingItem._id, data);
             toast.success('Product updated successfully');
             setIsProductModalOpen(false);

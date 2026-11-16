@@ -13,6 +13,7 @@ import { useLocation as useAppLocation } from '../context/LocationContext';
 import { applyCloudinaryTransform } from '@/core/utils/imageUtils';
 import { useSettings } from '@core/context/SettingsContext';
 import Lottie from 'lottie-react';
+import RelatedProducts from '../components/shared/RelatedProducts';
 
 const ProductDetailPage = () => {
     const { id } = useParams();
@@ -496,6 +497,8 @@ const ProductDetailPage = () => {
                     </div>
                 </div>
             </div>
+
+            {product && <RelatedProducts product={product} className="mt-20 pt-16 border-t border-slate-100" />}
 
             {/* Mobile sticky add-to-cart bar (keeps the main action reachable while scrolling) */}
             <div className="fixed inset-x-0 bottom-16 z-[450] flex items-center gap-3 border-t border-slate-200 bg-white px-4 py-2.5 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] md:hidden">

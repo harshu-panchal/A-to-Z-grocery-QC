@@ -416,6 +416,12 @@ const ProductManagement = () => {
       }
 
       if (editingItem) {
+        const existingGalleryUrls = (formData.galleryImages || [])
+          .filter((img) => typeof img === "string" && !String(img).startsWith("data:"));
+        data.append("keepGalleryImages", JSON.stringify(existingGalleryUrls));
+      }
+
+      if (editingItem) {
         const response = await sellerApi.updateProduct(editingItem._id || editingItem.id, data);
         const approvalStatus = response?.data?.result?.approvalStatus;
         if (approvalStatus === "pending") {
@@ -1213,9 +1219,10 @@ const ProductManagement = () => {
                             {formData.mainImage ? (
                               <>
                               <img src={formData.mainImage} alt="Main Preview" className="w-full h-full object-cover" />
-                              <button type="button" onClick={removeNewMainImage} aria-label="Remove selected cover photo" className="absolute top-1.5 right-1.5 z-20 grid h-7 w-7 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500">
-                                <HiOutlineXMark className="h-4 w-4" />
-                              </button>
+                              <label className="absolute bottom-1 inset-x-1 z-20 grid place-items-center rounded-md bg-black/50 py-1 cursor-pointer hover:bg-black/70 transition-colors">
+                                <span className="text-[8px] font-bold text-white uppercase tracking-wider">Change</span>
+                                <input type="file" accept="image/*" className="sr-only" onChange={(e) => handleImageUpload(e, "main")} />
+                              </label>
                               </>
                             ) : (
                               <>

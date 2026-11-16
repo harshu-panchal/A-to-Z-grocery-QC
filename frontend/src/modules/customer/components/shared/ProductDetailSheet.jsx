@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 import { sanitizeHtml } from "@core/utils/sanitizeHtml";
 import { isProductOutOfStock, isVariantOutOfStock } from "../../utils/stock";
+import RelatedProducts from "./RelatedProducts";
 
 const AccordionItem = ({ title, children, id, icon, expandedSections, toggleSection }) => {
     const isOpen = expandedSections.includes(id);
@@ -162,15 +163,21 @@ const ProductDetailSheet = () => {
         try {
             setReviewLoading(true);
             const res = await customerApi.getProductReviews(productId);
-            if (res.data.success) {
-                setReviews(res.data.results);
+            if (res.data?.success) {
+                setReviews(Array.isArray(res.data.results) ? res.data.results : []);
             }
         } catch (error) {
             console.error("Fetch reviews error:", error);
+            setReviews([]);
         } finally {
             setReviewLoading(false);
         }
     };
+
+    const reviewCount = reviews.length;
+    const avgRating = reviewCount > 0
+        ? (reviews.reduce((acc, r) => acc + (Number(r.rating) || 0), 0) / reviewCount).toFixed(1)
+        : null;
 
     const handleReviewSubmit = async (e) => {
         e.preventDefault();
@@ -179,7 +186,7 @@ const ProductDetailSheet = () => {
         try {
             setIsSubmittingReview(true);
             const res = await customerApi.submitReview({
-                productId: selectedProduct.id,
+                productId: selectedProduct._id || selectedProduct.id,
                 rating: newReview.rating,
                 comment: newReview.comment
             });
@@ -380,10 +387,10 @@ const ProductDetailSheet = () => {
                             <X size={18} className="text-gray-700" strokeWidth={2.5} />
                         </motion.button>
 
-                        {/* Parent flex container that holds both sides together so the whole modal scrolls */}
-                        <div className="flex w-full min-h-full">
+                        {/* Parent flex container */}
+                        <div className="flex w-full h-full">
                                 {/* Left: Image Gallery — sticky to window so it doesn't scroll out of view if you want */}
-                                <div className="relative w-[42%] lg:w-[44%] flex-shrink-0 flex flex-col min-h-full sticky top-0" style={{ background: 'linear-gradient(145deg, #f9fafb 0%, #f1f8f2 50%, #fafbfc 100%)' }}>
+                                <div className="relative w-[42%] lg:w-[44%] flex-shrink-0 flex flex-col h-full" style={{ background: 'linear-gradient(145deg, #f9fafb 0%, #f1f8f2 50%, #fafbfc 100%)' }}>
                                     {/* Top bar: discount badge, then wishlist + close on the right */}
                                     <div className="absolute top-0 left-0 right-0 flex items-center justify-between p-5 z-20">
                                         {/* Discount Badge */}
@@ -474,8 +481,8 @@ const ProductDetailSheet = () => {
                                     )}
                                 </div>
 
-                                {/* Right: Product Info (scrollable naturally) */}
-                                <div className="flex-1 flex flex-col bg-white">
+                                {/* Right: Product Info (scrollable) */}
+                                <div data-lenis-prevent data-lenis-prevent-touch className="flex-1 flex flex-col bg-white overflow-y-auto overscroll-contain">
                                     <div className="flex-1 px-7 py-6 lg:px-8 lg:py-7 space-y-3">
 
                                         {/* Top badges row */}
@@ -499,16 +506,18 @@ const ProductDetailSheet = () => {
                                                     💰 Save ₹{selectedProduct.originalPrice - selectedProduct.price}
                                                 </motion.div>
                                             )}
-                                            <motion.div
-                                                initial={{ opacity: 0, x: -10 }}
-                                                animate={{ opacity: 1, x: 0 }}
-                                                transition={{ delay: 0.2 }}
-                                                className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-[700] border border-orange-100/50"
-                                            >
-                                                <Star size={10} fill="currentColor" />
-                                                {reviews.length > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1) : '4.8'}
-                                                <span className="text-orange-400 font-medium">({reviews.length > 0 ? reviews.length : '120+'})</span>
-                                            </motion.div>
+                                            {reviewCount > 0 && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, x: -10 }}
+                                                    animate={{ opacity: 1, x: 0 }}
+                                                    transition={{ delay: 0.2 }}
+                                                    className="flex items-center gap-1 px-2.5 py-1.5 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-[700] border border-orange-100/50"
+                                                >
+                                                    <Star size={10} fill="currentColor" />
+                                                    {avgRating}
+                                                    <span className="text-orange-400 font-medium">({reviewCount})</span>
+                                                </motion.div>
+                                            )}
                                         </div>
 
                                         {/* Product Name */}
@@ -704,15 +713,27 @@ const ProductDetailSheet = () => {
                                             {/* Customer Reviews */}
                                             <AccordionItem expandedSections={expandedSections} toggleSection={toggleSection}
                                                 id="reviews" 
-                                                title={`Customer Reviews (${reviews.length > 0 ? reviews.length : '120+'})`}
+                                                title={`Customer Reviews (${reviewCount})`}
                                                 icon={<Star size={16} />}
                                             >
                                                 <div className="space-y-6 mt-2">
                                                     <div className="flex items-center justify-between mb-4">
-                                                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-primary rounded-xl text-xs font-black border border-brand-100">
-                                                            <Star size={14} fill="currentColor" />
-                                                            {reviews.length > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1) : '4.8'}
-                                                        </div>
+                                                        {reviewCount > 0 ? (
+                                                            <>
+                                                                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-primary rounded-xl text-xs font-black border border-brand-100">
+                                                                    <Star size={14} fill="currentColor" />
+                                                                    {avgRating}
+                                                                </div>
+                                                                <span className="text-[11px] font-bold text-slate-400">
+                                                                    {reviewCount} {reviewCount === 1 ? 'verified review' : 'verified reviews'}
+                                                                </span>
+                                                            </>
+                                                        ) : (
+                                                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-400 rounded-xl text-xs font-bold border border-slate-100">
+                                                                <Star size={14} className="text-slate-300" />
+                                                                <span>No ratings yet</span>
+                                                            </div>
+                                                        )}
                                                     </div>
 
                                                     {/* Review Form */}
@@ -790,6 +811,8 @@ const ProductDetailSheet = () => {
                                             </AccordionItem>
                                         </div>
 
+                                        {selectedProduct && <RelatedProducts product={selectedProduct} className="mt-6 px-2" />}
+
                                         {/* Bottom spacer */}
                                         <div className="h-6" />
                                     </div>
@@ -860,8 +883,10 @@ const ProductDetailSheet = () => {
 
                         {/* Scrollable Content */}
                         <div
+                            data-lenis-prevent
+                            data-lenis-prevent-touch
                             className={cn(
-                                "flex-1 overflow-x-hidden no-scrollbar pb-24 bg-white",
+                                "flex-1 overflow-x-hidden no-scrollbar pb-24 bg-white overscroll-contain",
                                 isExpanded ? "overflow-y-auto" : "overflow-y-hidden"
                             )}
                             onScroll={handleScroll}
@@ -910,10 +935,19 @@ const ProductDetailSheet = () => {
 
                             {/* Product Info Container */}
                             <div className="px-5 pt-2 pb-6">
-                                {/* Delivery Time Badge */}
-                                <div className="inline-flex items-center gap-1.5 bg-[#F0FDF4] border border-brand-100 text-primary px-2.5 py-1 rounded-lg text-[10px] font-black uppercase mb-3">
-                                    <Clock size={12} strokeWidth={3} />
-                                    {selectedProduct.deliveryTime || "8 Mins"}
+                                {/* Delivery Time & Rating Badges */}
+                                <div className="flex items-center gap-2 mb-3">
+                                    <div className="inline-flex items-center gap-1.5 bg-[#F0FDF4] border border-brand-100 text-primary px-2.5 py-1 rounded-lg text-[10px] font-black uppercase">
+                                        <Clock size={12} strokeWidth={3} />
+                                        {selectedProduct.deliveryTime || "8 Mins"}
+                                    </div>
+                                    {reviewCount > 0 && (
+                                        <div className="inline-flex items-center gap-1 px-2.5 py-1 bg-orange-50 text-orange-600 rounded-lg text-[10px] font-bold border border-orange-100/50">
+                                            <Star size={10} fill="currentColor" />
+                                            {avgRating}
+                                            <span className="text-orange-400 font-medium">({reviewCount})</span>
+                                        </div>
+                                    )}
                                 </div>
 
                                 <h2 className="text-xl font-black text-[#1A1A1A] leading-tight mb-2">
@@ -998,15 +1032,27 @@ const ProductDetailSheet = () => {
                                     {/* Customer Reviews */}
                                     <AccordionItem expandedSections={expandedSections} toggleSection={toggleSection}
                                         id="reviews" 
-                                        title={`Customer Reviews (${reviews.length > 0 ? reviews.length : '120+'})`}
+                                        title={`Customer Reviews (${reviewCount})`}
                                         icon={<Star size={18} strokeWidth={2.5} />}
                                     >
                                         <div className="space-y-6 mt-2">
                                             <div className="flex items-center justify-between mb-4">
-                                                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-primary rounded-xl text-xs font-black border border-brand-100">
-                                                    <Star size={16} fill="currentColor" />
-                                                    {reviews.length > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1) : '4.8'}
-                                                </div>
+                                                {reviewCount > 0 ? (
+                                                    <>
+                                                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-brand-50 text-primary rounded-xl text-xs font-black border border-brand-100">
+                                                            <Star size={16} fill="currentColor" />
+                                                            {avgRating}
+                                                        </div>
+                                                        <span className="text-[11px] font-bold text-slate-400">
+                                                            {reviewCount} {reviewCount === 1 ? 'verified review' : 'verified reviews'}
+                                                        </span>
+                                                    </>
+                                                ) : (
+                                                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 text-slate-400 rounded-xl text-xs font-bold border border-slate-100">
+                                                        <Star size={16} className="text-slate-300" />
+                                                        <span>No ratings yet</span>
+                                                    </div>
+                                                )}
                                             </div>
 
                                             {/* Review Form */}
@@ -1076,6 +1122,8 @@ const ProductDetailSheet = () => {
                                         </div>
                                     </AccordionItem>
                                 </div>
+
+                                {selectedProduct && <RelatedProducts product={selectedProduct} className="mt-4 px-1" />}
 
                                 <div className="h-24" /> {/* Bottom spacer for sticky bar */}
                             </div>

@@ -892,13 +892,10 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                           src={formData.mainImage}
                           className="w-full h-full object-cover"
                         />
-                        <button
-                          type="button"
-                          onClick={removeMainImage}
-                          aria-label="Remove cover photo"
-                          className="absolute top-1.5 right-1.5 z-20 grid h-7 w-7 place-items-center rounded-full bg-white/95 text-slate-600 shadow-md hover:bg-red-50 hover:text-red-500">
-                          <HiOutlineXMark className="h-4 w-4" />
-                        </button>
+                        <label className="absolute bottom-1 inset-x-1 z-20 grid place-items-center rounded-md bg-black/50 py-1 cursor-pointer hover:bg-black/70 transition-colors">
+                          <span className="text-[8px] font-bold text-white uppercase tracking-wider">Change</span>
+                          <input type="file" accept="image/*" className="sr-only" onChange={(e) => handleImageUpload(e, "main")} />
+                        </label>
                       </>
                     ) : (
                       <>
@@ -923,11 +920,7 @@ const AddProduct = ({ embedded = false, initialBarcode = "", onSaved, onCancel }
                       We show this image on the search page and the main
                       store listing. Make sure it is clear and bright.
                     </p>
-                    {formData.mainImage ? (
-                      <button type="button" onClick={removeMainImage} className="text-[10px] font-black text-red-500 uppercase tracking-wider hover:underline">
-                        Remove Cover Photo
-                      </button>
-                    ) : (
+                    {!formData.mainImage && (
                       <button className="text-[10px] font-black text-primary uppercase tracking-wider hover:underline">
                         Pick from Library
                       </button>

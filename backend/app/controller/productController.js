@@ -471,6 +471,7 @@ export const getProducts = async (req, res) => {
       lat,
       lng,
       includeOutOfStock,
+      boughtWith,
     } = req.query;
     const enforceRadius = isCustomerVisibilityRequest(req);
     // Customer browsing hides out-of-stock products; search opts back in to show them greyed out
@@ -614,15 +615,8 @@ export const getProducts = async (req, res) => {
     // sort=trending: products ranked by units ordered in the last 30 days
     // (cancelled orders excluded). Only products that actually sold are returned;
     // all other filters (header/category, nearby sellers, approval) still apply.
-    const fetchTrending = async () => {
-      const since = new Date(Date.now() - TRENDING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-      const ranked = await Order.aggregate([
-        { $match: { createdAt: { $gte: since }, status: { $ne: "cancelled" } } },
-        { $unwind: "$items" },
-        { $group: { _id: "$items.product", units: { $sum: "$items.quantity" } } },
-        { $sort: { units: -1 } },
-        { $limit: 300 },
-      ]);
+    const fetchRanked = async (pipeline) => {
+      const ranked = await Order.aggregate(pipeline);
       const rank = new Map(ranked.map((r, i) => [String(r._id), i]));
       if (!rank.size) return { rawProducts: [], total: 0 };
       const matched = await Product.find({
@@ -634,9 +628,41 @@ export const getProducts = async (req, res) => {
       return { rawProducts: matched.slice(skip, skip + limit), total: matched.length };
     };
 
+    const fetchTrending = () => {
+      const since = new Date(Date.now() - TRENDING_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+      return fetchRanked([
+        { $match: { createdAt: { $gte: since }, status: { $ne: "cancelled" } } },
+        { $unwind: "$items" },
+        { $group: { _id: "$items.product", units: { $sum: "$items.quantity" } } },
+        { $sort: { units: -1 } },
+        { $limit: 300 },
+      ]);
+    };
+
+    // boughtWith=<productId>: products that appeared in the same orders,
+    // ranked by how many orders they shared with it.
+    const fetchBoughtWith = () => {
+      const anchor = new mongoose.Types.ObjectId(String(boughtWith));
+      return fetchRanked([
+        { $match: { "items.product": anchor, status: { $ne: "cancelled" } } },
+        { $sort: { createdAt: -1 } },
+        { $limit: 2000 },
+        { $unwind: "$items" },
+        { $match: { "items.product": { $ne: anchor } } },
+        { $group: { _id: "$items.product", orders: { $sum: 1 } } },
+        { $sort: { orders: -1 } },
+        { $limit: 100 },
+      ]);
+    };
+
+    if (boughtWith && !mongoose.isValidObjectId(boughtWith)) {
+      return handleResponse(res, 400, "Invalid boughtWith product id");
+    }
+
     const fetchFn = async () => {
-      const [rawProducts, total] = sortKey === "trending"
-        ? await fetchTrending().then((r) => [r.rawProducts, r.total])
+      const ranked = boughtWith ? fetchBoughtWith : sortKey === "trending" ? fetchTrending : null;
+      const [rawProducts, total] = ranked
+        ? await ranked().then((r) => [r.rawProducts, r.total])
         : await Promise.all([
             Product.find(finalQuery)
               .select(PRODUCT_LIST_FIELDS)
@@ -1133,28 +1159,25 @@ export const updateProduct = async (req, res) => {
     // Handle multipart files (mainImage and galleryImages)
     const files = req.files || [];
     let failedUploads = 0;
+    const uploadedGalleryUrls = [];
+    let mainImageUploaded = false;
+
     if (files.length > 0) {
-      const galleryUrls = [];
-      const oldGalleryImages = Array.isArray(product.galleryImages) ? [...product.galleryImages] : [];
-      let gallerySeen = false;
       for (const file of files) {
         try {
           if (file.fieldname === "mainImage") {
-            // Replaces (and best-effort deletes) the previous main image
-            // via its own stored provider — a new capability; this used
-            // to leave the old image orphaned on every replace.
             const url = await replaceMedia(product.mainImage, file.buffer, "products", {
               mimeType: file.mimetype,
               resourceType: "image",
             });
             productData.mainImage = url;
+            mainImageUploaded = true;
           } else if (file.fieldname === "galleryImages") {
-            gallerySeen = true;
             const url = await uploadToCloudinary(file.buffer, "products", {
               mimeType: file.mimetype,
               resourceType: "image",
             });
-            galleryUrls.push(url);
+            uploadedGalleryUrls.push(url);
           }
         } catch (err) {
           failedUploads += 1;
@@ -1164,24 +1187,47 @@ export const updateProduct = async (req, res) => {
           });
         }
       }
-      if (galleryUrls.length > 0) {
-        productData.galleryImages = galleryUrls;
-        // The gallery field is replaced wholesale (not appended), so the
-        // entire previous set of gallery images is now orphaned — clean
-        // each one up via its own stored provider. Best-effort: a
-        // cleanup failure here doesn't affect the already-saved new URLs.
-        if (gallerySeen && oldGalleryImages.length > 0) {
-          for (const oldUrl of oldGalleryImages) {
-            deleteMediaByUrl(oldUrl).catch((err) => {
-              logger.error("Failed to clean up replaced gallery image", { scope: "updateProduct", error: err.message });
-            });
-          }
-        }
-      }
     }
 
     if (failedUploads > 0) {
       return handleResponse(res, 502, `${failedUploads} image${failedUploads > 1 ? "s" : ""} failed to upload. Please try again.`);
+    }
+
+    // Preserve existing cover image when no new one was uploaded
+    if (!mainImageUploaded) {
+      productData.mainImage = product.mainImage || "";
+    }
+
+    // Merge kept gallery images with newly uploaded ones.
+    // The frontend receives Cloudinary-transformed URLs (with resize params)
+    // but the DB stores originals, so match by stripping the transform segment.
+    const oldGalleryImages = Array.isArray(product.galleryImages) ? [...product.galleryImages] : [];
+    const keepGalleryRaw = productData.keepGalleryImages;
+    delete productData.keepGalleryImages;
+    const hasKeepField = keepGalleryRaw !== undefined;
+    const keptGalleryUrls = hasKeepField ? parseImageList(keepGalleryRaw) : [];
+
+    const stripTransform = (url) => {
+      if (!url || typeof url !== "string") return url;
+      const parts = url.split("/upload/");
+      if (parts.length !== 2) return url;
+      const after = parts[1].replace(/^[a-z]_[^/]+(,[a-z]_[^/]+)*\//, "");
+      return `${parts[0]}/upload/${after}`;
+    };
+
+    if (hasKeepField || uploadedGalleryUrls.length > 0) {
+      const keptCanonical = new Set(keptGalleryUrls.map(stripTransform));
+      const preservedUrls = oldGalleryImages.filter((url) => keptCanonical.has(stripTransform(url)));
+      productData.galleryImages = [...preservedUrls, ...uploadedGalleryUrls];
+      for (const oldUrl of oldGalleryImages) {
+        if (!keptCanonical.has(stripTransform(oldUrl))) {
+          deleteMediaByUrl(oldUrl).catch((err) => {
+            logger.error("Failed to clean up removed gallery image", { scope: "updateProduct", error: err.message });
+          });
+        }
+      }
+    } else {
+      productData.galleryImages = oldGalleryImages;
     }
 
     // Parse JSON fields
