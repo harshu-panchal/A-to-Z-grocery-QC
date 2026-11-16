@@ -185,6 +185,19 @@ describe("finance pricing flow", () => {
     expect(payout.riderPayoutTotal).toBe(45);
   });
 
+  it("pays the rider by distance in fixed-price mode too", () => {
+    const settings = {
+      deliveryPricingMode: "fixed_price",
+      fixedDeliveryFee: 20,
+      riderBasePayout: 25,
+      baseDistanceCapacityKm: 2,
+      deliveryPartnerRatePerKm: 6,
+    };
+    expect(calculateRiderPayout(1.5, settings).riderPayoutTotal).toBe(25);
+    expect(calculateRiderPayout(4.2, settings).riderPayoutTotal).toBe(25 + 3 * 6);
+    expect(calculateCustomerDeliveryFee(4.2, settings).deliveryFeeCharged).toBe(20);
+  });
+
   it("hydrates cart items from product catalog", async () => {
     mockProductFind.mockReturnValue(
       createQueryChain([

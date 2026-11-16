@@ -93,7 +93,13 @@ export async function getOrCreateFinanceSettings({ session } = {}) {
 }
 
 export async function updateDeliveryFinanceSettings(payload, { session } = {}) {
-  const normalized = normalizeFinanceSettings(payload || {});
+  // Merge onto the stored values: normalizing the payload alone filled every
+  // field it left out with DEFAULT_FINANCE_SETTINGS, so a partial update
+  // (e.g. only codEnabled) silently reset all delivery fees.
+  const currentQuery = Setting.findOne({}).lean();
+  if (session) currentQuery.session(session);
+  const current = (await currentQuery) || {};
+  const normalized = normalizeFinanceSettings({ ...current, ...(payload || {}) });
   const query = {};
   const options = { upsert: true, new: true };
   if (session) options.session = session;

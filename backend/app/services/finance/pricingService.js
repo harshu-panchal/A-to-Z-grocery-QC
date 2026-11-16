@@ -274,8 +274,6 @@ export function calculateCustomerDeliveryFee(distanceKm, deliverySettings) {
 }
 
 export function calculateRiderPayout(distanceKm, deliverySettings) {
-  const mode =
-    deliverySettings.deliveryPricingMode || DELIVERY_PRICING_MODE.DISTANCE_BASED;
   const actualDistance = Number(distanceKm || 0);
   const normalizedDistance = Number.isFinite(actualDistance)
     ? Math.max(actualDistance, 0)
@@ -285,7 +283,10 @@ export function calculateRiderPayout(distanceKm, deliverySettings) {
   const baseDistance = Math.max(Number(deliverySettings.baseDistanceCapacityKm || 0), 0);
   const perExtraKm = roundCurrency(deliverySettings.deliveryPartnerRatePerKm ?? 0);
 
-  if (mode === DELIVERY_PRICING_MODE.FIXED_PRICE || normalizedDistance <= baseDistance) {
+  // Riders are paid for the distance they ride in both modes; "fixed price"
+  // only fixes what the customer pays. Paying only the base in fixed mode
+  // under-paid long trips.
+  if (normalizedDistance <= baseDistance) {
     return {
       riderPayoutBase: riderBase,
       riderPayoutDistance: 0,

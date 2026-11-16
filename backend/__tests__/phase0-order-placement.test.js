@@ -154,6 +154,11 @@ jest.unstable_mockModule("../app/services/logger.js", () => ({
   debug: jest.fn(),
 }));
 
+const mockGetOrCreateFinanceSettings = jest.fn();
+jest.unstable_mockModule("../app/services/finance/financeSettingsService.js", () => ({
+  getOrCreateFinanceSettings: mockGetOrCreateFinanceSettings,
+}));
+
 const { placeOrderAtomic } = await import("../app/services/orderPlacementService.js");
 
 function mockLean(value) {
@@ -165,6 +170,7 @@ function mockLean(value) {
 describe("Phase 0 atomic order placement", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetOrCreateFinanceSettings.mockResolvedValue({ codEnabled: true, onlineEnabled: true });
     sequence = 0;
 
     mockCheckoutGroupSave.mockResolvedValue(true);

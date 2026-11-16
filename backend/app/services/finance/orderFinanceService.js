@@ -225,11 +225,22 @@ export async function createPendingRiderPayout(order, { session, actorId } = {})
   }
   if (order.financeFlags?.riderPayoutQueued) return null;
 
-  const amount = roundCurrency(order.paymentBreakdown?.riderPayoutTotal || 0);
+  const riderEarning = roundCurrency(order.paymentBreakdown?.riderPayoutTotal || 0);
+  // On COD the rider keeps their earning out of the cash they collect
+  // (handleCodOrderFinance records cash-in-hand as total minus earning), so
+  // the payout must cover only what the cash could not. Paying the full
+  // earning here as well paid COD riders twice.
+  const keptFromCash = order.paymentMode === "COD"
+    ? Math.min(
+      riderEarning,
+      roundCurrency(order.paymentBreakdown?.grandTotal ?? order.pricing?.total ?? 0),
+    )
+    : 0;
+  const amount = roundCurrency(Math.max(riderEarning - keptFromCash, 0));
   if (amount <= 0) {
     order.settlementStatus = {
       ...(order.settlementStatus || {}),
-      riderPayout: "NOT_APPLICABLE",
+      riderPayout: keptFromCash > 0 ? "COMPLETED" : "NOT_APPLICABLE",
     };
     return null;
   }
@@ -241,7 +252,7 @@ export async function createPendingRiderPayout(order, { session, actorId } = {})
       beneficiaryId: order.deliveryBoy,
       amount,
       createdBy: actorId || null,
-      metadata: { flow: "order_delivered" },
+      metadata: { flow: "order_delivered", riderEarning, keptFromCash },
     },
     { session },
   );

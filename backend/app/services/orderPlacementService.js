@@ -43,6 +43,7 @@ import {
   validateIdempotencyKey,
 } from "./idempotencyService.js";
 import { buildCheckoutPricingSnapshot } from "./checkoutPricingService.js";
+import { getOrCreateFinanceSettings } from "./finance/financeSettingsService.js";
 import { emitNotificationEvent } from "../modules/notifications/notification.emitter.js";
 import { NOTIFICATION_EVENTS } from "../modules/notifications/notification.constants.js";
 import * as logger from "./logger.js";
@@ -302,6 +303,22 @@ export async function placeOrderAtomic({
     ...(payload || {}),
     paymentMode: normalizePaymentMode(payload?.paymentMode),
   };
+
+  // Admin can switch COD / online off in Fees & Charges. The customer app
+  // hides the option, but an old app or a direct API call must not bypass it.
+  const financeSettings = await getOrCreateFinanceSettings();
+  const modeEnabled = normalizedPayload.paymentMode === "ONLINE"
+    ? financeSettings.onlineEnabled !== false
+    : financeSettings.codEnabled !== false;
+  if (!modeEnabled) {
+    const error = new Error(
+      normalizedPayload.paymentMode === "ONLINE"
+        ? "Online payment is currently unavailable. Please choose Cash on Delivery."
+        : "Cash on Delivery is currently unavailable. Please pay online.",
+    );
+    error.statusCode = 400;
+    throw error;
+  }
 
   if (idempotencyKey) {
     if (!validateIdempotencyKey(idempotencyKey)) {

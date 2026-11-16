@@ -110,6 +110,27 @@ export async function processPayout(payoutId, { remarks = "", adminId = null } =
       throw new Error(`Invalid payout status for processing: ${payout.status}`);
     }
 
+    // Seller money stays on hold until the return window closes, so a return
+    // can still be refunded from it. "Process all" and the batch job used to
+    // pay held payouts early because nothing checked the hold here.
+    if (payout.payoutType === PAYOUT_TYPE.SELLER) {
+      const heldOrder = await Order.findOne({
+        _id: { $in: payout.relatedOrderIds },
+        "financeFlags.sellerPayoutHeld": true,
+        returnWindowExpiresAt: { $gt: new Date() },
+      })
+        .select("orderId returnWindowExpiresAt")
+        .session(session)
+        .lean();
+      if (heldOrder) {
+        const err = new Error(
+          `Seller payout is on hold until the return window for order ${heldOrder.orderId} ends (${new Date(heldOrder.returnWindowExpiresAt).toLocaleString("en-IN")}).`,
+        );
+        err.statusCode = 409;
+        throw err;
+      }
+    }
+
     const ownerType = payoutTypeToOwnerType(payout.payoutType);
     const wallet = await getOrCreateWallet(ownerType, payout.beneficiaryId, { session });
 

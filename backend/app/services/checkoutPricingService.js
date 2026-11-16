@@ -16,6 +16,7 @@ import {
   hydrateOrderItems,
 } from "./finance/pricingService.js";
 import { computeOrderDiscount } from "./finance/couponService.js";
+import { getOrCreateFinanceSettings } from "./finance/financeSettingsService.js";
 
 function normalizeLocation(location = null) {
   const lat = Number(location?.lat);
@@ -227,14 +228,20 @@ async function computeGlobalHandlingFeeForCheckout(hydratedItems = [], { session
   const categories = await categoryQuery;
   const categoryById = new Map(categories.map((category) => [String(category._id), category]));
 
+  // Use the strategy the admin picked in Fees & Charges (it was hardcoded
+  // to "highest category fee", so the setting had no effect).
+  const settings = await getOrCreateFinanceSettings({ session });
+  const handlingFeeStrategy =
+    settings?.handlingFeeStrategy || HANDLING_FEE_STRATEGY.HIGHEST_CATEGORY_FEE;
   const handling = calculateHandlingFee(hydratedItems, {
-    handlingFeeStrategy: HANDLING_FEE_STRATEGY.HIGHEST_CATEGORY_FEE,
+    handlingFeeStrategy,
     categoryById,
   });
 
   return {
     handlingFeeCharged: Number(handling.handlingFeeCharged || 0),
     handlingCategoryUsed: handling.handlingCategoryUsed || null,
+    handlingFeeStrategy,
   };
 }
 
@@ -271,7 +278,8 @@ function applyGlobalHandlingFeeToSellerBreakdowns(
     breakdown.snapshots = breakdown.snapshots && typeof breakdown.snapshots === "object"
       ? breakdown.snapshots
       : {};
-    breakdown.snapshots.handlingFeeStrategy = HANDLING_FEE_STRATEGY.HIGHEST_CATEGORY_FEE;
+    breakdown.snapshots.handlingFeeStrategy =
+      globalHandling.handlingFeeStrategy || HANDLING_FEE_STRATEGY.HIGHEST_CATEGORY_FEE;
     breakdown.snapshots.handlingCategoryUsed = shouldCharge
       ? globalHandling.handlingCategoryUsed || {}
       : {};

@@ -136,5 +136,39 @@ describe("checkout pricing snapshot handling fee", () => {
     expect(sellerA.breakdown.handlingFeeCharged).toBe(0);
     expect(sellerB.breakdown.handlingFeeCharged).toBe(30);
   });
+
+  it("uses the handling fee strategy chosen by the admin", async () => {
+    mockProductFind.mockReturnValue(
+      createQueryChain([
+        { _id: "p1", name: "P1", sellingPrice: 0, mrp: 100, mainImage: "", headerId: "h1", sellerId: "seller-a", status: "active", variants: [] },
+        { _id: "p2", name: "P2", sellingPrice: 0, mrp: 200, mainImage: "", headerId: "h2", sellerId: "seller-a", status: "active", variants: [] },
+      ]),
+    );
+    mockCategoryFind.mockReturnValue(
+      createQueryChain([
+        { _id: "h1", name: "Header 1", adminCommissionType: "percentage", adminCommissionValue: 0, handlingFeeType: "fixed", handlingFeeValue: 20, handlingFees: 20 },
+        { _id: "h2", name: "Header 2", adminCommissionType: "percentage", adminCommissionValue: 0, handlingFeeType: "fixed", handlingFeeValue: 30, handlingFees: 30 },
+      ]),
+    );
+    mockGetOrCreateFinanceSettings.mockResolvedValue({
+      deliveryPricingMode: "fixed_price",
+      fixedDeliveryFee: 0,
+      customerBaseDeliveryFee: 0,
+      handlingFeeStrategy: "sum_of_category_fees",
+    });
+
+    const snapshot = await buildCheckoutPricingSnapshot({
+      orderItems: [
+        { product: "p1", quantity: 1 },
+        { product: "p2", quantity: 1 },
+      ],
+      address: {},
+    });
+
+    expect(snapshot.aggregateBreakdown.handlingFeeCharged).toBe(50);
+    expect(snapshot.sellerBreakdownEntries[0].breakdown.snapshots.handlingFeeStrategy).toBe(
+      "sum_of_category_fees",
+    );
+  });
 });
 

@@ -20,6 +20,7 @@ import { createFinanceAuditLog } from "../services/finance/auditLogService.js";
 import FinanceAuditLog from "../models/financeAuditLog.js";
 import Admin from "../models/admin.js";
 import Setting from "../models/setting.js";
+import { invalidate } from "../services/cacheService.js";
 import {
   financeLedgerQuerySchema,
   payoutProcessSchema,
@@ -213,6 +214,9 @@ export const updateDeliverySettingsController = async (req, res) => {
       }
     }
     const updated = await updateDeliveryFinanceSettings(validated.value);
+    // Customer checkout reads delivery fee / COD / online flags from the
+    // cached public settings; drop it so they see the new values now.
+    await invalidate("cache:platform:settings:*").catch(() => {});
     await createFinanceAuditLog({
       action: FINANCE_AUDIT_ACTION.DELIVERY_SETTINGS_UPDATED,
       actorType: OWNER_TYPE.ADMIN,

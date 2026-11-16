@@ -260,6 +260,33 @@ describe("finance order flow", () => {
     expect(mockCreatePendingPayoutForOrder).toHaveBeenCalledTimes(2);
   });
 
+  it("does not pay a COD rider again from the wallet: they keep their earning from the cash", async () => {
+    currentOrder.paymentMode = "COD";
+    currentOrder.paymentBreakdown.grandTotal = 300;
+    currentOrder.paymentBreakdown.riderPayoutTotal = 50;
+
+    const updated = await settleDeliveredOrder({ _id: "order-1" });
+
+    const riderCalls = mockCreatePendingPayoutForOrder.mock.calls.filter(
+      ([args]) => args.payoutType === "DELIVERY_PARTNER",
+    );
+    expect(riderCalls).toHaveLength(0);
+    expect(updated.settlementStatus.riderPayout).toBe("COMPLETED");
+  });
+
+  it("pays a COD rider only the part of their earning the cash could not cover", async () => {
+    currentOrder.paymentMode = "COD";
+    currentOrder.paymentBreakdown.grandTotal = 20; // mostly paid by customer wallet
+    currentOrder.paymentBreakdown.riderPayoutTotal = 50;
+
+    await settleDeliveredOrder({ _id: "order-1" });
+
+    const riderCall = mockCreatePendingPayoutForOrder.mock.calls.find(
+      ([args]) => args.payoutType === "DELIVERY_PARTNER",
+    );
+    expect(riderCall[0].amount).toBe(30);
+  });
+
   it("backfills paymentBreakdown snapshots when missing", async () => {
     currentOrder.paymentMode = "ONLINE";
     currentOrder.financeFlags = { onlinePaymentCaptured: true };

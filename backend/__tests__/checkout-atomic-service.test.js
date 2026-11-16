@@ -159,6 +159,11 @@ jest.unstable_mockModule("../app/services/logger.js", () => ({
   debug: jest.fn(),
 }));
 
+const mockGetOrCreateFinanceSettings = jest.fn();
+jest.unstable_mockModule("../app/services/finance/financeSettingsService.js", () => ({
+  getOrCreateFinanceSettings: mockGetOrCreateFinanceSettings,
+}));
+
 const { placeOrderAtomic } = await import("../app/services/orderPlacementService.js");
 
 function mockLean(value) {
@@ -170,6 +175,7 @@ function mockLean(value) {
 describe("checkout atomic service", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetOrCreateFinanceSettings.mockResolvedValue({ codEnabled: true, onlineEnabled: true });
     orderSequence = 0;
     mockCheckoutGroupSave.mockResolvedValue(true);
     mockTransactionCreate.mockResolvedValue([]);
@@ -436,5 +442,25 @@ describe("checkout atomic service", () => {
       ]),
       expect.objectContaining({ session: mockSession }),
     );
+  });
+
+  test.each([
+    ["COD", { codEnabled: false, onlineEnabled: true }, /Cash on Delivery is currently unavailable/],
+    ["ONLINE", { codEnabled: true, onlineEnabled: false }, /Online payment is currently unavailable/],
+  ])("rejects %s order when admin has switched that payment method off", async (paymentMode, settings, message) => {
+    mockGetOrCreateFinanceSettings.mockResolvedValue(settings);
+
+    await expect(
+      placeOrderAtomic({
+        customerId: "67f0000000000000000000c1",
+        payload: {
+          items: [{ product: "67f000000000000000000011", quantity: 1 }],
+          address: { city: "Indore", location: { lat: 22.7196, lng: 75.8577 } },
+          paymentMode,
+        },
+      }),
+    ).rejects.toMatchObject({ statusCode: 400, message: expect.stringMatching(message) });
+
+    expect(mockSession.startTransaction).not.toHaveBeenCalled();
   });
 });
