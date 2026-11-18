@@ -21,6 +21,7 @@ jest.unstable_mockModule("../app/models/admin.js", () => ({
 jest.unstable_mockModule("../app/services/ticketSocketEmitter.js", () => ({
   emitTicketCreated: jest.fn(),
   emitTicketMessage: mockEmitTicketMessage,
+  emitTicketStatus: jest.fn(),
 }));
 
 jest.unstable_mockModule("../app/modules/notifications/notification.emitter.js", () => ({
@@ -135,5 +136,38 @@ describe("replyToTicket access control (audit H1)", () => {
     expect(ticket.messages[0].isAdmin).toBe(true);
     expect(ticket.messages[0].sender).toBe("Admin");
     expect(ticket.status).toBe("processing");
+  });
+
+  it("reopens a closed ticket when its owner sends a new message", async () => {
+    const ticket = makeTicketDoc({ userId: "owner-user", status: "closed" });
+    mockTicketFindById.mockResolvedValue(ticket);
+
+    const req = {
+      params: { id: "ticket-1" },
+      body: { text: "Still not fixed" },
+      user: { id: "owner-user", role: "customer", name: "Owner" },
+    };
+    const res = makeRes();
+
+    await replyToTicket(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(ticket.status).toBe("open");
+  });
+
+  it("notifies a seller (not a customer) when admin replies on a seller ticket", async () => {
+    const ticket = makeTicketDoc({ userId: "seller-1", userType: "Seller" });
+    mockTicketFindById.mockResolvedValue(ticket);
+
+    const req = {
+      params: { id: "ticket-1" },
+      body: { text: "Payout released" },
+      user: { id: "admin-1", role: "admin" },
+    };
+    await replyToTicket(req, makeRes());
+
+    const payload = mockEmitNotificationEvent.mock.calls[0][1];
+    expect(payload.fromRole).toBe("admin");
+    expect(payload.recipientRole).toBe("seller");
   });
 });

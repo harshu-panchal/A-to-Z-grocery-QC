@@ -1,21 +1,34 @@
 import { motion } from "framer-motion";
-import { Sparkles } from "lucide-react";
+import { ChevronLeft, Sparkles } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { useLiveCampaigns } from "../hooks/useLiveCampaigns";
 import CampaignDeals from "../components/offers/CampaignDeals";
 
 const OffersPage = () => {
+  const navigate = useNavigate();
   const { campaigns, isLoading: campaignsLoading } = useLiveCampaigns();
   return (
-    <div className="relative z-10 py-8 w-full max-w-[1920px] mx-auto px-4 md:px-[50px] mt-36 md:mt-24">
+    <div className="min-h-screen bg-slate-50 pb-24">
+    <div className="sticky top-0 z-30 atz-page-header px-4 pt-4 pb-3 flex items-center gap-2">
+      <button
+        onClick={() => navigate(-1)}
+        aria-label="Go back"
+        className="w-10 h-10 flex items-center justify-center hover:bg-white/15 rounded-full transition-colors -ml-1"
+      >
+        <ChevronLeft size={22} />
+      </button>
+      <h1 className="text-xl font-semibold tracking-tight">Offers</h1>
+    </div>
+    <div className="relative z-10 py-6 w-full max-w-[1920px] mx-auto px-4 md:px-[50px]">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
-        className="mb-10 text-left"
+        className="mb-8 text-left"
       >
-        <h1 className="text-3xl md:text-5xl font-black tracking-tight text-primary mb-3">
+        <h2 className="text-2xl md:text-4xl font-black tracking-tight text-primary mb-2">
           Best Offers for You
-        </h1>
+        </h2>
         <p className="text-gray-500 text-lg font-medium">
           Grab these exclusive deals before they expire!
         </p>
@@ -55,6 +68,7 @@ const OffersPage = () => {
             </p>
           </div>
         )}
+    </div>
     </div>
   );
 };

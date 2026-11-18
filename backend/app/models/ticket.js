@@ -1,6 +1,18 @@
 import mongoose from "mongoose";
 import { ALL_USER_MODEL_NAMES_WITH_LEGACY } from "../constants/refModels.js";
 
+export const TICKET_CATEGORIES = [
+    "order",
+    "delivery",
+    "payment",
+    "refund",
+    "account",
+    "product",
+    "payout",
+    "kyc",
+    "general",
+];
+
 const ticketSchema = new mongoose.Schema(
     {
         userId: {
@@ -25,6 +37,25 @@ const ticketSchema = new mongoose.Schema(
         description: {
             type: String,
             required: true,
+        },
+        // What the ticket is about. Order-type categories usually carry an
+        // orderId; account/general ones never do.
+        category: {
+            type: String,
+            enum: TICKET_CATEGORIES,
+            default: "general",
+        },
+        // Human order id (Order.orderId, e.g. "ORD…") when raised for a
+        // specific order; `order` is the resolved ObjectId for joins.
+        orderId: {
+            type: String,
+            trim: true,
+            default: "",
+        },
+        order: {
+            type: mongoose.Schema.Types.ObjectId,
+            ref: "Order",
+            default: null,
         },
         priority: {
             type: String,
@@ -90,5 +121,7 @@ const ticketSchema = new mongoose.Schema(
 
 ticketSchema.index({ userId: 1, userType: 1, createdAt: -1 });
 ticketSchema.index({ status: 1, priority: 1 });
+ticketSchema.index({ userId: 1, orderId: 1, status: 1 });
+ticketSchema.index({ userType: 1, status: 1, createdAt: -1 });
 
 export default mongoose.model("Ticket", ticketSchema);

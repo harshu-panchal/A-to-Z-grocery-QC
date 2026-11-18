@@ -24,6 +24,14 @@ function safeToString(value) {
   return String(value);
 }
 
+// Personal socket room of the ticket owner (see socketManager.js).
+function ownerRoom(userType, userId) {
+  if (!userId) return "";
+  if (userType === "Seller") return `seller:${userId}`;
+  if (userType === "Delivery" || userType === "Rider") return `delivery:${userId}`;
+  return `customer:${userId}`;
+}
+
 export function emitTicketCreated(ticket) {
   const io = getIo();
   if (!io || !ticket) return;
@@ -35,16 +43,20 @@ export function emitTicketCreated(ticket) {
     status: ticket.status,
     priority: ticket.priority,
     subject: ticket.subject,
+    category: ticket.category,
+    orderId: ticket.orderId || "",
+    userType: ticket.userType,
     userId,
     at: new Date().toISOString(),
   };
 
   if (ticketId) io.to(`ticket:${ticketId}`).emit("ticket:created", payload);
-  if (userId) io.to(`customer:${userId}`).emit("ticket:created", payload);
+  const room = ownerRoom(ticket.userType, userId);
+  if (room) io.to(room).emit("ticket:created", payload);
   io.to("admin:support").emit("ticket:created", payload);
 }
 
-export function emitTicketMessage({ ticketId, userId, message }) {
+export function emitTicketMessage({ ticketId, userId, userType, message }) {
   const io = getIo();
   if (!io) return;
 
@@ -59,7 +71,22 @@ export function emitTicketMessage({ ticketId, userId, message }) {
   };
 
   io.to(`ticket:${tid}`).emit("ticket:message", payload);
-  if (uid) io.to(`customer:${uid}`).emit("ticket:message", payload);
+  const room = ownerRoom(userType, uid);
+  if (room) io.to(room).emit("ticket:message", payload);
   io.to("admin:support").emit("ticket:message", payload);
 }
 
+
+export function emitTicketStatus(ticket) {
+  const io = getIo();
+  if (!io || !ticket) return;
+
+  const ticketId = safeToString(ticket._id || ticket.id);
+  if (!ticketId) return;
+  const payload = { ticketId, status: ticket.status, at: new Date().toISOString() };
+
+  io.to(`ticket:${ticketId}`).emit("ticket:status", payload);
+  const room = ownerRoom(ticket.userType, safeToString(ticket.userId));
+  if (room) io.to(room).emit("ticket:status", payload);
+  io.to("admin:support").emit("ticket:status", payload);
+}

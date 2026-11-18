@@ -3,6 +3,7 @@
  * Refactor P5.2. Opt-in adoption — see orderValidation.js header.
  */
 import Joi from "joi";
+import { TICKET_CATEGORIES } from "../models/ticket.js";
 
 const trimmedString = Joi.string().trim();
 
@@ -21,6 +22,8 @@ export const createTicketSchema = Joi.object({
   userType: trimmedString
     .valid("Customer", "Seller", "Delivery", "User", "Rider", "Admin")
     .optional(),
+  category: trimmedString.valid(...TICKET_CATEGORIES).optional(),
+  orderId: trimmedString.max(64).allow("", null).optional(),
   mediaUrl: trimmedString.uri().max(2048).allow("", null).optional(),
   mediaType: trimmedString.max(40).allow("", null).optional(),
   mimeType: trimmedString.max(120).allow("", null).optional(),

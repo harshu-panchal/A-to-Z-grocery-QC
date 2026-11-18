@@ -14,6 +14,22 @@ import { legalPagesApi } from '@core/services/legalPagesApi';
 import { sanitizeHtml } from '@core/utils/sanitizeHtml';
 
 const FAQ_CACHE_KEY = STORAGE_KEYS.FAQ_CACHE;
+
+// Non-order topics. Order problems are raised from the order page itself
+// (My Orders → order → Need Help) so the ticket is linked to that order.
+const TICKET_CATEGORIES = [
+    { value: 'account', label: 'Account' },
+    { value: 'payment', label: 'Payment' },
+    { value: 'refund', label: 'Refund' },
+    { value: 'general', label: 'Other' },
+];
+
+const STATUS_STYLE = {
+    open: 'bg-amber-50 text-amber-700',
+    processing: 'bg-sky-50 text-sky-700',
+    closed: 'bg-slate-100 text-slate-500',
+};
+const STATUS_LABEL = { open: 'Open', processing: 'In progress', closed: 'Resolved' };
 const FAQ_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const SupportPage = () => {
@@ -30,9 +46,20 @@ const SupportPage = () => {
     const [ticketData, setTicketData] = useState({
         subject: '',
         description: '',
-        priority: 'medium'
+        priority: 'medium',
+        category: 'account',
     });
     const [faqs, setFaqs] = useState([]);
+
+    const { data: myTickets = [], refetch: refetchMyTickets } = useQuery({
+        queryKey: ['customer', 'myTickets'],
+        queryFn: async () => {
+            const res = await customerApi.getMyTickets();
+            const raw = res?.data?.result;
+            return Array.isArray(raw) ? raw : [];
+        },
+        staleTime: 30 * 1000,
+    });
 
     // Perf audit Phase 8: migrated the legal-page intro fetch to React
     // Query (the FAQ fetch below has its own bespoke sessionStorage TTL
@@ -79,7 +106,7 @@ const SupportPage = () => {
 
             try {
                 const response = await axiosInstance.get('/public/faqs', {
-                    params: { category: 'Customer', status: 'published' }
+                    params: { category: 'Customer', status: 'published', limit: 200 }
                 });
                 const data = response.data?.result ?? response.data;
                 const list = Array.isArray(data?.items) ? data.items : Array.isArray(data?.results) ? data.results : [];
@@ -101,14 +128,12 @@ const SupportPage = () => {
         e.preventDefault();
         try {
             setTicketLoading(true);
-            const res = await customerApi.createTicket({
-                ...ticketData,
-                userType: 'Customer'
-            });
+            const res = await customerApi.createTicket(ticketData);
             if (res.data.success) {
                 showToast("Ticket raised successfully", "success");
                 setIsTicketModalOpen(false);
-                setTicketData({ subject: '', description: '', priority: 'medium' });
+                setTicketData({ subject: '', description: '', priority: 'medium', category: 'account' });
+                refetchMyTickets();
             }
         } catch (error) {
             showToast(error.response?.data?.message || "Failed to create ticket", "error");
@@ -156,6 +181,46 @@ const SupportPage = () => {
                     <ContactCard icon={Phone} label="Call Us" sub={supportPhoneShort} onClick={() => window.location.href = `tel:${supportPhone}`} />
                     <ContactCard icon={Mail} label="Email Us" sub={supportEmailShort} onClick={() => window.location.href = `mailto:${supportEmail}`} />
                 </div>
+
+                {/* Order problems are handled from the order itself */}
+                <Link
+                    to="/orders"
+                    className="block bg-white rounded-xl p-4 border border-slate-200 hover:bg-slate-50 transition-colors"
+                >
+                    <p className="text-sm font-semibold text-slate-800">Problem with an order?</p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                        Open the order from My Orders and tap "Need Help" so we can see the order details.
+                    </p>
+                </Link>
+
+                {/* My Tickets */}
+                {myTickets.length > 0 && (
+                    <div>
+                        <h2 className="text-base font-semibold text-slate-800 mb-3 px-1">My Tickets</h2>
+                        <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100">
+                            {myTickets.slice(0, 10).map((t) => (
+                                <button
+                                    key={t._id}
+                                    type="button"
+                                    onClick={() => navigate(`/chat?ticketId=${encodeURIComponent(t._id)}`)}
+                                    className="w-full flex items-center justify-between gap-3 px-4 py-3 text-left hover:bg-slate-50 transition-colors"
+                                >
+                                    <div className="min-w-0">
+                                        <p className="text-sm font-semibold text-slate-800 truncate">{t.subject}</p>
+                                        <p className="text-xs text-slate-500 mt-0.5">
+                                            #{String(t._id).slice(-6).toUpperCase()}
+                                            {t.orderId ? ` · Order #${t.orderId}` : ''}
+                                            {' · '}{new Date(t.updatedAt || t.createdAt).toLocaleDateString()}
+                                        </p>
+                                    </div>
+                                    <span className={cn('shrink-0 rounded-full px-2.5 py-1 text-[10px] font-bold', STATUS_STYLE[t.status] || STATUS_STYLE.open)}>
+                                        {STATUS_LABEL[t.status] || t.status}
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* FAQ Section */}
                 <div>
@@ -224,6 +289,27 @@ const SupportPage = () => {
                                 </div>
 
                                 <form onSubmit={handleTicketSubmit} className="space-y-6">
+                                    <div className="space-y-2">
+                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Topic</label>
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {TICKET_CATEGORIES.map((c) => (
+                                                <button
+                                                    key={c.value}
+                                                    type="button"
+                                                    onClick={() => setTicketData({ ...ticketData, category: c.value })}
+                                                    className={cn(
+                                                        "py-2.5 rounded-xl text-xs font-bold transition-all border",
+                                                        ticketData.category === c.value
+                                                            ? "bg-primary text-primary-foreground border-primary"
+                                                            : "bg-white text-slate-500 border-slate-100 hover:bg-slate-50"
+                                                    )}
+                                                >
+                                                    {c.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
                                     <div className="space-y-2">
                                         <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest px-1">Subject</label>
                                         <input

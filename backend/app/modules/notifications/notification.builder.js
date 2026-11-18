@@ -289,7 +289,8 @@ function eventDefinition(eventType) {
               return normalizeIdList(payload.adminIds);
             },
             title: (payload) => {
-              const name = String(payload.userName || "Customer").trim() || "Customer";
+              const fallback = payload.fromRole === "seller" ? "Seller" : "Customer";
+              const name = String(payload.userName || fallback).trim() || fallback;
               return `Support message from ${name}`;
             },
             body: (payload) => truncateText(payload.messageText || "New message"),
@@ -299,7 +300,20 @@ function eventDefinition(eventType) {
             recipientIds: (payload) => {
               const fromRole = String(payload.fromRole || "").toLowerCase();
               if (fromRole !== "admin") return [];
+              const to = String(payload.recipientRole || "customer").toLowerCase();
+              if (to !== "customer") return [];
               return normalizeIdList(payload.userId || payload.customerId);
+            },
+            title: () => "Support reply",
+            body: (payload) => truncateText(payload.messageText || "New message"),
+          },
+          {
+            role: NOTIFICATION_ROLES.SELLER,
+            recipientIds: (payload) => {
+              const fromRole = String(payload.fromRole || "").toLowerCase();
+              if (fromRole !== "admin") return [];
+              if (String(payload.recipientRole || "").toLowerCase() !== "seller") return [];
+              return normalizeIdList(payload.userId);
             },
             title: () => "Support reply",
             body: (payload) => truncateText(payload.messageText || "New message"),

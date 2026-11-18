@@ -19,18 +19,35 @@ import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '@shared/components/ui/Toast';
 import { useAuth } from '@core/context/AuthContext';
-import { joinTicketRoom, leaveTicketRoom, onTicketCreated, onTicketMessage } from '@/core/services/orderSocket';
+import { joinTicketRoom, leaveTicketRoom, onTicketCreated, onTicketMessage, onTicketStatus } from '@/core/services/orderSocket';
 import { useSupportUnread } from '@core/context/SupportUnreadContext';
 import { useQuery, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 
 const TICKETS_QUERY_ROOT = ['admin', 'tickets'];
+
+const CATEGORY_LABEL = {
+    order: 'Order',
+    delivery: 'Delivery',
+    payment: 'Payment',
+    refund: 'Refund',
+    account: 'Account',
+    product: 'Product',
+    payout: 'Payout',
+    kyc: 'KYC',
+    general: 'General',
+};
+
+const STATUS_BADGE = { open: 'warning', processing: 'info', closed: 'secondary' };
+
+const selectCls = 'h-8 w-full rounded-md border border-slate-200 bg-white px-2 text-[11px] font-bold text-slate-600 outline-none focus:border-primary';
 
 function mapTicket(t) {
     return {
         ...t,
         id: t._id,
         ticketCode: t._id.slice(-6).toUpperCase(),
-        user: t.userId?.name || "Unknown",
+        user: t.userId?.name || t.userId?.phone || "Unknown",
         date: new Date(t.createdAt).toLocaleString(),
         messages: (t.messages || []).map((m, i) => ({
             ...m,
@@ -60,12 +77,22 @@ const SupportTickets = () => {
     const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
     const [page, setPage] = useState(1);
     const [pageSize, setPageSize] = useState(25);
+    const [statusFilter, setStatusFilter] = useState('active');
+    const [userTypeFilter, setUserTypeFilter] = useState('');
+    const [categoryFilter, setCategoryFilter] = useState('');
 
     const queryParams = useMemo(() => {
         const params = { page, limit: pageSize };
         if (debouncedSearchTerm) params.search = debouncedSearchTerm;
+        if (statusFilter) params.status = statusFilter;
+        if (userTypeFilter) params.userType = userTypeFilter;
+        if (categoryFilter) params.category = categoryFilter;
         return params;
-    }, [page, pageSize, debouncedSearchTerm]);
+    }, [page, pageSize, debouncedSearchTerm, statusFilter, userTypeFilter, categoryFilter]);
+
+    useEffect(() => {
+        setPage(1);
+    }, [statusFilter, userTypeFilter, categoryFilter]);
     const queryKey = [...TICKETS_QUERY_ROOT, queryParams];
 
     // Perf audit Phase 8: migrated to React Query — same 500ms debounce and
@@ -252,9 +279,17 @@ const SupportTickets = () => {
             });
         });
 
+        const offStatus = onTicketStatus(getToken, (payload) => {
+            const tid = String(payload?.ticketId || '').trim();
+            if (!tid || !payload?.status) return;
+            setTickets((prev) => prev.map((t) => (String(t.id) === tid ? { ...t, status: payload.status } : t)));
+            setSelectedTicket((prev) => (prev && String(prev.id) === tid ? { ...prev, status: payload.status } : prev));
+        });
+
         return () => {
             offCreated?.();
             offMessage?.();
+            offStatus?.();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
@@ -367,11 +402,8 @@ const SupportTickets = () => {
         return handleSetStatus(id, newStatus);
     };
 
-    const filteredTickets = tickets.filter(t =>
-        t.id.toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.user.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        t.subject.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    // Search and filters run on the server across all tickets.
+    const filteredTickets = tickets;
 
     return (
         <div className="flex h-[calc(100vh-140px)] flex-col gap-4">
@@ -383,7 +415,7 @@ const SupportTickets = () => {
                     </span>
                 }
                 description="Resolve disputes and respond to customer, seller, and rider tickets in real time."
-                actions={<Badge variant="info">{tickets.length} Active</Badge>}
+                actions={<Badge variant="info">{total} {statusFilter === 'active' ? 'Unresolved' : 'Tickets'}</Badge>}
                 className="mb-0 shrink-0"
             />
 
@@ -399,11 +431,32 @@ const SupportTickets = () => {
                                 <HiOutlineMagnifyingGlass className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                                 <input
                                     type="text"
-                                    placeholder="Search by ID or Name..."
+                                    placeholder="Search name, phone, subject, order ID..."
                                     value={searchTerm}
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     className="h-9 w-full rounded-md border border-slate-200 bg-white pl-10 pr-4 text-xs font-semibold outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20"
                                 />
+                            </div>
+                            <div className="mt-2 grid grid-cols-3 gap-2">
+                                <select aria-label="Status" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className={selectCls}>
+                                    <option value="active">Unresolved</option>
+                                    <option value="open">Open</option>
+                                    <option value="processing">Processing</option>
+                                    <option value="closed">Closed</option>
+                                    <option value="">All status</option>
+                                </select>
+                                <select aria-label="User type" value={userTypeFilter} onChange={(e) => setUserTypeFilter(e.target.value)} className={selectCls}>
+                                    <option value="">All users</option>
+                                    <option value="Customer">Customers</option>
+                                    <option value="Seller">Sellers</option>
+                                    <option value="Delivery">Delivery</option>
+                                </select>
+                                <select aria-label="Topic" value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className={selectCls}>
+                                    <option value="">All topics</option>
+                                    {Object.entries(CATEGORY_LABEL).map(([value, label]) => (
+                                        <option key={value} value={value}>{label}</option>
+                                    ))}
+                                </select>
                             </div>
                         </div>
 
@@ -430,13 +483,26 @@ const SupportTickets = () => {
                                             {Number(unreadByTicket?.[t.id] || 0) > 99 ? "99+" : String(unreadByTicket?.[t.id])}
                                         </span>
                                     )}
-                                    <div className="mb-2 flex items-start justify-between">
-                                        <Badge
-                                            variant={t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'secondary'}
-                                            className={cn(selectedTicket?.id === t.id && "border-white/30 bg-white/20 text-white")}
-                                        >
-                                            {t.priority}
-                                        </Badge>
+                                    <div className="mb-2 flex items-start justify-between gap-2">
+                                        <div className="flex flex-wrap items-center gap-1">
+                                            <Badge
+                                                variant={t.priority === 'high' ? 'danger' : t.priority === 'medium' ? 'warning' : 'secondary'}
+                                                className={cn(selectedTicket?.id === t.id && "border-white/30 bg-white/20 text-white")}
+                                            >
+                                                {t.priority}
+                                            </Badge>
+                                            <Badge
+                                                variant={STATUS_BADGE[t.status] || 'secondary'}
+                                                className={cn(selectedTicket?.id === t.id && "border-white/30 bg-white/20 text-white")}
+                                            >
+                                                {t.status}
+                                            </Badge>
+                                            {t.category && (
+                                                <Badge variant="secondary" className={cn(selectedTicket?.id === t.id && "border-white/30 bg-white/20 text-white")}>
+                                                    {CATEGORY_LABEL[t.category] || t.category}
+                                                </Badge>
+                                            )}
+                                        </div>
                                         <span className={cn("text-[9px] font-bold", selectedTicket?.id === t.id ? "text-white/70" : "text-slate-400")}>{t.date}</span>
                                     </div>
                                     <h4 className="mb-1 truncate text-xs font-black">{t.subject}</h4>
@@ -444,10 +510,11 @@ const SupportTickets = () => {
                                         <div className={cn("rounded-md p-1", selectedTicket?.id === t.id ? "bg-white/15" : "bg-slate-100")}>
                                             {t.userType === 'Customer' && <HiOutlineUser className="h-3 w-3" />}
                                             {t.userType === 'Seller' && <HiOutlineBuildingStorefront className="h-3 w-3" />}
-                                            {t.userType === 'Rider' && <HiOutlineTruck className="h-3 w-3" />}
+                                            {(t.userType === 'Rider' || t.userType === 'Delivery') && <HiOutlineTruck className="h-3 w-3" />}
                                         </div>
                                         <span className={cn("text-[10px] font-bold", selectedTicket?.id === t.id ? "text-white/80" : "text-slate-500")}>
                                             {t.user} • {t.userType}
+                                            {t.orderId ? ` • #${t.orderId}` : ''}
                                         </span>
                                     </div>
                                 </button>
@@ -479,7 +546,7 @@ const SupportTickets = () => {
 
                 {/* Main Chat Area */}
                 <div
-                    className={`${selectedTicket ? "fixed inset-0 z-40 flex bg-white" : "hidden"} h-full min-h-0 flex-1 flex-col lg:static lg:inset-auto lg:z-auto lg:flex lg:bg-transparent`}
+                    className={`${selectedTicket ? "fixed inset-0 z-50 flex bg-white" : "hidden"} h-full min-h-0 flex-1 flex-col lg:static lg:inset-auto lg:z-auto lg:flex lg:bg-transparent`}
                 >
                     {selectedTicket ? (
                         <Card
@@ -502,8 +569,20 @@ const SupportTickets = () => {
                                     <div className="min-w-0">
                                         <h3 className="truncate text-sm font-black leading-none text-slate-900">{selectedTicket.subject}</h3>
                                         <p className="mt-1 truncate text-[10px] font-bold uppercase tracking-widest leading-none text-slate-400">
-                                            Ticket ID: {selectedTicket.ticketCode} • User: {selectedTicket.user} • Status: {selectedTicket.status}
+                                            Ticket ID: {selectedTicket.ticketCode} • {selectedTicket.userType}: {selectedTicket.user} • Status: {selectedTicket.status}
                                         </p>
+                                        <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-500">
+                                            {selectedTicket.category && <span>Topic: {CATEGORY_LABEL[selectedTicket.category] || selectedTicket.category}</span>}
+                                            {selectedTicket.userId?.phone && <span>• {selectedTicket.userId.phone}</span>}
+                                            {selectedTicket.orderId && (
+                                                <Link
+                                                    to={`/admin/orders/view/${encodeURIComponent(selectedTicket.orderId)}`}
+                                                    className="rounded-md bg-primary/10 px-2 py-0.5 font-bold text-primary hover:bg-primary/20"
+                                                >
+                                                    View Order #{selectedTicket.orderId}
+                                                </Link>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="relative flex shrink-0 items-center gap-2">

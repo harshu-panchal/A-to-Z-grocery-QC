@@ -57,4 +57,10 @@ export const sellerApi = {
     assignReturnDelivery: (orderId, data) => axiosInstance.put(`/orders/returns/${orderId}/assign-delivery`, data),
     // how many of each returned item go back into stock (once it is at the shop)
     setReturnRestock: (orderId, data) => axiosInstance.put(`/orders/returns/${orderId}/restock`, data),
+
+    // Support tickets (seller <-> admin)
+    createTicket: (data) => axiosInstance.post('/tickets/create', data),
+    getMyTickets: () => axiosInstance.get('/tickets/my-tickets'),
+    replyTicket: (ticketId, text) =>
+        axiosInstance.post(`/tickets/reply/${encodeURIComponent(String(ticketId))}`, { text }),
 };

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronLeft, Send, Phone, Paperclip, Smile } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useSettings } from "@core/context/SettingsContext";
@@ -12,6 +12,7 @@ import {
   joinTicketRoom,
   leaveTicketRoom,
   onTicketMessage,
+  onTicketStatus,
 } from "@/core/services/orderSocket";
 
 const emojis = [
@@ -84,6 +85,9 @@ function mergeIncomingMessage(prev, incoming) {
 
 const ChatPage = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedTicketId = String(searchParams.get("ticketId") || "").trim();
+  const [ticketMeta, setTicketMeta] = useState(null);
   const { settings } = useSettings();
   const { token } = useAuth();
   const { showToast } = useToast();
@@ -195,19 +199,23 @@ const ChatPage = () => {
             ? res.data.results
             : [];
 
+        // A link (order help / notification / My tickets) opens that exact
+        // ticket; plain /chat continues the latest unresolved one, else starts fresh.
         const active =
+          (requestedTicketId && tickets.find((t) => String(t?._id) === requestedTicketId)) ||
           tickets.find((t) => String(t?.status || "").toLowerCase() !== "closed") ||
-          tickets[0] ||
           null;
 
         if (!mounted) return;
 
         if (active?._id) {
           setTicketId(active._id);
+          setTicketMeta({ subject: active.subject, orderId: active.orderId, status: active.status });
           joinTicketRoom(active._id, getToken);
           setMessages(normalizeTicketMessages(active.messages));
         } else {
           setTicketId(null);
+          setTicketMeta(null);
           setMessages([
             {
               id: "welcome-1",
@@ -238,6 +246,15 @@ const ChatPage = () => {
       const current = ticketIdRef.current;
       if (current) leaveTicketRoom(current, getToken);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, requestedTicketId]);
+
+  useEffect(() => {
+    if (!token) return;
+    return onTicketStatus(getToken, (payload) => {
+      if (String(payload?.ticketId || "") !== String(ticketIdRef.current || "")) return;
+      setTicketMeta((prev) => (prev ? { ...prev, status: payload.status } : prev));
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -331,7 +348,7 @@ const ChatPage = () => {
           subject: "Support Chat",
           description: text || (mediaUrl ? "Sent an image" : ""),
           priority: "medium",
-          userType: "Customer",
+          category: "general",
           mediaUrl,
           mediaType: mediaUrl ? "image" : "",
           mimeType: selectedImageFile?.type || "",
@@ -339,6 +356,7 @@ const ChatPage = () => {
         const ticket = res?.data?.result;
         if (ticket?._id) {
           setTicketId(ticket._id);
+          setTicketMeta({ subject: ticket.subject, orderId: ticket.orderId, status: ticket.status });
           ticketIdRef.current = ticket._id;
           joinTicketRoom(ticket._id, getToken);
           setMessages(normalizeTicketMessages(ticket.messages));
@@ -352,6 +370,7 @@ const ChatPage = () => {
         const ticket = res?.data?.result;
         if (ticket?.messages) {
           setMessages(normalizeTicketMessages(ticket.messages));
+          setTicketMeta((prev) => (prev ? { ...prev, status: ticket.status } : prev));
         }
       }
 
@@ -399,6 +418,14 @@ const ChatPage = () => {
               <h1 className="text-base font-black text-slate-800 leading-none">
                 Support Chat
               </h1>
+              {ticketMeta?.orderId ? (
+                <p className="text-[10px] text-slate-500 font-bold mt-1">
+                  Order #{ticketMeta.orderId}
+                  {ticketMeta.status === "closed" ? " · Resolved" : ""}
+                </p>
+              ) : ticketMeta?.status === "closed" ? (
+                <p className="text-[10px] text-slate-500 font-bold mt-1">Resolved · reply to reopen</p>
+              ) : null}
               <p className="text-[10px] text-brand-600 font-bold mt-1 uppercase tracking-wider flex items-center gap-1">
                 <span className="h-1 w-1 bg-brand-500 rounded-full"></span>
                 Online

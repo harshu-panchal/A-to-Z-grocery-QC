@@ -35,8 +35,9 @@ const Profile = () => {
     }
     const fetchFaqs = async () => {
       try {
-        const response = await axiosInstance.get('/public/faqs', { params: { category: 'Delivery', status: 'published' } });
-        setFaqs(response.data.results || []);
+        const response = await axiosInstance.get('/public/faqs', { params: { category: 'Delivery', status: 'published', limit: 200 } });
+        const d = response.data?.result ?? response.data;
+        setFaqs(Array.isArray(d?.items) ? d.items : Array.isArray(d?.results) ? d.results : []);
       } catch (error) {
         console.error("Error fetching FAQs:", error);
       }

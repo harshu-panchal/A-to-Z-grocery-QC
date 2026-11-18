@@ -13,6 +13,7 @@ import axiosInstance from "@core/api/axios";
 import { useSettings } from "@core/context/SettingsContext";
 import { legalPagesApi } from "@core/services/legalPagesApi";
 import { sanitizeHtml } from "@core/utils/sanitizeHtml";
+import SellerTickets from "../components/support/SellerTickets";
 
 const SellerSupportPage = () => {
   const navigate = useNavigate();
@@ -32,7 +33,7 @@ const SellerSupportPage = () => {
         const [legalRes, faqRes] = await Promise.all([
           legalPagesApi.get("seller", "support"),
           axiosInstance.get("/public/faqs", {
-            params: { category: "Seller", status: "published" },
+            params: { category: "Seller", status: "published", limit: 200 },
           }),
         ]);
         if (cancelled) return;
@@ -122,6 +123,8 @@ const SellerSupportPage = () => {
             </a>
           )}
         </div>
+
+        <SellerTickets />
 
         <div>
           <h2 className="text-base font-semibold text-slate-800 mb-3 px-1">

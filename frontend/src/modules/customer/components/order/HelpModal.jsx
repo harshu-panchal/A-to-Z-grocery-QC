@@ -1,14 +1,19 @@
 import { useState, useEffect } from 'react';
-import { X, MessageCircle, Phone, ChevronRight, AlertCircle, PackageX, Truck, PlusCircle, Send, ArrowLeft } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { X, MessageCircle, Phone, ChevronRight, AlertCircle, PackageX, Truck, PlusCircle, Send, ArrowLeft, CreditCard } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { customerApi } from '../../services/customerApi';
 import { useToast } from '@shared/components/ui/Toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { useSettings } from '@core/context/SettingsContext';
 
 const HelpModal = ({ isOpen, onClose, orderId }) => {
     const { showToast } = useToast();
+    const navigate = useNavigate();
+    const { settings } = useSettings();
+    const supportPhone = settings?.supportPhone || '';
+    const [category, setCategory] = useState('order');
     const [isTicketMode, setIsTicketMode] = useState(false);
     const [ticketLoading, setTicketLoading] = useState(false);
     const [ticketData, setTicketData] = useState({
@@ -29,16 +34,18 @@ const HelpModal = ({ isOpen, onClose, orderId }) => {
     }, [isOpen]);
 
     const issues = [
-        { icon: PackageX, label: 'Items missing or incorrect', sub: 'Get a refund or replacement' },
-        { icon: AlertCircle, label: 'Item quality issue', sub: 'Report damaged or expired items' },
-        { icon: Truck, label: 'Delivery delay', sub: 'Track your order status' },
+        { icon: PackageX, label: 'Items missing or incorrect', sub: 'Get a refund or replacement', category: 'order' },
+        { icon: AlertCircle, label: 'Item quality issue', sub: 'Report damaged or expired items', category: 'order' },
+        { icon: Truck, label: 'Delivery delay', sub: 'Late or not delivered', category: 'delivery' },
+        { icon: CreditCard, label: 'Payment or refund issue', sub: 'Charged wrongly or refund not received', category: 'refund' },
     ];
 
     const handleIssueClick = (item) => {
         setTicketData(prev => ({
             ...prev,
-            subject: `${item.label} - Order ${orderId || ''}`.trim()
+            subject: item.label
         }));
+        setCategory(item.category);
         setIsTicketMode(true);
     };
 
@@ -48,15 +55,26 @@ const HelpModal = ({ isOpen, onClose, orderId }) => {
             setTicketLoading(true);
             const res = await customerApi.createTicket({
                 ...ticketData,
-                userType: 'Customer'
+                category,
+                ...(orderId ? { orderId } : {}),
             });
             if (res.data.success) {
                 showToast("Ticket raised successfully", "success");
                 setTicketData({ subject: '', description: '', priority: 'medium' });
                 setIsTicketMode(false);
                 onClose();
+                const newId = res.data.result?._id;
+                if (newId) navigate(`/chat?ticketId=${encodeURIComponent(newId)}`);
             }
         } catch (error) {
+            // Already an open ticket for this order: take them to that chat.
+            const existingId = error.response?.status === 409 && error.response?.data?.result?.ticketId;
+            if (existingId) {
+                showToast("You already have an open ticket for this order", "info");
+                onClose();
+                navigate(`/chat?ticketId=${encodeURIComponent(existingId)}`);
+                return;
+            }
             showToast(error.response?.data?.message || "Failed to create ticket", "error");
         } finally {
             setTicketLoading(false);
@@ -93,7 +111,9 @@ const HelpModal = ({ isOpen, onClose, orderId }) => {
                                     <div className="flex items-center justify-between mb-6">
                                         <div>
                                             <h2 className="text-xl font-black text-slate-800">Need Help?</h2>
-                                            <p className="text-sm text-slate-500 font-medium">Select an issue with your order</p>
+                                            <p className="text-sm text-slate-500 font-medium">
+                                                Select an issue with your order{orderId ? ` #${orderId}` : ''}
+                                            </p>
                                         </div>
                                         <button onClick={handleClose} className="p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors">
                                             <X size={20} className="text-slate-500" />
@@ -122,13 +142,16 @@ const HelpModal = ({ isOpen, onClose, orderId }) => {
                                     </div>
 
                                     <div className="grid grid-cols-2 gap-3">
-                                        <button onClick={() => setIsTicketMode(true)} className="col-span-2 py-3.5 rounded-xl border-2 border-primary text-primary font-bold flex items-center justify-center gap-2 hover:bg-brand-50 transition-colors shadow-lg shadow-brand-50">
+                                        <button onClick={() => { setCategory('order'); setIsTicketMode(true); }} className="col-span-2 py-3.5 rounded-xl border-2 border-primary text-primary font-bold flex items-center justify-center gap-2 hover:bg-brand-50 transition-colors shadow-lg shadow-brand-50">
                                             <PlusCircle size={18} /> Raise a Ticket
                                         </button>
                                         <Link to="/chat" className="py-3.5 rounded-xl bg-slate-900 text-white font-bold flex items-center justify-center gap-2 hover:bg-slate-800 transition-colors">
                                             <MessageCircle size={18} /> Chat Us
                                         </Link>
-                                        <button className="py-3.5 rounded-xl border border-slate-200 text-slate-700 font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors">
+                                        <button
+                                            onClick={() => { if (supportPhone) window.location.href = `tel:${supportPhone}`; }}
+                                            disabled={!supportPhone}
+                                            className="py-3.5 rounded-xl border border-slate-200 text-slate-700 font-bold flex items-center justify-center gap-2 hover:bg-slate-50 transition-colors">
                                             <Phone size={18} /> Call Us
                                         </button>
                                     </div>
@@ -143,7 +166,9 @@ const HelpModal = ({ isOpen, onClose, orderId }) => {
                                             </button>
                                             <div>
                                                 <h2 className="text-xl font-black text-slate-800">Raise a Ticket</h2>
-                                                <p className="text-sm text-slate-500 font-medium">Describe your issue in detail</p>
+                                                <p className="text-sm text-slate-500 font-medium">
+                                                    {orderId ? `About order #${orderId}` : 'Describe your issue in detail'}
+                                                </p>
                                             </div>
                                         </div>
                                         <button onClick={handleClose} className="p-2 bg-slate-50 rounded-full hover:bg-slate-100 transition-colors">

@@ -166,6 +166,13 @@ export function onTicketMessage(getToken, handler) {
   return () => s.off("ticket:message", handler);
 }
 
+export function onTicketStatus(getToken, handler) {
+  const s = getOrderSocket(getToken);
+  if (!s || typeof handler !== "function") return () => {};
+  s.on("ticket:status", handler);
+  return () => s.off("ticket:status", handler);
+}
+
 export function onTicketCreated(getToken, handler) {
   const s = getOrderSocket(getToken);
   if (!s || typeof handler !== "function") return () => {};

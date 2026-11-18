@@ -34,7 +34,7 @@ const HelpSupport = () => {
         const [legalRes, faqRes] = await Promise.all([
           legalPagesApi.get("delivery", "support"),
           axiosInstance.get("/public/faqs", {
-            params: { category: "Delivery", status: "published" },
+            params: { category: "Delivery", status: "published", limit: 200 },
           }),
         ]);
         const legal = legalRes.data?.result ?? legalRes.data;
