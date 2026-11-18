@@ -33,7 +33,7 @@ const BottomNav = ({ navItems }) => {
     if (shortcuts.length === 0) return null;
 
     return (
-        <div data-bottom-nav className="fixed bottom-0 left-0 right-0 h-16 bg-slate-900 border-t border-white/5 z-[60] md:hidden px-2 flex items-center justify-around shadow-[0_-10px_30px_rgba(0,0,0,0.3)]">
+        <div data-bottom-nav className="fixed bottom-0 left-0 right-0 h-16 bg-slate-900 border-t border-white/5 z-40 md:hidden px-2 flex items-center justify-around shadow-[0_-10px_30px_rgba(0,0,0,0.3)]">
             {shortcuts.map((item) => (
                 <NavLink
                     key={item.path}

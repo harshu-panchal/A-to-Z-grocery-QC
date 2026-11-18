@@ -195,7 +195,8 @@ const Topbar = ({ onMenuClick, sidebarCollapsed = false }) => {
         <header className={cn(
             "bg-white/70 backdrop-blur-xl border-b border-gray-100/50 flex items-center justify-between shadow-[0_4px_30px_rgba(0,0,0,0.02)] transition-all duration-300",
             (role === 'admin' || role === 'seller')
-                ? cn("fixed top-0 left-0 right-0 z-[200] h-14 px-4 md:h-16 md:px-6", sidebarCollapsed ? "md:left-20" : "md:left-64")
+                // Below every modal layer (z-50+) so popups always cover the bar
+                ? cn("fixed top-0 left-0 right-0 z-40 h-14 px-4 md:h-16 md:px-6", sidebarCollapsed ? "md:left-20" : "md:left-64")
                 : "fixed top-0 left-72 right-0 h-16 px-6 z-[200]"
         )}>
             <div className="flex items-center flex-1 mr-4 overflow-hidden">
