@@ -162,8 +162,10 @@ export async function checkIdempotency(key, payload = null) {
     };
     
   } catch (error) {
-    logger.error(`[Idempotency] Error checking idempotency for key ${key}:`, error);
-    throw error;
+    logger.warn(`[Idempotency] Redis check failed for key ${key}, using Mongo backstop: ${error.message}`);
+    // Redis is an accelerator here; Mongo unique idempotency indexes are the
+    // backstop. Failing open keeps checkout working during a Redis outage.
+    return { exists: false, inProgress: false, checksumMismatch: false };
   }
 }
 
@@ -200,8 +202,8 @@ export async function acquireIdempotencyLock(key, ttlSeconds = LOCK_TTL_SECONDS)
     return false;
     
   } catch (error) {
-    logger.error(`[Idempotency] Error acquiring lock for key ${key}:`, error);
-    throw error;
+    logger.warn(`[Idempotency] Redis lock failed for key ${key}, proceeding: ${error.message}`);
+    return true;
   }
 }
 
@@ -243,8 +245,8 @@ export async function storeIdempotencyResult(key, result, payload = null, ttlSec
     logger.info(`[Idempotency] Result stored for key: ${key}, TTL: ${ttlSeconds}s`);
     
   } catch (error) {
-    logger.error(`[Idempotency] Error storing result for key ${key}:`, error);
-    throw error;
+    // Must not throw: this runs after the order transaction committed.
+    logger.warn(`[Idempotency] Could not cache result for key ${key}: ${error.message}`);
   }
 }
 
@@ -290,8 +292,7 @@ export async function storeIdempotencyError(key, error, payload = null, ttlSecon
     logger.info(`[Idempotency] Error stored for key: ${key}, TTL: ${ttlSeconds}s`);
     
   } catch (err) {
-    logger.error(`[Idempotency] Error storing error for key ${key}:`, err);
-    throw err;
+    logger.warn(`[Idempotency] Could not cache error for key ${key}: ${err.message}`);
   }
 }
 
@@ -315,8 +316,8 @@ export async function releaseIdempotencyLock(key) {
     logger.info(`[Idempotency] Lock released for key: ${key}`);
     
   } catch (error) {
-    logger.error(`[Idempotency] Error releasing lock for key ${key}:`, error);
-    throw error;
+    // Lock has a TTL, so it frees itself; don't mask the original error.
+    logger.warn(`[Idempotency] Could not release lock for key ${key}: ${error.message}`);
   }
 }
 

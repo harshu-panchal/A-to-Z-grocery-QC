@@ -8,6 +8,14 @@ import { jest } from "@jest/globals";
 const mockSet = jest.fn();
 const mockGet = jest.fn();
 const mockDel = jest.fn();
+// Release runs a compare-and-delete script; emulate it with the get/del mocks.
+const mockEval = jest.fn(async (_script, _n, key, value) => {
+  if ((await mockGet(key)) === value) {
+    await mockDel(key);
+    return 1;
+  }
+  return 0;
+});
 const mockGetRedisClient = jest.fn();
 
 jest.unstable_mockModule("../app/config/redis.js", () => ({
@@ -19,7 +27,7 @@ const { withLock } = await import("../app/utils/distributedLock.js");
 describe("withLock (audit M2)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetRedisClient.mockReturnValue({ set: mockSet, get: mockGet, del: mockDel });
+    mockGetRedisClient.mockReturnValue({ set: mockSet, get: mockGet, del: mockDel, eval: mockEval });
   });
 
   it("runs the function and releases the lock on success", async () => {

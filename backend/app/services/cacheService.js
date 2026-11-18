@@ -306,7 +306,11 @@ export async function subscribeToInvalidations(callback) {
     if (!redis) return;
     
     // Create a separate Redis client for pub/sub
-    const subscriber = redis.duplicate();
+    // Pub/sub needs the offline queue so SUBSCRIBE waits for the connection.
+    const subscriber = redis.duplicate({ enableOfflineQueue: true });
+    // Outages are already logged by the shared client; this just prevents
+    // ioredis "Unhandled error event" noise from the pub/sub connection.
+    subscriber.on("error", () => {});
     
     await subscriber.subscribe(CACHE_INVALIDATION_CHANNEL);
     

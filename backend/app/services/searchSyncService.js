@@ -1,5 +1,9 @@
 import Bull from "bull";
-import { getRedisClient } from "../config/redis.js";
+import {
+  getRedisClient,
+  getRedisOptionsForBull,
+  createBullRedisClient,
+} from "../config/redis.js";
 import Product from "../models/product.js";
 import SearchIndexFailure from "../models/searchIndexFailure.js";
 import { indexProduct, removeProduct } from "./searchService.js";
@@ -67,13 +71,11 @@ export function getSearchIndexQueue() {
     return null;
   }
   
+  // Same connection settings as the other Bull queues (honours REDIS_URL,
+  // username/TLS, reconnect policy and the shared error handler).
   searchIndexQueue = new Bull("search-index", {
-    redis: {
-      host: client.options.host,
-      port: client.options.port,
-      password: client.options.password,
-      db: client.options.db || 0,
-    },
+    redis: getRedisOptionsForBull(),
+    createClient: createBullRedisClient,
     defaultJobOptions: {
       attempts: SEARCH_INDEX_RETRY_ATTEMPTS,
       backoff: {

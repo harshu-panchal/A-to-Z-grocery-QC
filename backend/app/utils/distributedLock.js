@@ -24,6 +24,11 @@
 import { getRedisClient } from "../config/redis.js";
 import logger from "../services/logger.js";
 
+// Atomic compare-and-delete: only the holder releases, even if the lock expired
+// and another instance re-acquired it between a separate GET and DEL.
+const RELEASE_LOCK_SCRIPT =
+  'if redis.call("get", KEYS[1]) == ARGV[1] then return redis.call("del", KEYS[1]) else return 0 end';
+
 // In-process fallback: without Redis the "lock" used to just run `fn`, so two
 // concurrent withdrawals could both pass the balance check. Serializing per
 // key inside this process covers single-instance deployments.
@@ -73,10 +78,7 @@ export async function withLock(lockKey, ttlMs, fn) {
     return await fn();
   } finally {
     try {
-      const currentValue = await client.get(lockKey);
-      if (currentValue === lockValue) {
-        await client.del(lockKey);
-      }
+      await client.eval(RELEASE_LOCK_SCRIPT, 1, lockKey, lockValue);
     } catch (error) {
       logger.warn?.("distributedLock release failed", { lockKey, error: error?.message });
     }

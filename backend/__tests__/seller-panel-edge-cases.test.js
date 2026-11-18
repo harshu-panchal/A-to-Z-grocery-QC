@@ -33,6 +33,8 @@ jest.unstable_mockModule("../app/services/finance/withdrawableBalance.js", () =>
 jest.unstable_mockModule("../app/config/redis.js", () => ({
   getRedisClient: () => null,
   isRedisEnabled: () => false,
+  getRedisOptionsForBull: () => ({}),
+  createBullRedisClient: () => null,
 }));
 
 const {

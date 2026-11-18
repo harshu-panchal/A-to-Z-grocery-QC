@@ -269,7 +269,10 @@ export async function notify(eventType, payload = {}) {
       // disabled (e.g. local dev / tests) we fall back to the legacy inline
       // call so behaviour is preserved end-to-end.
       const notificationIdStr = notificationDoc._id.toString();
-      const useQueue = isRedisEnabled();
+      // Queue only when Bull's Redis connection is up; otherwise add() waits
+      // for a reconnect and the push is delayed indefinitely. Deliver inline.
+      const useQueue =
+        isRedisEnabled() && notificationQueue.client?.status === "ready";
 
       try {
         if (useQueue) {

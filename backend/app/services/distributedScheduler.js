@@ -11,6 +11,10 @@ import { v4 as uuidv4 } from 'uuid';
 import { getRedisClient, isRedisEnabled } from '../config/redis.js';
 import logger from './logger.js';
 
+// Atomic compare-and-delete so an expired-then-reacquired lock is never removed.
+const RELEASE_LOCK_SCRIPT =
+  "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end";
+
 // Instance ID for lock identification
 const instanceId = `scheduler-${uuidv4().slice(0, 8)}`;
 
@@ -65,12 +69,15 @@ async function acquireLock(jobName, lockDuration) {
       return { acquired: false, lockKey, lockValue: null };
     }
   } catch (error) {
-    logger.error('Error acquiring lock', {
+    // Redis down: run anyway (same as the no-Redis path). Skipping would stop
+    // safety-net jobs like orderAutoCancelJob exactly when Bull queues are
+    // also unavailable; the job handlers are idempotent.
+    logger.warn('Lock unavailable (Redis error), executing without lock', {
       jobName,
       instanceId,
       error: error.message
     });
-    return { acquired: false, lockKey, lockValue: null };
+    return { acquired: true, lockKey: null, lockValue: null };
   }
 }
 
@@ -92,9 +99,8 @@ async function releaseLock(lockKey, lockValue) {
   
   try {
     // Only delete if the lock value matches (we own the lock)
-    const currentValue = await client.get(lockKey);
-    if (currentValue === lockValue) {
-      await client.del(lockKey);
+    const released = await client.eval(RELEASE_LOCK_SCRIPT, 1, lockKey, lockValue);
+    if (released === 1) {
       logger.debug('Lock released successfully', {
         lockKey,
         instanceId
@@ -104,8 +110,7 @@ async function releaseLock(lockKey, lockValue) {
       logger.warn('Lock release skipped - value mismatch', {
         lockKey,
         instanceId,
-        expected: lockValue,
-        actual: currentValue
+        expected: lockValue
       });
       return false;
     }
@@ -127,10 +132,11 @@ async function releaseLock(lockKey, lockValue) {
  */
 async function executeJob(name, handler, lockDuration) {
   const startTime = Date.now();
+  let lock = null;
   
   try {
     // Acquire lock
-    const lock = await acquireLock(name, lockDuration);
+    lock = await acquireLock(name, lockDuration);
     
     if (!lock.acquired) {
       logger.debug('Skipping job execution - lock held by another instance', {
@@ -155,11 +161,6 @@ async function executeJob(name, handler, lockDuration) {
       duration
     });
     
-    // Release lock
-    if (lock.lockKey) {
-      await releaseLock(lock.lockKey, lock.lockValue);
-    }
-    
   } catch (error) {
     const duration = Date.now() - startTime;
     logger.error('Job execution failed', {
@@ -169,6 +170,12 @@ async function executeJob(name, handler, lockDuration) {
       error: error.message,
       stack: error.stack
     });
+  } finally {
+    // Release even when the handler throws, otherwise a failed run keeps the
+    // lock for 2x the interval and the next run is skipped.
+    if (lock?.acquired && lock.lockKey) {
+      await releaseLock(lock.lockKey, lock.lockValue);
+    }
   }
 }
 

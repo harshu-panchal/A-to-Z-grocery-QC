@@ -83,29 +83,34 @@ function attachRedisErrorHandler(client) {
   });
 }
 
+// Keep reconnecting forever (capped backoff). Giving up left the shared client
+// permanently closed after a short outage, so Redis never came back until a restart.
+function retryStrategy(times) {
+  return Math.min(times * 200, 5000);
+}
+
+// Shared client fails fast: commands error out within REDIS_COMMAND_TIMEOUT_MS
+// while Redis is unreachable, so callers drop to their in-memory/Mongo fallback
+// instead of hanging the request. (Bull clients keep their own settings.)
+// No offline queue: while disconnected, commands reject immediately instead of
+// waiting, and the client connects eagerly so it is ready before traffic.
+function sharedClientOptions() {
+  return {
+    lazyConnect: false,
+    enableOfflineQueue: false,
+    enableReadyCheck: true,
+    maxRetriesPerRequest: 1,
+    commandTimeout: parseInt(process.env.REDIS_COMMAND_TIMEOUT_MS || "2000", 10),
+    retryStrategy,
+  };
+}
+
 function standaloneOptions() {
   return {
     host: process.env.REDIS_HOST || "127.0.0.1",
     port: parseInt(process.env.REDIS_PORT || "6379", 10),
     password: process.env.REDIS_PASSWORD || undefined,
-    lazyConnect: true,
-    enableReadyCheck: true,
-    maxRetriesPerRequest: null,
-    retryStrategy(times) {
-      if (times > 20) return null;
-      return Math.min(times * 200, 3000);
-    },
-  };
-}
-
-function urlOptions() {
-  return {
-    lazyConnect: true,
-    maxRetriesPerRequest: null,
-    retryStrategy(times) {
-      if (times > 20) return null;
-      return Math.min(times * 200, 3000);
-    },
+    ...sharedClientOptions(),
   };
 }
 
@@ -119,7 +124,7 @@ export function getRedisClient() {
 
   const url = process.env.REDIS_URL;
   _client = url
-    ? new Redis(url, urlOptions())
+    ? new Redis(url, sharedClientOptions())
     : new Redis(standaloneOptions());
 
   attachRedisErrorHandler(_client);
@@ -136,10 +141,7 @@ export function createBullRedisClient(type, config) {
     client = new Redis(config, {
       lazyConnect: true,
       maxRetriesPerRequest: null,
-      retryStrategy(times) {
-        if (times > 20) return null;
-        return Math.min(times * 200, 3000);
-      },
+      retryStrategy,
     });
   } else if (["bclient", "subscriber"].includes(type)) {
     client = new Redis({
@@ -213,36 +215,48 @@ export async function waitForRedis(maxRetries = 10, baseDelay = 1000) {
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      // Try to connect if not already connected
-      if (client.status !== "ready" && client.status !== "connect") {
+      // lazyConnect: only start a connection if none is in progress; while
+      // ioredis is reconnecting on its own, calling connect() would throw.
+      if (client.status === "wait" || client.status === "end") {
         await client.connect();
       }
-
-      // Validate connection with PING
-      const isValid = await validateRedisConnection();
-      if (isValid) {
+      // The shared client has no offline queue, so wait for "ready" before
+      // PING rather than reporting a failure while it is still connecting.
+      if (client.status !== "ready") {
+        await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            client.off("ready", onReady);
+            reject(new Error(`not ready (status: ${client.status})`));
+          }, 5000);
+          function onReady() {
+            clearTimeout(timer);
+            resolve();
+          }
+          client.once("ready", onReady);
+        });
+      }
+      if (await validateRedisConnection()) {
         return;
       }
+      throw new Error("PING did not return PONG");
     } catch (error) {
-      const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay);
-      const isLastAttempt = attempt === maxRetries;
-
-      if (isLastAttempt) {
+      if (attempt === maxRetries) {
         const errorMessage = `Failed to connect to Redis after ${maxRetries} attempts: ${error.message}`;
+        // Production treats Redis as required when enabled (order-timeout queues
+        // run on it), so stop here with a clear reason instead of claiming to
+        // continue and then failing dependency validation.
         if (isProduction) {
-          console.warn(`[Redis] ${errorMessage} - Continuing without Redis (set REDIS_DISABLED=true to skip retries).`);
-          return;
-        } else {
-          console.warn(`[Redis] ${errorMessage} - Continuing without Redis`);
-          return;
+          throw new Error(`${errorMessage}. Fix REDIS_URL or set REDIS_DISABLED=true.`);
         }
+        console.warn(`[Redis] ${errorMessage} - Continuing without Redis (development only).`);
+        return;
       }
 
+      const delay = Math.min(baseDelay * Math.pow(2, attempt - 1), maxDelay);
       console.log(
         `[Redis] Connection attempt ${attempt}/${maxRetries} failed: ${error.message}. ` +
         `Retrying in ${delay}ms...`
       );
-
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }
