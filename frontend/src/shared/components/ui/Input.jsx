@@ -5,18 +5,18 @@ import { cn } from '@/lib/utils';
 const Input = React.forwardRef(({ label, error, helperText, className, ...props }, ref) => {
     return (
         <div className="w-full space-y-1">
-            {label && <label className="block text-sm font-medium text-slate-700">{label}</label>}
+            {label && <label className="block text-m3-label-large text-slate-700">{label}</label>}
             <ShadcnInput
                 className={cn(
-                    'h-9 rounded-md border-slate-200 text-sm shadow-sm focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:border-primary',
-                    error && 'border-danger focus-visible:ring-danger/20 focus-visible:border-danger',
+                    'h-10 rounded-m3-xs border-slate-200 text-m3-body-large focus-visible:ring-1 focus-visible:ring-primary focus-visible:border-primary',
+                    error && 'border-danger focus-visible:ring-danger focus-visible:border-danger',
                     className
                 )}
                 ref={ref}
                 {...props}
             />
-            {error && <p className="text-xs text-danger">{error}</p>}
-            {helperText && !error && <p className="text-xs text-slate-500">{helperText}</p>}
+            {error && <p className="text-m3-body-small text-danger">{error}</p>}
+            {helperText && !error && <p className="text-m3-body-small text-slate-500">{helperText}</p>}
         </div>
     );
 });

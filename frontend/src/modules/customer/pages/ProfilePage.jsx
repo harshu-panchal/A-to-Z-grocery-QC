@@ -40,9 +40,10 @@ const ProfilePage = () => {
                         type="button"
                         onClick={() => navigate('/notifications')}
                         title="View notifications"
-                        className="w-10 h-10 flex items-center justify-center rounded-full transition-colors border border-slate-200 bg-white hover:bg-slate-100"
+                        aria-label="View notifications"
+                        className="w-10 h-10 flex items-center justify-center rounded-full transition-colors border border-white/30"
                     >
-                        <Bell size={18} className="text-slate-700" />
+                        <Bell size={18} />
                     </button>
                 </div>
             </div>

@@ -14,24 +14,28 @@ import { Loader2 } from 'lucide-react';
  *
  * variant: primary | secondary | danger | ghost | outline
  * size: sm | md | lg
+ *
+ * Material 3: fully-rounded shape (morphs to medium corners on press),
+ * label typescale, no resting shadow (level-1 elevation on hover for
+ * filled variants). Colors are the app's own.
  */
 const VARIANT_CLASSES = {
     primary:
-        'bg-primary text-white border border-transparent shadow-sm shadow-primary/30 hover:bg-primary/90',
+        'bg-primary text-white border border-transparent hover:bg-primary/90 hover:shadow-m3-1',
     secondary:
         'bg-slate-100 text-slate-700 border border-transparent hover:bg-slate-200',
     danger:
-        'bg-danger text-white border border-transparent shadow-sm shadow-danger/30 hover:bg-danger/90',
+        'bg-danger text-white border border-transparent hover:bg-danger/90 hover:shadow-m3-1',
     ghost:
         'bg-transparent text-slate-600 border border-transparent hover:bg-slate-100 shadow-none',
     outline:
-        'bg-white text-slate-700 border border-slate-200 shadow-sm hover:bg-slate-50',
+        'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50',
 };
 
 const SIZE_CLASSES = {
-    sm: 'h-7 px-2.5 text-xs rounded-md',
-    md: 'h-9 px-3.5 text-sm rounded-md',
-    lg: 'h-10 px-5 text-sm rounded-md',
+    sm: 'h-7 px-3 text-m3-label-medium',
+    md: 'h-9 px-4 text-m3-label-large',
+    lg: 'h-10 px-6 text-m3-label-large',
 };
 
 const Button = ({
@@ -47,7 +51,7 @@ const Button = ({
         <ShadcnButton
             variant="ghost"
             className={cn(
-                'font-semibold transition-colors disabled:opacity-50',
+                'rounded-m3-full disabled:opacity-40',
                 SIZE_CLASSES[size] || SIZE_CLASSES.md,
                 VARIANT_CLASSES[variant] || VARIANT_CLASSES.primary,
                 className

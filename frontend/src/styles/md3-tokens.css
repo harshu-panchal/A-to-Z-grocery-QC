@@ -1,0 +1,122 @@
+/* ============================================================
+   MATERIAL DESIGN 3 — SYSTEM TOKENS (--md-sys-*)
+   ------------------------------------------------------------
+   COLOR IS UNCHANGED: every M3 color role below is an alias of a color
+   the app already uses (brand --primary set at runtime by
+   applyThemeVariables, shadcn tokens, the slate palette and the
+   success/warning/danger/info status colors). M3 contributes the
+   structure — shape, type scale, elevation, state layers, motion.
+
+   Tailwind utilities (registered in index.css @theme):
+     color     bg-m3-primary, text-m3-on-surface-variant, border-m3-outline-variant …
+     type      text-m3-body-large, text-m3-title-medium … (size + leading + weight + tracking)
+     shape     rounded-m3-xs | sm | md | lg | xl | full
+     elevation shadow-m3-1 … shadow-m3-5
+     motion    ease-m3-emphasized | ease-m3-emphasized-decelerate | ease-m3-standard …
+   ============================================================ */
+
+:root {
+  /* ---------- Color roles → existing app colors ---------- */
+  --md-sys-color-primary: var(--primary);
+  --md-sys-color-on-primary: var(--primary-foreground, #ffffff);
+  --md-sys-color-primary-container: var(--brand-50);
+  --md-sys-color-on-primary-container: var(--brand-700);
+  --md-sys-color-inverse-primary: var(--brand-200);
+
+  --md-sys-color-secondary: #475569;               /* slate-600 */
+  --md-sys-color-on-secondary: #ffffff;
+  --md-sys-color-secondary-container: #f1f5f9;     /* slate-100 (secondary button fill) */
+  --md-sys-color-on-secondary-container: #334155;  /* slate-700 */
+
+  --md-sys-color-tertiary: #0ea5e9;                /* app "info" */
+  --md-sys-color-on-tertiary: #ffffff;
+  --md-sys-color-tertiary-container: #e0f2fe;      /* sky-100 */
+  --md-sys-color-on-tertiary-container: #075985;   /* sky-800 */
+
+  --md-sys-color-error: #dc2626;                   /* app "danger" */
+  --md-sys-color-on-error: #ffffff;
+  --md-sys-color-error-container: #fef2f2;         /* red-50 */
+  --md-sys-color-on-error-container: #991b1b;      /* red-800 */
+
+  --md-sys-color-surface: var(--background);
+  --md-sys-color-surface-bright: var(--background);
+  --md-sys-color-surface-dim: #e2e8f0;                  /* slate-200 */
+  --md-sys-color-surface-container-lowest: #ffffff;
+  --md-sys-color-surface-container-low: #f8fafc;        /* slate-50 */
+  --md-sys-color-surface-container: #f1f5f9;            /* slate-100 */
+  --md-sys-color-surface-container-high: #e2e8f0;       /* slate-200 */
+  --md-sys-color-surface-container-highest: #cbd5e1;    /* slate-300 */
+  --md-sys-color-on-surface: #0f172a;                   /* slate-900 */
+  --md-sys-color-on-surface-variant: #64748b;           /* slate-500 */
+  --md-sys-color-outline: #cbd5e1;                      /* slate-300 */
+  --md-sys-color-outline-variant: #e2e8f0;              /* slate-200 */
+  --md-sys-color-inverse-surface: #1e293b;              /* slate-800 */
+  --md-sys-color-inverse-on-surface: #f1f5f9;
+  --md-sys-color-scrim: #000000;
+  --md-sys-color-shadow: #0f172a;
+
+  /* ---------- State layer opacities ---------- */
+  --md-sys-state-hover-state-layer-opacity: 0.08;
+  --md-sys-state-focus-state-layer-opacity: 0.1;
+  --md-sys-state-pressed-state-layer-opacity: 0.1;
+  --md-sys-state-dragged-state-layer-opacity: 0.16;
+
+  /* ---------- Shape ---------- */
+  --md-sys-shape-corner-none: 0px;
+  --md-sys-shape-corner-extra-small: 4px;
+  --md-sys-shape-corner-small: 8px;
+  --md-sys-shape-corner-medium: 12px;
+  --md-sys-shape-corner-large: 16px;
+  --md-sys-shape-corner-large-increased: 20px;
+  --md-sys-shape-corner-extra-large: 28px;
+  --md-sys-shape-corner-extra-large-increased: 32px;
+  --md-sys-shape-corner-extra-extra-large: 48px;
+  --md-sys-shape-corner-full: 9999px;
+
+  /* ---------- Motion ---------- */
+  --md-sys-motion-easing-emphasized: cubic-bezier(0.2, 0, 0, 1);
+  --md-sys-motion-easing-emphasized-decelerate: cubic-bezier(0.05, 0.7, 0.1, 1);
+  --md-sys-motion-easing-emphasized-accelerate: cubic-bezier(0.3, 0, 0.8, 0.15);
+  --md-sys-motion-easing-standard: cubic-bezier(0.2, 0, 0, 1);
+  --md-sys-motion-easing-standard-decelerate: cubic-bezier(0, 0, 0, 1);
+  --md-sys-motion-easing-standard-accelerate: cubic-bezier(0.3, 0, 1, 1);
+  --md-sys-motion-duration-short2: 100ms;
+  --md-sys-motion-duration-short4: 200ms;
+  --md-sys-motion-duration-medium2: 300ms;
+  --md-sys-motion-duration-medium4: 400ms;
+  --md-sys-motion-duration-long2: 500ms;
+}
+
+/* ---------- State layer ----------
+   .m3-state-layer on any interactive element: hover / focus / press
+   overlay a translucent tint of the element's own text color
+   (currentColor), so no new colors are introduced. */
+.m3-state-layer {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.m3-state-layer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background-color: currentColor;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--md-sys-motion-duration-short4) var(--md-sys-motion-easing-standard);
+}
+.m3-state-layer:hover::before {
+  opacity: var(--md-sys-state-hover-state-layer-opacity);
+}
+.m3-state-layer:focus-visible::before {
+  opacity: var(--md-sys-state-focus-state-layer-opacity);
+}
+.m3-state-layer:active::before {
+  opacity: var(--md-sys-state-pressed-state-layer-opacity);
+}
+.m3-state-layer:disabled::before,
+.m3-state-layer[aria-disabled="true"]::before {
+  opacity: 0;
+}

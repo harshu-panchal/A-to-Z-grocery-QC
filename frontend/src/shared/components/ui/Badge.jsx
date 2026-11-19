@@ -34,7 +34,7 @@ const Badge = ({ children, variant = 'secondary', className, ...props }) => {
     return (
         <span
             className={cn(
-                'inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-black uppercase tracking-wide whitespace-nowrap',
+                'inline-flex items-center gap-1 rounded-m3-full border px-2 py-0.5 text-m3-label-small whitespace-nowrap',
                 VARIANT_CLASSES[resolved] || VARIANT_CLASSES.secondary,
                 className
             )}
