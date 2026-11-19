@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import handleResponse from "../utils/helper.js";
 import Seller from "../models/seller.js";
 import Admin from "../models/admin.js";
+import Delivery from "../models/delivery.js";
 import { STAFF_ROLE, resolveStaffRequest } from "../services/staff/staffAccess.js";
 
 export function extractJwtFromHeaders(req) {
@@ -65,6 +66,15 @@ export const verifyToken = async (req, res, next) => {
         .select("tokenVersion")
         .lean();
       if (!current || (current.tokenVersion || 0) !== (decoded.tokenVersion || 0)) {
+        return handleResponse(res, 401, "Session expired, please log in again");
+      }
+    }
+
+    // Riders log in by OTP (no tokenVersion), so a deactivated/rejected rider's
+    // token must be cut off by checking the approval flag on every request.
+    if (decoded.role === "delivery") {
+      const rider = await Delivery.findById(decoded.id).select("isVerified").lean();
+      if (!rider || rider.isVerified !== true) {
         return handleResponse(res, 401, "Session expired, please log in again");
       }
     }

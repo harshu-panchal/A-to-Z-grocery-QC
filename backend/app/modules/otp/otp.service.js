@@ -150,7 +150,9 @@ async function markAccountVerified(account, userType) {
 
   account.lastLogin = new Date();
 
-  if ("isVerified" in account) {
+  // For sellers and riders `isVerified` is the admin-approval flag, so an OTP
+  // login must never set it — that let rejected/deactivated riders self-approve.
+  if (userType !== "Seller" && userType !== "Delivery" && "isVerified" in account) {
     account.isVerified = true;
   }
   if (userType === "Seller" && "phoneVerified" in account) {
@@ -286,6 +288,15 @@ export async function verifySmsOtp({ mobile, otp, userType, purpose, ipAddress =
   let sanitizedAccount = null;
 
   if (account && (purpose === "LOGIN" || purpose === "PASSWORD_RESET")) {
+    if (userType === "Delivery" && account.isVerified !== true) {
+      const error = new Error(
+        account.applicationStatus === "rejected"
+          ? "Your application has been rejected"
+          : "Your application is still pending admin approval",
+      );
+      error.statusCode = 403;
+      throw error;
+    }
     const verifiedAccount = await markAccountVerified(account, userType);
     token = buildToken(verifiedAccount, userType);
     sanitizedAccount = sanitizeAccount(verifiedAccount);
