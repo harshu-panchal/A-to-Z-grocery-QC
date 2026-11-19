@@ -18,6 +18,7 @@ import { orderMatchQueryFromRouteParam } from "../utils/orderLookup.js";
 import { verifyClientPaymentCallback } from "../services/paymentService.js";
 import { buildCheckoutPricingSnapshot } from "../services/checkoutPricingService.js";
 import { validateBody as validateWithJoi } from "../middleware/validate.js";
+import { codOverLimitMessage, getDefaultCodCashLimit } from "../services/delivery/codLimit.js";
 
 export const previewCheckoutFinance = async (req, res) => {
   try {
@@ -67,6 +68,11 @@ export const previewCheckoutFinance = async (req, res) => {
       // SERVER_SIDE_COUPON_ENGINE is off.
       couponSnapshot: pricingSnapshot.couponSnapshot || null,
       freeDeliveryApplied: !!pricingSnapshot.freeDeliveryApplied,
+      // set when this cart is too large for COD (above the rider COD limit)
+      codUnavailableReason: codOverLimitMessage(
+        sellerBreakdowns.map((item) => item.breakdown),
+        await getDefaultCodCashLimit(),
+      ),
       ...(distanceDebug ? { distanceDebug } : {}),
     });
   } catch (error) {

@@ -64,3 +64,48 @@ export function codOrderCashAmount(order) {
 export function fitsCodLimit(cashInHand, limit, orderCash) {
   return Number(cashInHand || 0) + Number(orderCash || 0) <= Number(limit) + 0.01;
 }
+
+/**
+ * COD cash each rider will collect from orders they already accepted but
+ * have not delivered yet. Wallet.cashInHand only grows after delivery, so
+ * without this a rider could accept several COD orders and end up over the
+ * limit. Returns Map<riderId, amount>.
+ */
+export async function pendingCodCashByRider(riderIds = []) {
+  const result = new Map();
+  const ids = riderIds.filter(Boolean).map(String);
+  if (!ids.length || mongoose.connection?.readyState !== 1) return result;
+  const { default: Order } = await import("../../models/order.js");
+  const active = await Order.find({
+    deliveryBoy: { $in: ids },
+    status: { $nin: ["delivered", "cancelled"] },
+    workflowStatus: { $nin: ["DELIVERED", "CANCELLED"] },
+  })
+    .select("deliveryBoy paymentMode payment.method paymentMethod pricing.total paymentBreakdown.grandTotal paymentBreakdown.riderPayoutTotal")
+    .lean();
+  for (const order of active) {
+    if (!isCodOrder(order)) continue;
+    const key = String(order.deliveryBoy);
+    result.set(key, roundCurrency((result.get(key) || 0) + codOrderCashAmount(order)));
+  }
+  return result;
+}
+
+/** Cash in hand plus cash still to collect from accepted COD orders. */
+export async function riderCommittedCodCash(riderId, cashInHand) {
+  const pending = (await pendingCodCashByRider([riderId])).get(String(riderId)) || 0;
+  return roundCurrency(Number(cashInHand || 0) + pending);
+}
+
+/**
+ * Checkout guard: each seller order is delivered by one rider, so a COD
+ * order whose cash alone is above the default limit can never be accepted.
+ * Returns an error message, or null when COD is fine.
+ */
+export function codOverLimitMessage(sellerBreakdowns = [], limit) {
+  const tooBig = sellerBreakdowns.some(
+    (b) => codOrderCashAmount({ paymentBreakdown: b }) > Number(limit) + 0.01,
+  );
+  if (!tooBig) return null;
+  return "Cash on Delivery isn't available for an order this large. Please pay online.";
+}

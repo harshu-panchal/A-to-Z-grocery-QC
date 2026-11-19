@@ -280,7 +280,10 @@ export function calculateRiderPayout(distanceKm, deliverySettings) {
     : 0;
 
   const riderBase = roundCurrency(deliverySettings.riderBasePayout ?? deliverySettings.customerBaseDeliveryFee ?? 0);
-  const baseDistance = Math.max(Number(deliverySettings.baseDistanceCapacityKm || 0), 0);
+  const baseDistance = Math.max(
+    Number(deliverySettings.riderBaseDistanceKm ?? deliverySettings.baseDistanceCapacityKm ?? 0) || 0,
+    0,
+  );
   const perExtraKm = roundCurrency(deliverySettings.deliveryPartnerRatePerKm ?? 0);
 
   // Riders are paid for the distance they ride in both modes; "fixed price"

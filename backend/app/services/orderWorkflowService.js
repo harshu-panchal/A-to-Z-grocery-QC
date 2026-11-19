@@ -51,6 +51,7 @@ import {
   getDefaultCodCashLimit,
   isCodOrder,
   riderCodLimit,
+  riderCommittedCodCash,
 } from "./delivery/codLimit.js";
 import { invalidateRiderCashCaches } from "./delivery/deliveryEarningsService.js";
 import { requireCanonicalOrderId } from "../utils/orderLookup.js";
@@ -366,7 +367,8 @@ export async function deliveryAcceptAtomic(deliveryId, orderId, idempotencyKey) 
             .lean(),
           Delivery.findById(deliveryOid).select("limit").lean(),
         ]);
-        const currentCash = roundCurrency(wallet?.cashInHand || 0);
+        // includes cash from COD orders the rider accepted but has not delivered yet
+        const currentCash = await riderCommittedCodCash(deliveryOid, wallet?.cashInHand);
         const maxCashLimit = riderCodLimit(riderDoc, await getDefaultCodCashLimit());
         const orderCash = codOrderCashAmount(pending);
         // the limit must still hold after collecting this order's cash
