@@ -42,6 +42,14 @@ export function normalizeFinanceSettings(raw = {}) {
     raw.baseDistanceCapacityKm ?? DEFAULT_FINANCE_SETTINGS.baseDistanceCapacityKm,
   );
 
+  // Rider base pay has its own km coverage; older settings without it use
+  // the customer's base distance (the previous behaviour).
+  const riderBaseDistanceRaw = Number(raw.riderBaseDistanceKm);
+  const riderBaseDistanceKm =
+    raw.riderBaseDistanceKm != null && Number.isFinite(riderBaseDistanceRaw)
+      ? Math.max(riderBaseDistanceRaw, 0)
+      : null;
+
   const incrementalKmSurcharge = roundCurrency(
     raw.incrementalKmSurcharge ?? DEFAULT_FINANCE_SETTINGS.incrementalKmSurcharge,
   );
@@ -62,6 +70,11 @@ export function normalizeFinanceSettings(raw = {}) {
     baseDistanceCapacityKm: Number.isFinite(baseDistanceCapacityKm)
       ? Math.max(baseDistanceCapacityKm, 0)
       : DEFAULT_FINANCE_SETTINGS.baseDistanceCapacityKm,
+    riderBaseDistanceKm:
+      riderBaseDistanceKm ??
+      (Number.isFinite(baseDistanceCapacityKm)
+        ? Math.max(baseDistanceCapacityKm, 0)
+        : DEFAULT_FINANCE_SETTINGS.baseDistanceCapacityKm),
     incrementalKmSurcharge,
     deliveryPartnerRatePerKm,
     fleetCommissionRatePerKm: deliveryPartnerRatePerKm,

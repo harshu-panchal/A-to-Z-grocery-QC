@@ -43,6 +43,7 @@ import {
   validateIdempotencyKey,
 } from "./idempotencyService.js";
 import { buildCheckoutPricingSnapshot } from "./checkoutPricingService.js";
+import { codOverLimitMessage, getDefaultCodCashLimit } from "./delivery/codLimit.js";
 import { getOrCreateFinanceSettings } from "./finance/financeSettingsService.js";
 import { emitNotificationEvent } from "../modules/notifications/notification.emitter.js";
 import { NOTIFICATION_EVENTS } from "../modules/notifications/notification.constants.js";
@@ -459,6 +460,20 @@ export async function placeOrderAtomic({
       customerId,
       session,
     });
+
+    // A COD order whose cash is above the rider COD limit can never be
+    // accepted by any rider, so it would sit in delivery search forever.
+    if (paymentMode === "COD") {
+      const codError = codOverLimitMessage(
+        pricingSnapshot.sellerBreakdownEntries.map((entry) => entry.breakdown),
+        await getDefaultCodCashLimit(),
+      );
+      if (codError) {
+        const err = new Error(codError);
+        err.statusCode = 400;
+        throw err;
+      }
+    }
 
     const checkoutGroupId = await generateUniqueCheckoutGroupId({ session });
     const checkoutReservation = computeStockReservationWindow(paymentMode);

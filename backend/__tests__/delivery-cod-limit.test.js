@@ -31,3 +31,34 @@ describe("delivery COD cash limit", () => {
     expect(isCodOrder({ paymentMode: "ONLINE" })).toBe(false);
   });
 });
+
+describe("rider base pay distance is separate from the customer's", () => {
+  test("rider pay uses riderBaseDistanceKm, customer fee keeps baseDistanceCapacityKm", async () => {
+    const { calculateRiderPayout, calculateCustomerDeliveryFee } = await import(
+      "../app/services/finance/pricingService.js"
+    );
+    const { normalizeFinanceSettings } = await import(
+      "../app/services/finance/financeSettingsService.js"
+    );
+    const settings = normalizeFinanceSettings({
+      deliveryPricingMode: "distance_based",
+      customerBaseDeliveryFee: 30,
+      baseDistanceCapacityKm: 2,
+      incrementalKmSurcharge: 10,
+      riderBasePayout: 25,
+      riderBaseDistanceKm: 1,
+      deliveryPartnerRatePerKm: 5,
+    });
+    // 3 km: customer pays base + 1 extra km, rider gets base + 2 extra km
+    expect(calculateCustomerDeliveryFee(3, settings).deliveryFeeCharged).toBe(40);
+    expect(calculateRiderPayout(3, settings).riderPayoutTotal).toBe(35);
+  });
+
+  test("old settings without riderBaseDistanceKm keep the shared distance", async () => {
+    const { normalizeFinanceSettings } = await import(
+      "../app/services/finance/financeSettingsService.js"
+    );
+    expect(normalizeFinanceSettings({ baseDistanceCapacityKm: 2 }).riderBaseDistanceKm).toBe(2);
+    expect(normalizeFinanceSettings({ baseDistanceCapacityKm: 2, riderBaseDistanceKm: 0 }).riderBaseDistanceKm).toBe(0);
+  });
+});

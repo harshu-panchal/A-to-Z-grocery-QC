@@ -41,6 +41,8 @@ const ORDER_TIMERS = [
     },
 ];
 const TIMER_MIN_SEC = 15;
+const COD_LIMIT_MIN = 100;
+const COD_LIMIT_MAX = 1000000; // same bounds as the Setting schema
 const TIMER_MAX_SEC = 600;
 const formatSeconds = (sec) => {
     const m = Math.floor(sec / 60);
@@ -71,6 +73,7 @@ const BillingCharges = () => {
         baseCharge: 30,
         riderBasePayout: 30,
         baseDistance: 0.5,
+        riderBaseDistance: 0.5,
         extraPerKm: 10,
         deliveryPartnerRatePerKm: 5,
         fixedCharge: 30,
@@ -118,6 +121,7 @@ const BillingCharges = () => {
             baseCharge: s.customerBaseDeliveryFee ?? s.baseDeliveryCharge ?? prev.baseCharge,
             riderBasePayout: s.riderBasePayout ?? s.customerBaseDeliveryFee ?? prev.riderBasePayout,
             baseDistance: s.baseDistanceCapacityKm ?? prev.baseDistance,
+            riderBaseDistance: s.riderBaseDistanceKm ?? s.baseDistanceCapacityKm ?? prev.riderBaseDistance,
             extraPerKm: s.incrementalKmSurcharge ?? prev.extraPerKm,
             deliveryPartnerRatePerKm: s.deliveryPartnerRatePerKm ?? s.fleetCommissionRatePerKm ?? prev.deliveryPartnerRatePerKm,
             fixedCharge: s.fixedDeliveryFee ?? s.customerBaseDeliveryFee ?? prev.fixedCharge,
@@ -143,38 +147,41 @@ const BillingCharges = () => {
             showToast('Settings are not loaded yet. Reload the page and try again.', 'error');
             return;
         }
-        if (config.deliveryCodCashLimit < 100) {
-            showToast('COD cash limit must be at least ₹100', 'error');
+        if (config.deliveryCodCashLimit < COD_LIMIT_MIN || config.deliveryCodCashLimit > COD_LIMIT_MAX) {
+            showToast(`COD cash limit must be between ₹${COD_LIMIT_MIN} and ₹${COD_LIMIT_MAX.toLocaleString('en-IN')}`, 'error');
             return;
         }
         if (!config.codEnabled && !config.onlineEnabled) {
             showToast('Keep at least one payment method on, otherwise customers cannot place orders.', 'error');
             return;
         }
+        // Saved one after the other (not in parallel) so a failure can say
+        // exactly which part was saved instead of leaving a silent half-save.
+        let feesSaved = false;
         try {
             setIsSaving(true);
-            await Promise.all([
-                adminApi.updatePlatformSettings({
-                    sellerAcceptTimeoutSec: config.sellerAcceptTimeoutSec,
-                    deliveryAcceptTimeoutSec: config.deliveryAcceptTimeoutSec,
-                    returnPickupAcceptTimeoutSec: config.returnPickupAcceptTimeoutSec,
-                    deliveryCodCashLimit: config.deliveryCodCashLimit,
-                }),
-                adminApi.updateDeliveryFinanceSettings({
-                    deliveryPricingMode: deliveryMode === 'fixed' ? 'fixed_price' : 'distance_based',
-                    customerBaseDeliveryFee: config.baseCharge,
-                    riderBasePayout: config.riderBasePayout,
-                    baseDeliveryCharge: config.baseCharge,
-                    baseDistanceCapacityKm: config.baseDistance,
-                    incrementalKmSurcharge: config.extraPerKm,
-                    deliveryPartnerRatePerKm: config.deliveryPartnerRatePerKm,
-                    fleetCommissionRatePerKm: config.deliveryPartnerRatePerKm,
-                    fixedDeliveryFee: config.fixedCharge,
-                    handlingFeeStrategy: config.handlingFeeStrategy,
-                    codEnabled: config.codEnabled,
-                    onlineEnabled: config.onlineEnabled,
-                }),
-            ]);
+            await adminApi.updateDeliveryFinanceSettings({
+                deliveryPricingMode: deliveryMode === 'fixed' ? 'fixed_price' : 'distance_based',
+                customerBaseDeliveryFee: config.baseCharge,
+                riderBasePayout: config.riderBasePayout,
+                baseDeliveryCharge: config.baseCharge,
+                baseDistanceCapacityKm: config.baseDistance,
+                riderBaseDistanceKm: config.riderBaseDistance,
+                incrementalKmSurcharge: config.extraPerKm,
+                deliveryPartnerRatePerKm: config.deliveryPartnerRatePerKm,
+                fleetCommissionRatePerKm: config.deliveryPartnerRatePerKm,
+                fixedDeliveryFee: config.fixedCharge,
+                handlingFeeStrategy: config.handlingFeeStrategy,
+                codEnabled: config.codEnabled,
+                onlineEnabled: config.onlineEnabled,
+            });
+            feesSaved = true;
+            await adminApi.updatePlatformSettings({
+                sellerAcceptTimeoutSec: config.sellerAcceptTimeoutSec,
+                deliveryAcceptTimeoutSec: config.deliveryAcceptTimeoutSec,
+                returnPickupAcceptTimeoutSec: config.returnPickupAcceptTimeoutSec,
+                deliveryCodCashLimit: config.deliveryCodCashLimit,
+            });
 
             // The form re-seeds from this cache when the page is reopened, so
             // refresh it or the old values come back.
@@ -182,7 +189,14 @@ const BillingCharges = () => {
             showToast('Fees & order timer settings updated', 'success');
         } catch (error) {
             console.error('Failed to update platform settings', error);
-            showToast(error?.response?.data?.message || 'Failed to update fees settings', 'error');
+            const reason = error?.response?.data?.message || 'Please try again.';
+            showToast(
+                feesSaved
+                    ? `Fees, rider pay, handling fee and payment methods were saved, but the COD cash limit and order timers were not: ${reason}`
+                    : `Nothing was saved: ${reason}`,
+                'error',
+            );
+            if (feesSaved) queryClient.invalidateQueries({ queryKey: ['admin', 'billingChargesSettings'] });
         } finally {
             setIsSaving(false);
         }
@@ -335,30 +349,29 @@ const BillingCharges = () => {
                             <input type="number" min="0" value={config.riderBasePayout}
                                 onChange={(e) => handleInputChange('riderBasePayout', e.target.value)}
                                 className="h-11 w-full rounded-md border border-slate-200 bg-white px-3.5 text-sm font-black text-slate-900 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                            <p className="text-[10px] font-medium italic text-slate-400">Paid for the first {config.baseDistance} km.</p>
+                            <p className="text-[10px] font-medium italic text-slate-400">Paid for the first {config.riderBaseDistance} km.</p>
                         </div>
                         <div className="space-y-1.5">
                             <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Rider Pay Per Extra Km (₹)</label>
                             <input type="number" min="0" value={config.deliveryPartnerRatePerKm}
                                 onChange={(e) => handleInputChange('deliveryPartnerRatePerKm', e.target.value)}
                                 className="h-11 w-full rounded-md border border-slate-200 bg-white px-3.5 text-sm font-black text-slate-900 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                            <p className="text-[10px] font-medium italic text-slate-400">For every km beyond {config.baseDistance} km (part of a km counts as a full km).</p>
+                            <p className="text-[10px] font-medium italic text-slate-400">For every km beyond {config.riderBaseDistance} km (part of a km counts as a full km).</p>
                         </div>
-                        {deliveryMode === 'fixed' && (
-                            <div className="space-y-1.5">
-                                <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Base Pay Covers Up To (km)</label>
-                                <input type="number" min="0" step="0.1" value={config.baseDistance}
-                                    onChange={(e) => handleInputChange('baseDistance', e.target.value)}
-                                    className="h-11 w-full rounded-md border border-slate-200 bg-white px-3.5 text-sm font-black text-slate-900 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
-                            </div>
-                        )}
+                        <div className="space-y-1.5">
+                            <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Base Pay Covers Up To (km)</label>
+                            <input type="number" min="0" step="0.1" value={config.riderBaseDistance}
+                                onChange={(e) => handleInputChange('riderBaseDistance', e.target.value)}
+                                className="h-11 w-full rounded-md border border-slate-200 bg-white px-3.5 text-sm font-black text-slate-900 outline-none transition-all focus:border-primary focus:ring-2 focus:ring-primary/20" />
+                            <p className="text-[10px] font-medium italic text-slate-400">Rider pay only. Does not change the customer delivery fee.</p>
+                        </div>
                     </div>
                     {(() => {
-                        const extraKm = (km) => Math.max(0, Math.ceil(km - config.baseDistance));
+                        const extraKm = (km, base) => Math.max(0, Math.ceil(km - base));
                         const customerAt = (km) => (deliveryMode === 'fixed'
                             ? config.fixedCharge
-                            : config.baseCharge + extraKm(km) * config.extraPerKm);
-                        const riderAt = (km) => config.riderBasePayout + extraKm(km) * config.deliveryPartnerRatePerKm;
+                            : config.baseCharge + extraKm(km, config.baseDistance) * config.extraPerKm);
+                        const riderAt = (km) => config.riderBasePayout + extraKm(km, config.riderBaseDistance) * config.deliveryPartnerRatePerKm;
                         const examples = [config.baseDistance, 3, 6].map((km) => ({
                             km,
                             margin: Math.round((customerAt(km) - riderAt(km)) * 100) / 100,
@@ -458,7 +471,8 @@ const BillingCharges = () => {
                             <input
                                 id="cod-cash-limit"
                                 type="number"
-                                min="100"
+                                min={COD_LIMIT_MIN}
+                                max={COD_LIMIT_MAX}
                                 step="100"
                                 value={config.deliveryCodCashLimit}
                                 onChange={(e) => handleInputChange('deliveryCodCashLimit', e.target.value)}

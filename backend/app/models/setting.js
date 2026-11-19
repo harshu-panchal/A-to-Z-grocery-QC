@@ -121,6 +121,11 @@ const settingSchema = new mongoose.Schema(
             default: 0.5,
             min: 0,
         },
+        // km covered by the rider's base pay; unset = same as baseDistanceCapacityKm
+        riderBaseDistanceKm: {
+            type: Number,
+            min: 0,
+        },
         incrementalKmSurcharge: {
             type: Number,
             default: 10,

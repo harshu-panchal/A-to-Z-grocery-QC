@@ -3,7 +3,12 @@
  */
 
 import mongoose from "mongoose";
-import { fitsCodLimit, getDefaultCodCashLimit, riderCodLimit } from "./delivery/codLimit.js";
+import {
+  fitsCodLimit,
+  getDefaultCodCashLimit,
+  pendingCodCashByRider,
+  riderCodLimit,
+} from "./delivery/codLimit.js";
 import Notification from "../models/notification.js";
 import Order from "../models/order.js";
 import Wallet from "../models/wallet.js";
@@ -178,7 +183,7 @@ export async function emitDeliveryBroadcastForSeller(sellerId, payload) {
         .map((id) => new mongoose.Types.ObjectId(String(id)));
 
       if (riderObjectIds.length > 0) {
-        const [wallets, riders] = await Promise.all([
+        const [wallets, riders, pendingCash] = await Promise.all([
           Wallet.find({
             ownerType: "DELIVERY_PARTNER",
             ownerId: { $in: riderObjectIds },
@@ -190,6 +195,7 @@ export async function emitDeliveryBroadcastForSeller(sellerId, payload) {
           })
             .select("_id limit")
             .lean(),
+          pendingCodCashByRider(riderObjectIds),
         ]);
 
         const defaultLimit = await getDefaultCodCashLimit();
@@ -204,7 +210,7 @@ export async function emitDeliveryBroadcastForSeller(sellerId, payload) {
         }
 
         eligibleIds = ids.filter((id) => {
-          const cash = cashMap.get(String(id)) || 0;
+          const cash = (cashMap.get(String(id)) || 0) + (pendingCash.get(String(id)) || 0);
           const limit = limitMap.get(String(id)) ?? defaultLimit;
           return fitsCodLimit(cash, limit, orderCash);
         });

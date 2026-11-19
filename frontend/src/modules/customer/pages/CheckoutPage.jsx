@@ -143,6 +143,8 @@ const CheckoutPage = () => {
   const [orderId, setOrderId] = useState(null);
   const [pricingPreview, setPricingPreview] = useState(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  // set by the server when the cart is too large for Cash on Delivery
+  const [codUnavailableReason, setCodUnavailableReason] = useState("");
   // why the server couldn't price this order (shop closed, out of area...)
   const [previewError, setPreviewError] = useState("");
   const postOrderNavigateRef = useRef(null);
@@ -232,7 +234,7 @@ const CheckoutPage = () => {
             sublabel: "UPI / Cards / NetBanking",
           },
         ]),
-    ...(settings?.codEnabled === false
+    ...(settings?.codEnabled === false || codUnavailableReason
       ? []
       : [
           {
@@ -729,6 +731,7 @@ const CheckoutPage = () => {
         const res = await customerApi.checkoutPreview(buildPreviewPayload());
         if (res.data?.success) {
           setPricingPreview(res.data.result?.breakdown ?? null);
+          setCodUnavailableReason(res.data.result?.codUnavailableReason || "");
           setPreviewError("");
         } else {
           setPricingPreview(null);
@@ -1146,6 +1149,9 @@ const CheckoutPage = () => {
 
             {/* Desktop Slide to Pay */}
             <div className="hidden lg:block">
+              {codUnavailableReason && !previewError && settings?.codEnabled !== false && (
+                <p className="mb-2 rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800">{codUnavailableReason}</p>
+              )}
               <SlideToPay
                 amount={finalAmountToPay}
                 onSuccess={handlePlaceOrder}
@@ -1171,6 +1177,9 @@ const CheckoutPage = () => {
           </div>
           {previewError && !isPreviewLoading && (
             <p className="mb-2 rounded-lg bg-red-50 px-3 py-1.5 text-xs font-semibold text-red-700">{previewError}</p>
+          )}
+          {codUnavailableReason && !previewError && settings?.codEnabled !== false && (
+            <p className="mb-2 rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800">{codUnavailableReason}</p>
           )}
           <SlideToPay
             amount={finalAmountToPay}

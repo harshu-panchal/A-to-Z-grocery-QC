@@ -12,6 +12,7 @@ import {
   getDefaultCodCashLimit,
   isCodOrder,
   riderCodLimit,
+  riderCommittedCodCash,
 } from "./delivery/codLimit.js";
 import {
   orderMatchQueryFlexible,
@@ -537,7 +538,8 @@ export async function fetchAvailableOrdersForDelivery({
     }));
 
   // COD orders only while this order's cash still fits under the rider's limit
-  const currentCashInHand = Number(riderWallet?.cashInHand || 0);
+  // includes cash from COD orders the rider accepted but has not delivered yet
+  const currentCashInHand = await riderCommittedCodCash(userId, riderWallet?.cashInHand);
   const riderLimit = riderCodLimit(deliveryPartner, await getDefaultCodCashLimit());
   const withinCashLimit = (o) =>
     !isCodOrder(o) || fitsCodLimit(currentCashInHand, riderLimit, codOrderCashAmount(o));
